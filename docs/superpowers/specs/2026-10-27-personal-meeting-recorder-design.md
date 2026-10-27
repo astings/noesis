@@ -240,12 +240,14 @@ list_projects() -> [{name, meeting_count, last_meeting_at}]
 list_meetings({project?: string, since?: ISO date, until?: ISO date, limit?: number = 20})
   -> [{meeting_id, project, title, started_at, duration_seconds, quality: "live"|"enhanced"|"enhancing"|"failed", path}]
   Sorted newest first. `_inbox` includes legacy root-level folders.
+  quality "enhancing" covers both queued and running jobs.
 
 get_transcript({meeting_id?: string, path?: string, format?: "md"|"text"|"json" = "md", start_seconds?: number, end_seconds?: number})
   -> string. "md" is transcript.md (rendered from transcripts.json for legacy folders), "text" strips timestamps, "json" is the raw segments.
 
-assign_meeting({meeting_id: string, project?: string, title?: string}) -> {path}
+assign_meeting({meeting_id?: string, path?: string, project?: string, title?: string}) -> {path}
   Moves and/or renames the folder, rewrites metadata.json. Creates the project folder if missing.
+  `path` (absolute folder or folder name) identifies a legacy meeting that has no id; a legacy meeting is moved only when a project is given. The app does not follow a move or rename of a legacy folder made through the tools; its sidebar row keeps the old title and path.
 ```
 
 Errors are plain messages: unknown meeting, unknown project, transcript still enhancing.
