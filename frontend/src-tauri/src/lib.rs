@@ -38,6 +38,7 @@ pub(crate) use perf_trace;
 pub mod analytics;
 pub mod api;
 pub mod audio;
+pub mod call_detector; // spec 4.5
 pub mod config;
 pub mod console_utils;
 pub mod database;
@@ -595,6 +596,13 @@ pub fn run() {
                     Ok(n) => log::info!("Library reconcile at startup: {} rows updated", n),
                     Err(e) => log::warn!("Library reconcile at startup failed: {}", e),
                 }
+            }
+
+            // spec 4.5: stop (and optionally start) recordings with the Zoom meeting
+            #[cfg(target_os = "macos")]
+            {
+                let handle = _app.handle().clone();
+                tauri::async_runtime::spawn(call_detector::run(handle));
             }
 
             // Initialize bundled templates directory for dynamic template discovery

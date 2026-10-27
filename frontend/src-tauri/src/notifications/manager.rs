@@ -97,6 +97,29 @@ impl<R: Runtime> NotificationManager<R> {
         self.system_handler.show_notification(notification).await
     }
 
+    /// spec 4.5: a notification the user did not trigger (the app stopped a recording on its own).
+    /// Runs the consent, permission and do-not-disturb checks but not the per-type preference.
+    pub async fn show_system_notification(&self, notification: Notification) -> Result<()> {
+        if !*self.initialized.read().await {
+            self.initialize().await?;
+        }
+        {
+            let settings = self.settings.read().await;
+            if !settings.consent_given || !settings.system_permission_granted {
+                log_info!("Skipping system notification (no consent or permission): {}", notification.title);
+                return Ok(());
+            }
+        }
+        if self.is_dnd_active().await
+            && !matches!(notification.priority, crate::notifications::types::NotificationPriority::Critical)
+        {
+            log_info!("Skipping system notification (do not disturb): {}", notification.title);
+            return Ok(());
+        }
+        log_info!("Showing system notification: {} - {}", notification.title, notification.body);
+        self.system_handler.show_notification(notification).await
+    }
+
     /// Show a recording started notification
     pub async fn show_recording_started(&self, meeting_name: Option<String>) -> Result<()> {
         let settings = self.settings.read().await;

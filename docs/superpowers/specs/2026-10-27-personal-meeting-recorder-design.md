@@ -47,7 +47,7 @@ All Rust paths are under `frontend/src-tauri/src/`, UI paths under `frontend/src
 ## 3. Target flow
 
 ```
-Zoom meeting starts (CptHost appears)      optional auto-start, default off
+Zoom meeting starts (CptHost appears)      optional auto-start, default on
         |
 Owner clicks record (or auto-start)  ->  project picker, defaults to last used, "_inbox" if unsure
         |
@@ -136,13 +136,13 @@ Deferred: splitting "them" into named speakers (pyannote segmentation plus embed
 
 ### 4.5 Zoom call detection: auto-stop, optional auto-start
 
-What: stop recording when the Zoom meeting ends. Optionally start when one begins.
+What: stop recording when the Zoom meeting ends. Start when one begins.
 
 How:
 
 - Signal: Zoom on macOS runs the helper process `CptHost` only while a meeting is in progress. New module `call_detector.rs` polls `sysinfo` every 5 seconds for a process named `CptHost` and keeps a two-state machine: `in_call` and `idle`. macOS only (`#[cfg(target_os = "macos")]`).
 - Auto-stop: when `in_call` becomes `idle` and stays so for 20 seconds while recording, and `auto_stop_on_call_end` is true (default true), call the tray stop path (`recording_commands::stop_recording`, then emit `recording-stop-complete`) so the frontend saves exactly as it does for a tray stop. `metadata.json` records `ended_by: "auto-stop"`.
-- Auto-start: when `idle` becomes `in_call` and `auto_start_on_call` is true (default false) and nothing is recording, trigger the existing tray start path, which lands the meeting in `_inbox` with the default devices.
+- Auto-start: when `idle` becomes `in_call` and `auto_start_on_call` is true (default true) and nothing is recording, trigger the existing tray start path, which records into the project last chosen on the home screen with the default devices.
 - Both flags live in `recording_preferences.json` and get two switches in Recording settings.
 - The state machine is a pure function over a sequence of samples, unit tested. The `CptHost` assumption is verified as step zero of the implementation plan: `pgrep -x CptHost` must return nothing while Zoom is open but not in a meeting.
 
@@ -279,7 +279,7 @@ Defaults chosen in this document. Changing any of them changes the plans.
 
 1. Recordings root stays `~/Movies/meetily-recordings`, with one subfolder per project. Legacy flat folders are left in place and read as `_inbox`.
 2. Speaker labels come from a live mic-vs-system energy timeline saved as `speakers.json`. `audio.mp4` stays mono. Stereo recording is the named upgrade path, not the default.
-3. Zoom detection uses the `CptHost` helper process. Auto-stop defaults on, auto-start defaults off.
+3. Zoom detection uses the `CptHost` helper process. Auto-stop and auto-start both default on.
 4. The MCP server is a standalone Node script registered at user scope, not part of the Tauri app.
 5. Summary, LLM provider, licensing and analytics code stays. Changes are additive to keep upstream merges feasible.
 

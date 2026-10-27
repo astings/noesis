@@ -519,6 +519,11 @@ impl RecordingManager {
         self.recording_saver.set_project(project);
     }
 
+    // spec 4.5
+    pub fn set_ended_by(&mut self, reason: Option<String>) {
+        self.recording_saver.set_ended_by(reason);
+    }
+
     pub fn set_meeting_id(&mut self, id: Option<String>) {
         self.recording_saver.set_meeting_id(id);
     }

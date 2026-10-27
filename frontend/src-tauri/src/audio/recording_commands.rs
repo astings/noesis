@@ -47,7 +47,7 @@ static IS_RECORDING_STOPPING: AtomicBool = AtomicBool::new(false);
 
 /// Recording is live and not being torn down — the only state in which the
 /// mic-disconnect fallback should run or report.
-fn recording_live() -> bool {
+pub(crate) fn recording_live() -> bool { // spec 4.5
     IS_RECORDING.load(Ordering::SeqCst) && !IS_RECORDING_STOPPING.load(Ordering::SeqCst)
 }
 
@@ -1129,6 +1129,35 @@ pub async fn stop_recording<R: Runtime>(
     crate::tray::update_tray_menu(&app);
 
     info!("🎉 Recording stopped successfully with ZERO transcript chunks lost");
+    Ok(())
+}
+
+/// spec 4.5: stop initiated by the system (Zoom call ended), not by the user.
+/// Stamps `ended_by`, runs the normal stop, then tells the frontend to save, exactly like the tray does.
+pub async fn stop_for_system<R: Runtime>(app: AppHandle<R>, ended_by: &str) -> Result<(), String> {
+    {
+        let mut guard = RECORDING_MANAGER.lock().unwrap_or_else(|e| e.into_inner());
+        // spec 4.5: every stop takes the manager first, so None means idle or already stopping
+        let Some(manager) = guard.as_mut() else {
+            info!("stop_for_system: no live recording (idle or already stopping), nothing to do");
+            return Ok(());
+        };
+        manager.set_ended_by(Some(ended_by.to_string()));
+    }
+    stop_recording(app.clone(), RecordingArgs { save_path: String::new() }).await?;
+    if let Err(e) = app.emit("recording-stop-complete", true) {
+        warn!("stop_for_system: failed to emit recording-stop-complete: {}", e);
+    }
+    if let Some(state) = app.try_state::<crate::notifications::commands::NotificationManagerState<R>>() {
+        let lock = state.read().await;
+        if let Some(manager) = lock.as_ref() {
+            // spec 4.5: consent, permission and do-not-disturb still apply; the per-type "recording stopped" preference does not
+            let notification = crate::notifications::types::Notification::recording_stopped();
+            if let Err(e) = manager.show_system_notification(notification).await {
+                warn!("stop_for_system: notification failed: {}", e);
+            }
+        }
+    }
     Ok(())
 }
 

@@ -21,6 +21,9 @@ export interface RecordingPreferences {
   enhance_provider: 'whisper' | 'parakeet';
   enhance_model: string;
   enhance_language: string | null;
+  // spec 4.5
+  auto_stop_on_call_end: boolean;
+  auto_start_on_call: boolean;
 }
 
 interface RecordingSettingsProps {
@@ -38,6 +41,8 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     enhance_provider: 'whisper',
     enhance_model: 'large-v3',
     enhance_language: null,
+    auto_stop_on_call_end: true,
+    auto_start_on_call: true,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -55,6 +60,20 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
 
   const handleAutoEnhanceToggle = async (enabled: boolean) => {
     const next = { ...preferences, auto_enhance: enabled };
+    setPreferences(next);
+    await savePreferences(next);
+  };
+
+  // spec 4.5
+  const handleAutoStopToggle = async (enabled: boolean) => {
+    const next = { ...preferences, auto_stop_on_call_end: enabled };
+    setPreferences(next);
+    await savePreferences(next);
+  };
+
+  // spec 4.5
+  const handleAutoStartToggle = async (enabled: boolean) => {
+    const next = { ...preferences, auto_start_on_call: enabled };
     setPreferences(next);
     await savePreferences(next);
   };
@@ -251,6 +270,28 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
             )}
           </div>
         )}
+      </div>
+
+      {/* spec 4.5: Zoom call detection */}
+      <div className="p-4 border rounded-lg space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <div className="font-medium">Stop recording when the Zoom call ends</div>
+            <div className="text-sm text-gray-600">
+              About 20 seconds after you leave the meeting, the recording stops and is saved
+            </div>
+          </div>
+          <Switch checked={preferences.auto_stop_on_call_end} onCheckedChange={handleAutoStopToggle} disabled={saving} />
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <div className="font-medium">Start recording when a Zoom call begins</div>
+            <div className="text-sm text-gray-600">
+              Records into the project selected on the home screen
+            </div>
+          </div>
+          <Switch checked={preferences.auto_start_on_call} onCheckedChange={handleAutoStartToggle} disabled={saving} />
+        </div>
       </div>
 
       {/* Folder Location - Only shown when auto_save is enabled */}

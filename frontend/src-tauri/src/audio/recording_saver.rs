@@ -46,6 +46,9 @@ pub struct MeetingMetadata {
     pub transcript_md: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transcription: Option<serde_json::Value>,
+    /// spec 4.5: "user" or "auto-stop"
+    #[serde(default)]
+    pub ended_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +69,7 @@ pub struct RecordingSaver {
     project: Option<String>,
     meeting_id: Option<String>,
     live_transcription: Option<(String, String)>,
+    ended_by: Option<String>, // spec 4.5
 }
 
 impl RecordingSaver {
@@ -80,7 +84,13 @@ impl RecordingSaver {
             project: None,
             meeting_id: None,
             live_transcription: None,
+            ended_by: None,
         }
+    }
+
+    /// spec 4.5: how the recording ended; written into metadata.json at stop
+    pub fn set_ended_by(&mut self, reason: Option<String>) {
+        self.ended_by = reason;
     }
 
     /// Set the meeting name for this recording session
@@ -305,6 +315,7 @@ impl RecordingSaver {
             transcription: self.live_transcription.as_ref().map(|(provider, model)| {
                 serde_json::json!({ "live": { "provider": provider, "model": model } })
             }),
+            ended_by: None, // spec 4.5
         };
 
         // Write initial metadata.json
@@ -463,6 +474,7 @@ impl RecordingSaver {
         if let (Some(folder), Some(mut metadata)) = (&self.meeting_folder, self.metadata.clone()) {
             metadata.status = "completed".to_string();
             metadata.completed_at = Some(chrono::Utc::now().to_rfc3339());
+            metadata.ended_by = Some(self.ended_by.clone().unwrap_or_else(|| "user".to_string())); // spec 4.5
 
             // Use actual recording duration from RecordingState (more accurate than transcript segments)
             // Falls back to last transcript segment if duration not provided

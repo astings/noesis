@@ -35,6 +35,13 @@ pub struct RecordingPreferences {
     /// Language hint for the enhance job. None means auto-detect.
     #[serde(default)]
     pub enhance_language: Option<String>,
+    // spec 4.5: Zoom call detection
+    /// Stop the recording about 20 seconds after the Zoom meeting ends.
+    #[serde(default = "default_true")]
+    pub auto_stop_on_call_end: bool,
+    /// Start a recording when a Zoom meeting begins.
+    #[serde(default = "default_true")]
+    pub auto_start_on_call: bool,
 }
 
 fn default_true() -> bool {
@@ -63,6 +70,8 @@ impl Default for RecordingPreferences {
             enhance_provider: default_enhance_provider(),
             enhance_model: default_enhance_model(),
             enhance_language: None,
+            auto_stop_on_call_end: true,
+            auto_start_on_call: true,
         }
     }
 }
@@ -433,5 +442,16 @@ mod tests {
         let p = RecordingPreferences::default();
         assert!(p.auto_enhance);
         assert_eq!(p.enhance_model, "large-v3");
+    }
+
+    #[test]
+    fn call_detection_defaults_stop_on_and_start_on() {
+        let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
+        let p: RecordingPreferences = serde_json::from_str(old).unwrap();
+        assert!(p.auto_stop_on_call_end);
+        assert!(p.auto_start_on_call);
+        let d = RecordingPreferences::default();
+        assert!(d.auto_stop_on_call_end);
+        assert!(d.auto_start_on_call);
     }
 }
