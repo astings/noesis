@@ -23,6 +23,30 @@ pub struct RecordingPreferences {
     #[cfg(target_os = "macos")]
     #[serde(default)]
     pub system_audio_backend: Option<String>,
+    // spec 4.1: run the enhance (full-file re-transcription) job automatically after a recording stops
+    #[serde(default = "default_true")]
+    pub auto_enhance: bool,
+    /// "whisper" or "parakeet"
+    #[serde(default = "default_enhance_provider")]
+    pub enhance_provider: String,
+    /// Model name as listed by `whisper_get_available_models` or `parakeet_get_available_models`
+    #[serde(default = "default_enhance_model")]
+    pub enhance_model: String,
+    /// Language hint for the enhance job. None means auto-detect.
+    #[serde(default)]
+    pub enhance_language: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_enhance_provider() -> String {
+    "whisper".to_string()
+}
+
+fn default_enhance_model() -> String {
+    "large-v3".to_string()
 }
 
 impl Default for RecordingPreferences {
@@ -35,6 +59,10 @@ impl Default for RecordingPreferences {
             preferred_system_device: None,
             #[cfg(target_os = "macos")]
             system_audio_backend: Some("coreaudio".to_string()),
+            auto_enhance: default_true(),
+            enhance_provider: default_enhance_provider(),
+            enhance_model: default_enhance_model(),
+            enhance_language: None,
         }
     }
 }
@@ -385,3 +413,25 @@ pub async fn get_audio_backend_info() -> Result<Vec<BackendInfo>, String> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_preferences_json_gets_enhance_defaults() {
+        // A store written before this phase has none of the enhance fields.
+        let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
+        let p: RecordingPreferences = serde_json::from_str(old).unwrap();
+        assert!(p.auto_enhance);
+        assert_eq!(p.enhance_provider, "whisper");
+        assert_eq!(p.enhance_model, "large-v3");
+        assert_eq!(p.enhance_language, None);
+    }
+
+    #[test]
+    fn default_preferences_enable_enhance_with_large_v3() {
+        let p = RecordingPreferences::default();
+        assert!(p.auto_enhance);
+        assert_eq!(p.enhance_model, "large-v3");
+    }
+}

@@ -37,6 +37,27 @@ interface SidebarItem {
   title: string;
   type: 'folder' | 'file';
   children?: SidebarItem[];
+  enhanceStatus?: string;
+}
+
+// spec 4.1: compact status dot next to the meeting title; the label lives in the tooltip. "done" shows nothing.
+const ENHANCE_BADGE: Record<string, { label: string; className: string }> = {
+  queued: { label: 'Enhance queued', className: 'bg-gray-400' },
+  running: { label: 'Enhancing transcript', className: 'bg-blue-500 animate-pulse' },
+  failed: { label: 'Enhance failed', className: 'bg-red-500' },
+};
+
+function EnhanceBadge({ status }: { status?: string }) {
+  const badge = status ? ENHANCE_BADGE[status] : undefined;
+  if (!badge) return null;
+  return (
+    <span
+      role="img"
+      aria-label={badge.label}
+      title={badge.label}
+      className={`ml-2 inline-block h-2 w-2 flex-shrink-0 rounded-full ${badge.className}`}
+    />
+  );
 }
 
 const Sidebar: React.FC = () => {
@@ -616,6 +637,7 @@ const Sidebar: React.FC = () => {
                   </div>
                 )}
                 <span className="flex-1 break-words">{item.title}</span>
+                {isMeetingItem && <EnhanceBadge status={item.enhanceStatus} />}
                 {isMeetingItem && (
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                     <button

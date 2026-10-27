@@ -7,6 +7,8 @@ import Analytics from '@/lib/analytics';
 import { toast } from 'sonner';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
 import { useConfig } from '@/contexts/ConfigContext';
+import type { RawModelInfo } from '@/hooks/useTranscriptionModels';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export interface RecordingPreferences {
   save_folder: string;
@@ -14,6 +16,11 @@ export interface RecordingPreferences {
   file_format: string;
   preferred_mic_device: string | null;
   preferred_system_device: string | null;
+  // spec 4.1
+  auto_enhance: boolean;
+  enhance_provider: 'whisper' | 'parakeet';
+  enhance_model: string;
+  enhance_language: string | null;
 }
 
 interface RecordingSettingsProps {
@@ -26,13 +33,37 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     auto_save: true,
     file_format: 'mp4',
     preferred_mic_device: null,
-    preferred_system_device: null
+    preferred_system_device: null,
+    auto_enhance: true,
+    enhance_provider: 'whisper',
+    enhance_model: 'large-v3',
+    enhance_language: null,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showRecordingNotification, setShowRecordingNotification] = useState(true);
   const { isRecording } = useRecordingState();
   const { setSelectedDevices } = useConfig();
+
+  // spec 4.1: only downloaded Whisper models can be picked for the enhance job
+  const [enhanceModels, setEnhanceModels] = useState<string[]>([]);
+  useEffect(() => {
+    invoke<RawModelInfo[]>('whisper_get_available_models')
+      .then((models) => setEnhanceModels(models.filter((m) => m.status === 'Available').map((m) => m.name)))
+      .catch((error) => console.error('Failed to load Whisper models:', error));
+  }, []);
+
+  const handleAutoEnhanceToggle = async (enabled: boolean) => {
+    const next = { ...preferences, auto_enhance: enabled };
+    setPreferences(next);
+    await savePreferences(next);
+  };
+
+  const handleEnhanceModelChange = async (model: string) => {
+    const next = { ...preferences, enhance_provider: 'whisper' as const, enhance_model: model };
+    setPreferences(next);
+    await savePreferences(next);
+  };
 
   // Load recording preferences on component mount
   useEffect(() => {
@@ -183,6 +214,43 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
           onCheckedChange={handleAutoSaveToggle}
           disabled={saving}
         />
+      </div>
+
+      {/* spec 4.1: enhance after recording */}
+      <div className="p-4 border rounded-lg space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <div className="font-medium">Enhance transcript after recording</div>
+            <div className="text-sm text-gray-600">
+              Re-transcribe the full recording with a slower, more accurate model as soon as it stops
+            </div>
+          </div>
+          <Switch
+            checked={preferences.auto_enhance}
+            onCheckedChange={handleAutoEnhanceToggle}
+            disabled={saving}
+          />
+        </div>
+        {preferences.auto_enhance && (
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm text-gray-700">Model</span>
+            <Select value={preferences.enhance_model} onValueChange={handleEnhanceModelChange} disabled={saving}>
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="Pick a downloaded Whisper model" />
+              </SelectTrigger>
+              <SelectContent>
+                {enhanceModels.map((name) => (
+                  <SelectItem key={name} value={name}>{name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {enhanceModels.length === 0 && (
+              <span className="text-xs text-amber-700">
+                No Whisper model downloaded yet. Download one in Transcription settings.
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Folder Location - Only shown when auto_save is enabled */}

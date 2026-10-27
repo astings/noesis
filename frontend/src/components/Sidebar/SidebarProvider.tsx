@@ -4,6 +4,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Analytics from '@/lib/analytics';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { toast } from 'sonner';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
 import type { SummaryProcessResponse } from '@/types';
 
@@ -14,11 +16,14 @@ interface SidebarItem {
   title: string;
   type: 'folder' | 'file';
   children?: SidebarItem[];
+  enhanceStatus?: string;
 }
 
 export interface CurrentMeeting {
   id: string;
   title: string;
+  // spec 4.1: "queued" | "running" | "done" | "failed", absent for legacy meetings
+  enhanceStatus?: string;
 }
 
 // Search result type for transcript search
@@ -98,9 +103,14 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     if (serverAddress) {
       try {
         const meetings = await invoke('api_get_meetings') as Array<{ id: string, title: string }>;
+        // spec 4.1: statuses are optional; a failure here must not hide the meeting list
+        const statuses = await invoke<Array<{ meeting_id: string; status: string }>>('list_enhance_statuses')
+          .catch((error) => { console.warn('list_enhance_statuses failed:', error); return []; });
+        const statusById = new Map(statuses.map((s) => [s.meeting_id, s.status]));
         const transformedMeetings = meetings.map((meeting: any) => ({
           id: meeting.id,
-          title: meeting.title
+          title: meeting.title,
+          enhanceStatus: statusById.get(meeting.id),
         }));
         setMeetings(transformedMeetings);
         Analytics.trackBackendConnection(true);
@@ -124,13 +134,40 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     fetchSettings();
   }, []);
 
+  // spec 4.1: live badge updates while a job moves through queued, running, done, failed
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let unlistenError: (() => void) | undefined;
+    let cancelled = false;
+    listen<{ meeting_id: string; status: string }>('enhance-status-changed', (event) => {
+      setMeetings((prev) =>
+        prev.map((m) => (m.id === event.payload.meeting_id ? { ...m, enhanceStatus: event.payload.status } : m)),
+      );
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    // spec 4.1: an unattended job has no open dialog, so surface its error here
+    listen<{ meeting_id: string; error: string }>('retranscription-error', (event) => {
+      toast.error('Enhance failed', { description: event.payload.error });
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlistenError = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+      unlistenError?.();
+    };
+  }, []);
+
   const baseItems: SidebarItem[] = [
     {
       id: 'meetings',
       title: 'Meeting Notes',
       type: 'folder' as const,
       children: [
-        ...meetings.map(meeting => ({ id: meeting.id, title: meeting.title, type: 'file' as const }))
+        ...meetings.map(meeting => ({ id: meeting.id, title: meeting.title, type: 'file' as const, enhanceStatus: meeting.enhanceStatus }))
       ]
     },
   ];

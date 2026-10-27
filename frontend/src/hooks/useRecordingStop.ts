@@ -12,6 +12,7 @@ import {
   applyPinnedSummaryLanguageToMeeting,
   detectAndCacheSummaryLanguage,
 } from '@/lib/summary-language-preferences';
+import { startAutoEnhanceIfEnabled } from '@/lib/autoEnhance';
 
 type SummaryStatus = 'idle' | 'processing' | 'summarizing' | 'regenerating' | 'completed' | 'error';
 
@@ -295,6 +296,8 @@ export function useRecordingStop(
 
           // Mark meeting as saved in IndexedDB (for recovery system)
           await markMeetingAsSaved();
+          // spec 4.1: enhance in the background. Never blocks navigation.
+          void startAutoEnhanceIfEnabled(meetingId, folderPath);
 
           // Clean up session storage
           sessionStorage.removeItem('last_recording_folder_path');

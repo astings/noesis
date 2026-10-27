@@ -233,7 +233,8 @@ export function RetranscribeDialog({
   const handleCancel = async () => {
     if (isProcessing) {
       try {
-        await invoke('cancel_retranscription_command');
+        // spec 4.1: cancel only this meeting's job
+        await invoke('cancel_retranscription_command', { meetingId });
         setIsProcessing(false);
         setProgress(null);
         toast.info('Retranscription cancelled');

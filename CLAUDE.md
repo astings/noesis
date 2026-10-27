@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## This fork: personal meeting recorder
+
+This repository is a personal fork. The direction is a dumb, accurate recorder that drops transcripts in per-project folders for Claude to consume from OpenKnowledge wikis. In-app summaries and LLM providers are out of scope and left untouched.
+
+- Design: [docs/superpowers/specs/2026-10-27-personal-meeting-recorder-design.md](docs/superpowers/specs/2026-10-27-personal-meeting-recorder-design.md) holds the phases, the contracts and the decisions. Read it before any feature work.
+- Contracts every change must respect (spec section 5): folder layout `<root>/<project>/<YYYY-MM-DD_HH-MM title>/`, `metadata.json` v2, `transcript.md`, and the MCP tool schemas.
+- The filesystem under `~/Movies/meetily-recordings` is the source of truth. SQLite is an index that a reconcile scan repairs. Keep `transcripts.json` and the v1 `metadata.json` keys readable.
+- Live code is `audio/`. `audio_v2/`, `lib_old_complex.rs`, `audio/stt.rs` and `whisper_engine/parallel_processor.rs` are dead and must not be built upon.
+- Changes are additive and go in new modules where possible so upstream merges stay feasible. Do not delete upstream features for taste.
+- Implementation plans live in `docs/superpowers/plans/`, one per phase.
+
 ## Project Overview
 
 **Meetily** is a privacy-first AI meeting assistant that captures, transcribes, and summarizes meetings entirely on local infrastructure. The supported application is the Tauri desktop app with a Rust core.
@@ -387,7 +398,7 @@ $env:RUST_LOG="debug"; ./clean_run_windows.bat
   - `main`: Stable releases
   - `fix/*`: Bug fixes
   - `enhance/*`: Feature enhancements
-  - Current: `fix/audio-mixing` (working on audio pipeline improvements)
+  - Fork: `docs/*` for design documents, `phase-N/*` for one implementation phase each
 
 ## Key Files Reference
 

@@ -4,16 +4,20 @@ use crate::audio::decoder::decode_audio_file;
 use crate::audio::vad::get_speech_chunks_with_progress;
 use super::common::{create_transcript_segments, split_segment_at_silence, write_transcripts_json};
 use super::constants::AUDIO_EXTENSIONS;
+use super::enhance_status::{self, STATUS_DONE, STATUS_FAILED, STATUS_QUEUED, STATUS_RUNNING};
 use crate::config::{DEFAULT_WHISPER_MODEL, DEFAULT_PARAKEET_MODEL};
+use crate::notifications::commands::NotificationManagerState;
 use crate::parakeet_engine::ParakeetEngine;
 use crate::state::AppState;
 use crate::whisper_engine::WhisperEngine;
 use anyhow::{anyhow, Result};
 use log::{debug, error, info, warn};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 /// Global flag to track if retranscription is in progress
@@ -22,25 +26,37 @@ static RETRANSCRIPTION_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 /// Global flag to signal cancellation
 static RETRANSCRIPTION_CANCELLED: AtomicBool = AtomicBool::new(false);
 
+/// spec 4.1: enhance jobs run one at a time, in arrival order. A meeting that
+/// stops while another is still enhancing waits here instead of being refused.
+static ENHANCE_QUEUE: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
+
+/// spec 4.1: meeting id of the job that currently holds the in-progress flag
+static RETRANSCRIPTION_RUNNING_MEETING: Lazy<StdMutex<Option<String>>> =
+    Lazy::new(|| StdMutex::new(None));
+
 /// RAII guard for RETRANSCRIPTION_IN_PROGRESS flag
 /// Ensures flag is cleared even if retranscription panics or returns early
 struct RetranscriptionGuard;
 
 impl RetranscriptionGuard {
     /// Create guard and set flag atomically
-    fn acquire() -> Result<Self, String> {
+    fn acquire(meeting_id: &str) -> Result<Self, String> {
         if RETRANSCRIPTION_IN_PROGRESS
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
         {
             return Err("Retranscription already in progress".to_string());
         }
+        // spec 4.1: remember which meeting is running so cancel can target it
+        *RETRANSCRIPTION_RUNNING_MEETING.lock().unwrap_or_else(|e| e.into_inner()) = Some(meeting_id.to_string());
         Ok(RetranscriptionGuard)
     }
 }
 
 impl Drop for RetranscriptionGuard {
     fn drop(&mut self) {
+        // spec 4.1: clear the running meeting before releasing the flag
+        *RETRANSCRIPTION_RUNNING_MEETING.lock().unwrap_or_else(|e| e.into_inner()) = None;
         RETRANSCRIPTION_IN_PROGRESS.store(false, Ordering::SeqCst);
     }
 }
@@ -82,12 +98,28 @@ pub fn is_retranscription_in_progress() -> bool {
     RETRANSCRIPTION_IN_PROGRESS.load(Ordering::SeqCst)
 }
 
-/// Cancel ongoing retranscription
-pub fn cancel_retranscription() {
-    RETRANSCRIPTION_CANCELLED.store(true, Ordering::SeqCst);
+/// Cancel the running job, but only if it belongs to `meeting_id` (or no id is given).
+/// spec 4.1: a queued meeting cannot be cancelled in this phase; the error says so.
+pub fn cancel_retranscription(meeting_id: Option<&str>) -> Result<(), String> {
+    let running = RETRANSCRIPTION_RUNNING_MEETING
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    match (meeting_id, running) {
+        (_, None) => Err("No retranscription in progress".to_string()),
+        (Some(requested), Some(ref current)) if requested != current => Err(
+            "This meeting is queued behind another job. Only the running job can be cancelled.".to_string(),
+        ),
+        _ => {
+            RETRANSCRIPTION_CANCELLED.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+    }
 }
 
-/// Start retranscription of a meeting's audio
+/// Start retranscription of a meeting's audio.
+/// spec 4.1: waits for the enhance queue, records status in metadata.json at
+/// each transition, and notifies when done.
 pub async fn start_retranscription<R: Runtime>(
     app: AppHandle<R>,
     meeting_id: String,
@@ -96,11 +128,22 @@ pub async fn start_retranscription<R: Runtime>(
     model: Option<String>,
     provider: Option<String>,
 ) -> Result<RetranscriptionResult> {
-    // Acquire guard - ensures flag is cleared even on panic/early return
-    let _guard = RetranscriptionGuard::acquire().map_err(|e| anyhow!(e))?;
+    let folder = PathBuf::from(&meeting_folder_path);
+    let provider_name = provider.clone().unwrap_or_else(|| "whisper".to_string());
+    let model_name = model.clone().unwrap_or_else(|| "configured".to_string());
+
+    set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_QUEUED, None);
+    if ENHANCE_QUEUE.try_lock().is_err() {
+        emit_progress(&app, &meeting_id, "queued", 0, "Waiting for the current enhance job to finish...");
+    }
+    let _queue_slot = ENHANCE_QUEUE.lock().await;
+
+    // Acquire guard - ensures the in-progress flag is cleared even on panic/early return
+    let _guard = RetranscriptionGuard::acquire(&meeting_id).map_err(|e| anyhow!(e))?;
 
     // Reset cancellation flag
     RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
+    set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_RUNNING, None);
 
     let use_parakeet = provider.as_deref() == Some("parakeet");
     let result = run_retranscription(app.clone(), meeting_id.clone(), meeting_folder_path, language, model, provider).await;
@@ -108,11 +151,10 @@ pub async fn start_retranscription<R: Runtime>(
     // Unload the engine after the batch job (success, failure, or cancellation)
     super::common::unload_engine_after_batch(use_parakeet).await;
 
-    // Guard will automatically clear flag on drop
-    // No need for manual: RETRANSCRIPTION_IN_PROGRESS.store(false, Ordering::SeqCst);
-
     match &result {
         Ok(res) => {
+            set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_DONE, None);
+            notify_enhance_complete(&app).await;
             let _ = app.emit(
                 "retranscription-complete",
                 serde_json::json!({
@@ -124,6 +166,7 @@ pub async fn start_retranscription<R: Runtime>(
             );
         }
         Err(e) => {
+            set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_FAILED, Some(&e.to_string()));
             let _ = app.emit(
                 "retranscription-error",
                 RetranscriptionError {
@@ -135,6 +178,39 @@ pub async fn start_retranscription<R: Runtime>(
     }
 
     result
+}
+
+/// Write the status to metadata.json and tell the UI. Failures to write are
+/// logged, never fatal: the transcript matters more than the badge.
+fn set_enhance_status<R: Runtime>(
+    app: &AppHandle<R>,
+    meeting_id: &str,
+    folder: &Path,
+    provider: &str,
+    model: &str,
+    status: &str,
+    error: Option<&str>,
+) {
+    if let Err(e) = enhance_status::write_enhance_status(folder, provider, model, status, error) {
+        warn!("Could not write enhance status '{}' for {}: {}", status, meeting_id, e);
+    }
+    let _ = app.emit(
+        "enhance-status-changed",
+        serde_json::json!({ "meeting_id": meeting_id, "status": status }),
+    );
+}
+
+/// OS notification through the existing NotificationManager. Respects the
+/// user's `show_transcription_complete` preference because the manager checks it.
+async fn notify_enhance_complete<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(state) = app.try_state::<NotificationManagerState<R>>() {
+        let guard = state.read().await;
+        if let Some(manager) = guard.as_ref() {
+            if let Err(e) = manager.show_transcription_complete(None).await {
+                warn!("Enhance complete notification failed: {}", e);
+            }
+        }
+    }
 }
 
 /// Find audio file in meeting folder
@@ -293,8 +369,15 @@ async fn run_retranscription<R: Runtime>(
     }
 
     if total_segments == 0 {
-        warn!("No speech detected in audio");
-        return Err(anyhow!("No speech detected in audio file"));
+        // spec 4.1: silence is not a failure. Leave the live transcript and files as they are.
+        warn!("No speech detected in audio; nothing to enhance for meeting {}", meeting_id);
+        emit_progress(&app, &meeting_id, "complete", 100, "No speech detected; nothing to enhance");
+        return Ok(RetranscriptionResult {
+            meeting_id,
+            segments_count: 0,
+            duration_seconds,
+            language,
+        });
     }
 
     emit_progress(&app, &meeting_id, "transcribing", 25, "Loading transcription engine...");
@@ -787,10 +870,7 @@ pub async fn start_retranscription_command<R: Runtime>(
     provider: Option<String>,
 ) -> Result<RetranscriptionStarted, String> {
 
-    // Check if retranscription is already in progress (guard will be acquired in start_retranscription)
-    if RETRANSCRIPTION_IN_PROGRESS.load(Ordering::SeqCst) {
-        return Err("Retranscription already in progress".to_string());
-    }
+    // spec 4.1: a job that arrives while another runs waits in ENHANCE_QUEUE.
 
     // Clone values for the spawned task
     let meeting_id_clone = meeting_id.clone();
@@ -821,12 +901,9 @@ pub async fn start_retranscription_command<R: Runtime>(
 }
 
 #[tauri::command]
-pub async fn cancel_retranscription_command() -> Result<(), String> {
-    if !is_retranscription_in_progress() {
-        return Err("No retranscription in progress".to_string());
-    }
-    cancel_retranscription();
-    Ok(())
+pub async fn cancel_retranscription_command(meeting_id: Option<String>) -> Result<(), String> {
+    // spec 4.1: cancel only the running job's meeting
+    cancel_retranscription(meeting_id.as_deref())
 }
 
 #[tauri::command]
@@ -837,6 +914,9 @@ pub async fn is_retranscription_in_progress_command() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// spec 4.1: serialises tests that touch the shared cancel and running-meeting state
+    static TEST_LOCK: StdMutex<()> = StdMutex::new(());
 
     #[test]
     fn test_create_transcript_segments_empty() {
@@ -916,18 +996,42 @@ mod tests {
 
     #[test]
     fn test_cancellation_flag() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // Reset flag to known state
         RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
         RETRANSCRIPTION_IN_PROGRESS.store(false, Ordering::SeqCst);
 
         assert!(!is_retranscription_in_progress());
 
+        // spec 4.1: cancel needs a running job, so simulate one
+        *RETRANSCRIPTION_RUNNING_MEETING.lock().unwrap() = Some("x".to_string());
+
         // Test cancellation
-        cancel_retranscription();
+        assert!(cancel_retranscription(None).is_ok());
         assert!(RETRANSCRIPTION_CANCELLED.load(Ordering::SeqCst));
 
         // Reset for other tests
         RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
+        *RETRANSCRIPTION_RUNNING_MEETING.lock().unwrap() = None;
+    }
+
+    // spec 4.1
+    #[test]
+    fn cancel_only_targets_the_running_meeting() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
+        *RETRANSCRIPTION_RUNNING_MEETING.lock().unwrap() = None;
+        assert!(cancel_retranscription(Some("a")).is_err(), "nothing running");
+
+        *RETRANSCRIPTION_RUNNING_MEETING.lock().unwrap() = Some("a".to_string());
+        assert!(cancel_retranscription(Some("b")).is_err(), "b is not the running job");
+        assert!(!RETRANSCRIPTION_CANCELLED.load(Ordering::SeqCst));
+
+        assert!(cancel_retranscription(Some("a")).is_ok());
+        assert!(RETRANSCRIPTION_CANCELLED.load(Ordering::SeqCst));
+
+        RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
+        *RETRANSCRIPTION_RUNNING_MEETING.lock().unwrap() = None;
     }
 
     #[test]
@@ -1050,5 +1154,16 @@ mod tests {
         assert_eq!(metadata["summary_language"], "fr");
         assert_eq!(metadata["custom_field"], "preserve me");
         assert!(metadata.get("detected_summary_language").is_none());
+    }
+
+    #[tokio::test]
+    async fn enhance_queue_serializes_jobs() {
+        let first = ENHANCE_QUEUE.lock().await;
+        assert!(
+            ENHANCE_QUEUE.try_lock().is_err(),
+            "a second job must wait while the first holds the slot"
+        );
+        drop(first);
+        assert!(ENHANCE_QUEUE.try_lock().is_ok());
     }
 }
