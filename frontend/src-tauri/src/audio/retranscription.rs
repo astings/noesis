@@ -176,6 +176,21 @@ pub async fn start_retranscription<R: Runtime>(
     match &result {
         Ok(res) => {
             set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_DONE, None);
+            // spec 4.7: hand the finished transcript to the user's hook, if configured
+            if res.segments_count > 0 {
+                match super::recording_preferences::load_recording_preferences(&app).await {
+                    Ok(prefs) => {
+                        let command = prefs.post_enhance_command.trim();
+                        if !command.is_empty() {
+                            let ctx = super::post_enhance_hook::read_context(&folder, &meeting_id);
+                            if let Err(e) = super::post_enhance_hook::spawn(command, &ctx) {
+                                warn!("Post-enhance hook failed to start for {}: {}", meeting_id, e);
+                            }
+                        }
+                    }
+                    Err(e) => warn!("Post-enhance hook skipped for {}: could not load preferences: {}", meeting_id, e),
+                }
+            }
             notify_enhance_complete(&app).await;
             let _ = app.emit(
                 "retranscription-complete",

@@ -57,6 +57,8 @@ pub mod library;
 pub mod transcript_md;
 // spec 4.4: speaker labels from per-stream energy
 pub mod speaker_energy;
+// spec 4.7: post-enhance hook
+pub mod post_enhance_hook;
 
 // Import module (import external audio files as new meetings)
 pub mod import;

@@ -45,6 +45,9 @@ pub struct RecordingPreferences {
     // spec 4.4: how the owner is named in transcripts ("me" segments)
     #[serde(default = "default_owner_name")]
     pub owner_name: String,
+    // spec 4.7: shell command run when an enhance job finishes; empty means off
+    #[serde(default)]
+    pub post_enhance_command: String,
 }
 
 fn default_true() -> bool {
@@ -80,6 +83,7 @@ impl Default for RecordingPreferences {
             auto_stop_on_call_end: true,
             auto_start_on_call: true,
             owner_name: default_owner_name(),
+            post_enhance_command: String::new(),
         }
     }
 }
@@ -461,6 +465,13 @@ mod tests {
         let d = RecordingPreferences::default();
         assert!(d.auto_stop_on_call_end);
         assert!(d.auto_start_on_call);
+    }
+
+    #[test]
+    fn post_enhance_command_defaults_to_empty() {
+        let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
+        let p: RecordingPreferences = serde_json::from_str(old).unwrap();
+        assert_eq!(p.post_enhance_command, "");
     }
 
     #[test]

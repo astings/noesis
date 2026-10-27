@@ -169,7 +169,7 @@ Lazier alternative: no server, just `transcript.md` plus the root path written i
 
 What: let the app kick off a wiki workflow when a transcript is ready.
 
-How: one preference `post_enhance_command: String` (empty means off). When an enhance job finishes, run it through `sh -c` detached, with `MEETILY_FOLDER`, `MEETILY_PROJECT`, `MEETILY_TITLE` and `MEETILY_MEETING_ID` in the environment, output appended to `hook.log` in the meeting folder. About 15 lines in `retranscription.rs`.
+How: one preference `post_enhance_command: String` (empty means off). When an enhance job finishes, run it through `sh -c` detached, with `MEETILY_FOLDER`, `MEETILY_PROJECT`, `MEETILY_TITLE` and `MEETILY_MEETING_ID` in the environment, output appended to `hook.log` in the meeting folder. About 15 lines in `retranscription.rs`. The log is the only record of the hook; `metadata.json` does not track it.
 
 The wiki automation itself is a user script outside the app. The reference script maps project to wiki directory and runs `claude -p "Process the new recording at $MEETILY_FOLDER"` in that directory. Recommendation: the wiki skills should only draft (transcript doc plus a draft log entry) when invoked this way, and leave scoring, tracker and Blueprint writes for a reviewed session. That is a wiki skill decision, not an app decision.
 
@@ -205,7 +205,6 @@ See 4.2. Root, then project, then meeting. Legacy flat meeting folders at the ro
     "live": {"provider": "parakeet", "model": "parakeet-tdt-0.6b-v3-int8"},
     "enhanced": {"provider": "whisper", "model": "large-v3", "status": "done", "at": "2026-10-26T19:31:30Z", "error": null}
   },
-  "hook": {"status": "done", "at": "2026-10-26T19:32:01Z"},
   "retranscribed_at": "2026-10-26T19:31:30Z"
 }
 ```

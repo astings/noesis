@@ -26,6 +26,7 @@ export interface RecordingPreferences {
   auto_stop_on_call_end: boolean;
   auto_start_on_call: boolean;
   owner_name: string; // spec 4.4
+  post_enhance_command: string; // spec 4.7
 }
 
 interface RecordingSettingsProps {
@@ -46,6 +47,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     auto_stop_on_call_end: true,
     auto_start_on_call: true,
     owner_name: 'Me',
+    post_enhance_command: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -88,6 +90,17 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     setOwnerDraft(null);
     if (name === preferences.owner_name) return;
     const next = { ...preferences, owner_name: name };
+    setPreferences(next);
+    await savePreferences(next);
+  };
+
+  // spec 4.7
+  const [hookDraft, setHookDraft] = useState<string | null>(null);
+  const commitHookCommand = async () => {
+    const command = (hookDraft ?? preferences.post_enhance_command).trim();
+    setHookDraft(null);
+    if (command === preferences.post_enhance_command) return;
+    const next = { ...preferences, post_enhance_command: command };
     setPreferences(next);
     await savePreferences(next);
   };
@@ -284,6 +297,24 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
             )}
           </div>
         )}
+      </div>
+
+      {/* spec 4.7: post-enhance hook */}
+      <div className="p-4 border rounded-lg">
+        <div className="font-medium">Run after enhance</div>
+        <div className="text-sm text-gray-600 mb-2">
+          Shell command started when a transcript is enhanced. It gets MEETILY_FOLDER, MEETILY_PROJECT, MEETILY_TITLE and MEETILY_MEETING_ID; output goes to hook.log in the meeting folder. Empty means off.
+        </div>
+        <Input
+          aria-label="Run after enhance"
+          className="font-mono text-sm"
+          placeholder="~/Code/Perso/ok-meetily/scripts/post-enhance.sh"
+          value={hookDraft ?? preferences.post_enhance_command}
+          onChange={(e) => setHookDraft(e.target.value)}
+          onBlur={commitHookCommand}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+          disabled={saving}
+        />
       </div>
 
       {/* spec 4.5: Zoom call detection */}
