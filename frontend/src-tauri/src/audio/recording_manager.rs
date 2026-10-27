@@ -236,6 +236,7 @@ impl RecordingManager {
         // Set up transcription channel
         let (transcription_sender, transcription_receiver) = mpsc::unbounded_channel::<AudioChunk>();
         let (recording_sender, recording_receiver) = mpsc::unbounded_channel::<AudioChunk>();
+        let (energy_sender, energy_receiver) = mpsc::unbounded_channel::<Vec<(f32, f32)>>(); // spec 4.4
 
         // Start recording state first
         self.state.start_recording()?;
@@ -267,6 +268,7 @@ impl RecordingManager {
             0, // Ignored - using dynamic sizing internally
             48000, // 48kHz sample rate
             Some(recording_sender), // CRITICAL: Pass recording sender to receive pre-mixed audio
+            Some(energy_sender), // spec 4.4
             mic_name,
             mic_kind,
             sys_name,
@@ -277,6 +279,7 @@ impl RecordingManager {
         }
 
         self.recording_saver.start_accumulation(auto_save, recording_receiver);
+        self.recording_saver.start_energy_accumulation(energy_receiver); // spec 4.4
         self.recording_saver.set_device_info(
             microphone_device.as_ref().map(|d| d.name.clone()),
             system_device.as_ref().map(|d| d.name.clone())
@@ -517,6 +520,16 @@ impl RecordingManager {
     // spec 4.2
     pub fn set_project(&mut self, project: Option<String>) {
         self.recording_saver.set_project(project);
+    }
+
+    // spec 4.4
+    pub fn set_owner_name(&mut self, name: String) {
+        self.recording_saver.set_owner_name(name);
+    }
+
+    // spec 4.4
+    pub fn take_timeline(&self) -> super::speaker_energy::EnergyTimeline {
+        self.recording_saver.take_timeline()
     }
 
     // spec 4.5

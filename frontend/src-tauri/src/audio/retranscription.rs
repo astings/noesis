@@ -2,7 +2,7 @@
 
 use crate::audio::decoder::decode_audio_file;
 use crate::audio::vad::get_speech_chunks_with_progress;
-use super::common::{create_transcript_segments, split_segment_at_silence, write_transcripts_json};
+use super::common::{create_labelled_transcript_segments, split_segment_at_silence, write_transcripts_json};
 use super::constants::AUDIO_EXTENSIONS;
 use super::enhance_status::{self, STATUS_DONE, STATUS_FAILED, STATUS_QUEUED, STATUS_RUNNING};
 use crate::config::{DEFAULT_WHISPER_MODEL, DEFAULT_PARAKEET_MODEL};
@@ -235,6 +235,49 @@ async fn notify_enhance_complete<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// spec 4.4: cut a VAD segment at absolute millisecond positions (16 kHz samples).
+/// Boundaries at or outside the segment edges are ignored.
+fn split_at_boundaries(segment: &crate::audio::vad::SpeechSegment, boundaries_ms: &[f64]) -> Vec<crate::audio::vad::SpeechSegment> {
+    const SR: f64 = 16000.0;
+    let mut cuts: Vec<f64> = boundaries_ms
+        .iter()
+        .copied()
+        .filter(|b| *b > segment.start_timestamp_ms && *b < segment.end_timestamp_ms)
+        .collect();
+    cuts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    cuts.dedup();
+    if cuts.is_empty() {
+        return vec![segment.clone()];
+    }
+    let mut parts = Vec::with_capacity(cuts.len() + 1);
+    let mut prev_ms = segment.start_timestamp_ms;
+    let mut prev_idx = 0usize;
+    for cut in cuts {
+        let idx = (((cut - segment.start_timestamp_ms) / 1000.0) * SR).round() as usize;
+        let idx = idx.min(segment.samples.len()).max(prev_idx);
+        if idx > prev_idx {
+            parts.push(crate::audio::vad::SpeechSegment {
+                samples: segment.samples[prev_idx..idx].to_vec(),
+                start_timestamp_ms: prev_ms,
+                end_timestamp_ms: cut,
+                confidence: segment.confidence,
+            });
+        }
+        prev_ms = cut;
+        prev_idx = idx;
+    }
+    // The last piece ends at the real sample count, not at a rounded millisecond position
+    if segment.samples.len() > prev_idx {
+        parts.push(crate::audio::vad::SpeechSegment {
+            samples: segment.samples[prev_idx..].to_vec(),
+            start_timestamp_ms: prev_ms,
+            end_timestamp_ms: segment.end_timestamp_ms,
+            confidence: segment.confidence,
+        });
+    }
+    parts
+}
+
 /// Find audio file in meeting folder
 /// Tries common names first, then scans for any file with an audio extension
 fn find_audio_file(folder: &Path) -> Result<PathBuf> {
@@ -438,14 +481,30 @@ async fn run_retranscription<R: Runtime>(
         }
     }
 
-    let processable_count = processable_segments.len();
-    info!("Processing {} segments (after splitting)", processable_count);
+    // spec 4.4: split at speaker turns and remember who spoke, when the recording has an energy timeline
+    let timeline = super::speaker_energy::EnergyTimeline::load(&folder_path);
+    let refs = timeline.as_ref().map(|t| t.references());
+    let mut labelled_segments: Vec<(crate::audio::vad::SpeechSegment, Option<String>)> = Vec::new();
+    for segment in processable_segments {
+        match (&timeline, refs) {
+            (Some(t), Some(r)) => {
+                let cuts = t.turn_boundaries(segment.start_timestamp_ms, segment.end_timestamp_ms, r, 1000);
+                for part in split_at_boundaries(&segment, &cuts) {
+                    let label = t.label_span(part.start_timestamp_ms, part.end_timestamp_ms, r).map(|s| s.as_str().to_string());
+                    labelled_segments.push((part, label));
+                }
+            }
+            _ => labelled_segments.push((segment, None)),
+        }
+    }
+    let processable_count = labelled_segments.len();
+    info!("Processing {} segments (after silence and speaker-turn splitting)", processable_count);
 
     // Process each speech segment with progress updates
-    let mut all_transcripts: Vec<(String, f64, f64)> = Vec::new(); // (text, start_ms, end_ms)
+    let mut all_transcripts: Vec<(String, f64, f64, Option<String>)> = Vec::new(); // (text, start_ms, end_ms, speaker)
     let mut total_confidence = 0.0f32;
 
-    for (i, segment) in processable_segments.iter().enumerate() {
+    for (i, (segment, speaker)) in labelled_segments.iter().enumerate() {
         // Check for cancellation before each segment
         if RETRANSCRIPTION_CANCELLED.load(Ordering::SeqCst) {
             return Err(anyhow!("Retranscription cancelled"));
@@ -498,7 +557,7 @@ async fn run_retranscription<R: Runtime>(
                 i + 1, processable_count, segment_duration_sec, conf,
                 if trimmed.len() > 80 { let mut end = 80; while !trimmed.is_char_boundary(end) { end -= 1; } &trimmed[..end] } else { trimmed }
             );
-            all_transcripts.push((text, segment.start_timestamp_ms, segment.end_timestamp_ms));
+            all_transcripts.push((text, segment.start_timestamp_ms, segment.end_timestamp_ms, speaker.clone()));
             total_confidence += conf;
         } else {
             debug!("Segment {}/{}: {:.1}s — empty transcription", i + 1, processable_count, segment_duration_sec);
@@ -525,7 +584,7 @@ async fn run_retranscription<R: Runtime>(
     emit_progress(&app, &meeting_id, "saving", 80, "Saving transcripts...");
 
     // Create transcript segments with proper timestamps from VAD
-    let segments = create_transcript_segments(&all_transcripts);
+    let segments = create_labelled_transcript_segments(&all_transcripts);
 
     // Save to database
     let app_state = app
@@ -547,8 +606,8 @@ async fn run_retranscription<R: Runtime>(
 
     for segment in &segments {
         sqlx::query(
-            "INSERT INTO transcripts (id, meeting_id, transcript, timestamp, audio_start_time, audio_end_time, duration)
-             VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO transcripts (id, meeting_id, transcript, timestamp, audio_start_time, audio_end_time, duration, speaker)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&segment.id)
         .bind(&meeting_id)
@@ -557,6 +616,7 @@ async fn run_retranscription<R: Runtime>(
         .bind(segment.audio_start_time)
         .bind(segment.audio_end_time)
         .bind(segment.duration)
+        .bind(&segment.speaker) // spec 4.4
         .execute(&mut *tx)
         .await
         .map_err(|e| anyhow!("Failed to insert transcript: {}", e))?;
@@ -591,6 +651,15 @@ async fn run_retranscription<R: Runtime>(
         let created_at = meta_json.get("created_at").and_then(|v| v.as_str()).unwrap_or("");
         let started_at = super::transcript_md::local_iso(created_at);
         let model_label = format!("{} {}", if use_parakeet { "parakeet" } else { "whisper" }, model.as_deref().unwrap_or("configured"));
+        // spec 4.4: names only when at least one segment carries a label
+        let speaker_names = if segments.iter().any(|s| s.speaker.is_some()) {
+            Some((
+                meta_json["speakers"]["me"].as_str().unwrap_or("Me"),
+                meta_json["speakers"]["them"].as_str().unwrap_or("Others"),
+            ))
+        } else {
+            None
+        };
         let md_meta = super::transcript_md::TranscriptMdMeta {
             title,
             project,
@@ -599,10 +668,15 @@ async fn run_retranscription<R: Runtime>(
             duration_seconds: Some(duration_seconds),
             quality: "enhanced",
             model: &model_label,
+            speaker_names, // spec 4.4
         };
-        let md_segments: Vec<(f64, String)> = segments
+        let md_segments: Vec<super::transcript_md::MdSegment> = segments
             .iter()
-            .map(|s| (s.audio_start_time.unwrap_or(0.0), s.text.clone()))
+            .map(|s| super::transcript_md::MdSegment {
+                start: s.audio_start_time.unwrap_or(0.0),
+                speaker: s.speaker.clone(), // spec 4.4
+                text: s.text.clone(),
+            })
             .collect();
         if let Err(e) = super::transcript_md::write_transcript_md(&folder_path, &md_meta, &md_segments) {
             warn!("Failed to write transcript.md after enhance: {}", e);
@@ -980,6 +1054,28 @@ pub async fn is_retranscription_in_progress_command() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::common::create_transcript_segments;
+
+    // spec 4.4
+    #[test]
+    fn split_at_boundaries_cuts_samples_and_timestamps() {
+        let seg = crate::audio::vad::SpeechSegment {
+            samples: vec![0.1; 16000 * 3], // 3 s at 16 kHz
+            start_timestamp_ms: 10_000.0,
+            end_timestamp_ms: 13_000.0,
+            confidence: 0.9,
+        };
+        let parts = split_at_boundaries(&seg, &[11_000.0, 12_000.0]);
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0].samples.len(), 16000);
+        assert_eq!(parts[1].start_timestamp_ms, 11_000.0);
+        assert_eq!(parts[2].end_timestamp_ms, 13_000.0);
+        let uneven = split_at_boundaries(&seg, &[11_000.04, 12_000.0]);
+        assert_eq!(uneven.iter().map(|p| p.samples.len()).sum::<usize>(), 16000 * 3, "no sample is lost to rounding");
+        assert_eq!(uneven[0].samples.len(), 16001);
+        assert_eq!(split_at_boundaries(&seg, &[]).len(), 1);
+        assert_eq!(split_at_boundaries(&seg, &[10_000.0, 13_000.0, 500.0]).len(), 1, "boundaries at the edges or outside are ignored");
+    }
 
     /// spec 4.1: serialises tests that touch the shared cancel and running-meeting state
     static TEST_LOCK: StdMutex<()> = StdMutex::new(());

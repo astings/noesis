@@ -16,6 +16,16 @@ pub struct TranscriptMdMeta<'a> {
     pub quality: &'a str,
     /// e.g. "whisper large-v3"
     pub model: &'a str,
+    /// spec 4.4: (name for "me", name for "them"); None when the meeting has no labels
+    pub speaker_names: Option<(&'a str, &'a str)>,
+}
+
+/// spec 4.4
+pub struct MdSegment {
+    pub start: f64,
+    /// "me", "them", "both" or None
+    pub speaker: Option<String>,
+    pub text: String,
 }
 
 /// `[mm:ss]` style time; minutes are not wrapped at 60 so a 2 hour call reads 120:00.
@@ -35,7 +45,7 @@ fn yaml_string(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-pub fn render_transcript_md(meta: &TranscriptMdMeta, segments: &[(f64, String)]) -> String {
+pub fn render_transcript_md(meta: &TranscriptMdMeta, segments: &[MdSegment]) -> String {
     let mut out = String::new();
     out.push_str("---\n");
     out.push_str(&format!("title: {}\n", yaml_string(meta.title)));
@@ -47,19 +57,31 @@ pub fn render_transcript_md(meta: &TranscriptMdMeta, segments: &[(f64, String)])
     }
     out.push_str(&format!("quality: {}\n", meta.quality));
     out.push_str(&format!("model: {}\n", meta.model));
+    // spec 4.4
+    if let Some((me, them)) = meta.speaker_names {
+        out.push_str(&format!("speakers: me={}, them={}\n", me, them));
+    }
     out.push_str("---\n");
-    for (start, text) in segments {
-        let one_line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    for seg in segments {
+        let one_line = seg.text.split_whitespace().collect::<Vec<_>>().join(" ");
         if one_line.is_empty() {
             continue;
         }
-        out.push_str(&format!("[{}] {}\n", format_mmss(*start), one_line));
+        let name = match (seg.speaker.as_deref(), meta.speaker_names) {
+            (Some("me"), Some((me, _))) => Some(me),
+            (Some("them"), Some((_, them))) => Some(them),
+            _ => None,
+        };
+        match name {
+            Some(n) => out.push_str(&format!("[{}] {}: {}\n", format_mmss(seg.start), n, one_line)),
+            None => out.push_str(&format!("[{}] {}\n", format_mmss(seg.start), one_line)),
+        }
     }
     out
 }
 
 /// Write `transcript.md` through a temp file and rename.
-pub fn write_transcript_md(folder: &Path, meta: &TranscriptMdMeta, segments: &[(f64, String)]) -> Result<()> {
+pub fn write_transcript_md(folder: &Path, meta: &TranscriptMdMeta, segments: &[MdSegment]) -> Result<()> {
     let tmp = folder.join(".transcript.md.tmp");
     std::fs::write(&tmp, render_transcript_md(meta, segments))?;
     std::fs::rename(&tmp, folder.join("transcript.md"))?;
@@ -88,8 +110,12 @@ mod tests {
             duration_seconds: Some(2555.2),
             quality: "enhanced",
             model: "whisper large-v3",
+            speaker_names: None,
         };
-        let segments = vec![(0.0, "Thank you. Hello.".to_string()), (4.2, "Yes, it's been\na long time.".to_string())];
+        let segments = vec![
+            MdSegment { start: 0.0, speaker: None, text: "Thank you. Hello.".to_string() },
+            MdSegment { start: 4.2, speaker: None, text: "Yes, it's been\na long time.".to_string() },
+        ];
         let md = render_transcript_md(&meta, &segments);
         let expected = "---\n\
 title: \"Western \\\"Digital\\\" onboarding\"\n\
@@ -110,6 +136,7 @@ model: whisper large-v3\n\
         let meta = TranscriptMdMeta {
             title: "t", project: "_inbox", meeting_id: "m", started_at: "2026-10-27T12:03:09+00:00",
             duration_seconds: None, quality: "live", model: "parakeet parakeet-tdt-0.6b-v3-int8",
+            speaker_names: None,
         };
         let md = render_transcript_md(&meta, &[]);
         assert!(!md.contains("duration_seconds"));
@@ -122,8 +149,9 @@ model: whisper large-v3\n\
         let meta = TranscriptMdMeta {
             title: "t", project: "p", meeting_id: "m", started_at: "2026-10-27T12:03:09+00:00",
             duration_seconds: Some(1.0), quality: "live", model: "x",
+            speaker_names: None,
         };
-        write_transcript_md(dir.path(), &meta, &[(0.0, "hi".into())]).unwrap();
+        write_transcript_md(dir.path(), &meta, &[MdSegment { start: 0.0, speaker: None, text: "hi".into() }]).unwrap();
         let text = std::fs::read_to_string(dir.path().join("transcript.md")).unwrap();
         assert!(text.contains("[00:00] hi"));
         assert!(!dir.path().join(".transcript.md.tmp").exists());
@@ -135,5 +163,24 @@ model: whisper large-v3\n\
         assert!(out.starts_with("2026-10-27T"), "{}", out);
         assert!(!out.ends_with("Z") || out.ends_with("+00:00"), "has an offset: {}", out);
         assert_eq!(local_iso("not a date"), "not a date");
+    }
+
+    // spec 4.4
+    #[test]
+    fn labelled_lines_carry_names_and_frontmatter_lists_speakers() {
+        let meta = TranscriptMdMeta {
+            title: "t", project: "dex", meeting_id: "m", started_at: "2026-10-27T12:03:09-04:00",
+            duration_seconds: None, quality: "enhanced", model: "whisper large-v3",
+            speaker_names: Some(("Alexandre", "Others")),
+        };
+        let segments = vec![
+            MdSegment { start: 0.0, speaker: Some("me".into()), text: "Hello.".into() },
+            MdSegment { start: 4.0, speaker: Some("them".into()), text: "Hi there.".into() },
+            MdSegment { start: 9.0, speaker: Some("both".into()), text: "Yes yes.".into() },
+            MdSegment { start: 12.0, speaker: None, text: "Unknown.".into() },
+        ];
+        let md = render_transcript_md(&meta, &segments);
+        assert!(md.contains("model: whisper large-v3\nspeakers: me=Alexandre, them=Others\n---\n"), "{}", md);
+        assert!(md.ends_with("[00:00] Alexandre: Hello.\n[00:04] Others: Hi there.\n[00:09] Yes yes.\n[00:12] Unknown.\n"), "{}", md);
     }
 }

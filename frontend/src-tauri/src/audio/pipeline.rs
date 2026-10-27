@@ -626,6 +626,7 @@ impl AudioCapture {
             timestamp,
             chunk_id,
             device_type: self.device_type.clone(),
+            speaker: None, // spec 4.4
         };
 
         // NOTE: Raw audio is NOT sent to recording saver to prevent echo
@@ -707,6 +708,9 @@ pub struct AudioPipeline {
     mixer: ProfessionalAudioMixer,
     // Recording sender for pre-mixed audio
     recording_sender_for_mixed: Option<mpsc::UnboundedSender<AudioChunk>>,
+    // spec 4.4: per-stream energy before mixing, for speaker labels
+    timeline: super::speaker_energy::EnergyTimeline,
+    energy_sender: Option<mpsc::UnboundedSender<Vec<(f32, f32)>>>,
 }
 
 impl AudioPipeline {
@@ -785,6 +789,8 @@ impl AudioPipeline {
             ring_buffer,
             mixer,
             recording_sender_for_mixed: None,  // Will be set by manager
+            timeline: super::speaker_energy::EnergyTimeline::new(), // spec 4.4
+            energy_sender: None, // spec 4.4
         })
     }
 
@@ -847,6 +853,11 @@ impl AudioPipeline {
                     // STEP 2: Mix audio in fixed windows when both streams have sufficient data
                     while self.ring_buffer.can_mix() {
                         if let Some((mic_window, sys_window)) = self.ring_buffer.extract_window() {
+                            // spec 4.4: record who is loud while the streams are still separate
+                            let pairs = self.timeline.push_window_pair(&mic_window, &sys_window, self.sample_rate);
+                            if let Some(sender) = &self.energy_sender {
+                                let _ = sender.send(pairs);
+                            }
                             // Simple mixing without aggressive ducking
                             let mixed_clean = self.mixer.mix_window(&mic_window, &sys_window);
 
@@ -866,12 +877,17 @@ impl AudioPipeline {
                                             info!("📤 Sending VAD segment: {:.1}ms, {} samples",
                                                   duration_ms, segment.samples.len());
 
+                                            let speaker = self
+                                                .timeline
+                                                .label_span(segment.start_timestamp_ms, segment.end_timestamp_ms, self.timeline.running_references())
+                                                .map(|s| s.as_str().to_string()); // spec 4.4
                                             let transcription_chunk = AudioChunk {
                                                 data: segment.samples,
                                                 sample_rate: 16000,
                                                 timestamp: segment.start_timestamp_ms / 1000.0,
                                                 chunk_id: self.chunk_id_counter,
                                                 device_type: DeviceType::Microphone,  // Mixed audio
+                                                speaker,
                                             };
 
                                             if let Err(e) = self.transcription_sender.send(transcription_chunk) {
@@ -898,6 +914,7 @@ impl AudioPipeline {
                                     timestamp: chunk.timestamp,
                                     chunk_id: self.chunk_id_counter,
                                     device_type: DeviceType::Microphone,  // Mixed audio
+                                    speaker: None, // spec 4.4
                                 };
                                 let _ = sender.send(recording_chunk);
                             }
@@ -936,12 +953,17 @@ impl AudioPipeline {
                         info!("📤 Sending final VAD segment to Whisper: {:.1}ms duration, {} samples",
                               duration_ms, segment.samples.len());
 
+                        let speaker = self
+                            .timeline
+                            .label_span(segment.start_timestamp_ms, segment.end_timestamp_ms, self.timeline.running_references())
+                            .map(|s| s.as_str().to_string()); // spec 4.4
                         let transcription_chunk = AudioChunk {
                             data: segment.samples,
                             sample_rate: 16000,
                             timestamp: segment.start_timestamp_ms / 1000.0,
                             chunk_id: self.chunk_id_counter,
                             device_type: DeviceType::Microphone,
+                            speaker,
                         };
 
                         if let Err(e) = self.transcription_sender.send(transcription_chunk) {
@@ -987,6 +1009,7 @@ impl AudioPipelineManager {
         target_chunk_duration_ms: u32,
         sample_rate: u32,
         recording_sender: Option<mpsc::UnboundedSender<AudioChunk>>,
+        energy_sender: Option<mpsc::UnboundedSender<Vec<(f32, f32)>>>, // spec 4.4
         mic_device_name: String,
         mic_device_kind: super::device_detection::InputDeviceKind,
         system_device_name: String,
@@ -1018,6 +1041,7 @@ impl AudioPipelineManager {
         // CRITICAL FIX: Connect recording sender to receive pre-mixed audio
         // This ensures both mic AND system audio are captured in recordings
         pipeline.recording_sender_for_mixed = recording_sender;
+        pipeline.energy_sender = energy_sender; // spec 4.4
 
         let handle = tokio::spawn(async move {
             pipeline.run().await
@@ -1063,6 +1087,7 @@ impl AudioPipelineManager {
                 timestamp: 0.0,
                 chunk_id: u64::MAX, // Special ID to indicate flush
                 device_type: super::recording_state::DeviceType::Microphone,
+                speaker: None, // spec 4.4
             };
 
             if let Err(e) = sender.send(flush_chunk) {
@@ -1083,6 +1108,7 @@ impl AudioPipelineManager {
                         timestamp: 0.0,
                         chunk_id: u64::MAX - (i as u64),
                         device_type: super::recording_state::DeviceType::Microphone,
+                        speaker: None, // spec 4.4
                     };
                     let _ = sender.send(additional_flush);
                 }

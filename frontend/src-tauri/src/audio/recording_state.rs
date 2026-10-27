@@ -22,6 +22,8 @@ pub struct AudioChunk {
     pub timestamp: f64,
     pub chunk_id: u64,
     pub device_type: DeviceType,
+    /// spec 4.4: "me", "them" or "both" for VAD segments sent to transcription; None elsewhere
+    pub speaker: Option<String>,
 }
 
 /// Processed audio chunk (post-VAD) for recording

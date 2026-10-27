@@ -55,6 +55,8 @@ pub mod enhance_status;
 pub mod library;
 // spec 4.3: transcript.md contract
 pub mod transcript_md;
+// spec 4.4: speaker labels from per-stream energy
+pub mod speaker_energy;
 
 // Import module (import external audio files as new meetings)
 pub mod import;

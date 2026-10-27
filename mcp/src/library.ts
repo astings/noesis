@@ -113,13 +113,13 @@ export function findMeeting(root: string, ref: { meeting_id?: string; path?: str
   return null;
 }
 
-type Segment = { start: number; text: string; raw: Json };
+type Segment = { start: number; text: string; speaker: string | null; raw: Json };
 
 function readSegments(info: MeetingInfo): Segment[] {
   const data = readJson(path.join(info.path, 'transcripts.json'));
   const list = Array.isArray(data?.segments) ? (data!.segments as Json[]) : [];
   return list
-    .map((s) => ({ start: Number(s.audio_start_time ?? 0), text: String(s.text ?? ''), raw: s, seq: Number(s.sequence_id ?? 0) }))
+    .map((s) => ({ start: Number(s.audio_start_time ?? 0), text: String(s.text ?? ''), speaker: typeof s.speaker === 'string' ? s.speaker : null, raw: s, seq: Number(s.sequence_id ?? 0) }))
     .sort((a, b) => a.seq - b.seq);
 }
 
@@ -128,7 +128,7 @@ function yamlString(s: string): string {
 }
 
 /** spec 5.3, same bytes as the Rust renderer. */
-export function renderTranscriptMd(info: MeetingInfo, model: string, segments: Array<{ start: number; text: string }>): string {
+export function renderTranscriptMd(info: MeetingInfo, model: string, segments: Array<{ start: number; text: string; speaker?: string | null }>, speakerNames?: { me: string; them: string }): string {
   let out = '---\n';
   out += `title: ${yamlString(info.title)}\n`;
   out += `project: ${info.project}\n`;
@@ -137,11 +137,14 @@ export function renderTranscriptMd(info: MeetingInfo, model: string, segments: A
   if (info.duration_seconds !== null) out += `duration_seconds: ${Math.round(info.duration_seconds)}\n`;
   out += `quality: ${info.quality}\n`;
   out += `model: ${model}\n`;
+  if (speakerNames) out += `speakers: me=${speakerNames.me}, them=${speakerNames.them}\n`; // spec 4.4
   out += '---\n';
   for (const s of segments) {
     const line = s.text.split(/\s+/).filter(Boolean).join(' ');
     if (!line) continue;
-    out += `[${formatMmss(s.start)}] ${line}\n`;
+    // spec 4.4: "both", null and unknown values stay bare
+    const name = !speakerNames ? null : s.speaker === 'me' ? speakerNames.me : s.speaker === 'them' ? speakerNames.them : null;
+    out += name ? `[${formatMmss(s.start)}] ${name}: ${line}\n` : `[${formatMmss(s.start)}] ${line}\n`;
   }
   return out;
 }
@@ -165,7 +168,14 @@ export function readTranscript(info: MeetingInfo, format: 'md' | 'text' | 'json'
   const segments = readSegments(info).filter((s) => inRange(s.start, startSeconds, endSeconds));
   if (format === 'json') return JSON.stringify(segments.map((s) => s.raw), null, 2);
   if (format === 'text') return segments.map((s) => s.text.split(/\s+/).filter(Boolean).join(' ')).filter(Boolean).map((t) => `${t}\n`).join('');
-  return renderTranscriptMd(info, modelLabel(readJson(path.join(info.path, 'metadata.json'))), segments);
+  const meta = readJson(path.join(info.path, 'metadata.json'));
+  // spec 4.4: names only when some segment is labelled, like the Rust saver
+  const labelled = segments.some((s) => s.speaker === 'me' || s.speaker === 'them' || s.speaker === 'both');
+  const sp = meta?.speakers as Json | undefined;
+  const names = labelled
+    ? { me: typeof sp?.me === 'string' ? sp.me : 'Me', them: typeof sp?.them === 'string' ? sp.them : 'Others' }
+    : undefined;
+  return renderTranscriptMd(info, modelLabel(meta), segments, names);
 }
 
 /**

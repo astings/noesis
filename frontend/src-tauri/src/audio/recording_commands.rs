@@ -354,16 +354,16 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     })).map_err(|e| e.to_string())?;
 
     // Load recording preferences to get auto_save AND device preferences
-    let (auto_save, preferred_mic_name, preferred_system_name) =
+    let (auto_save, preferred_mic_name, preferred_system_name, prefs_owner_name) =
         match super::recording_preferences::load_recording_preferences(&app).await {
             Ok(prefs) => {
                 info!("📋 Loaded recording preferences: auto_save={}, preferred_mic={:?}, preferred_system={:?}",
                       prefs.auto_save, prefs.preferred_mic_device, prefs.preferred_system_device);
-                (prefs.auto_save, prefs.preferred_mic_device, prefs.preferred_system_device)
+                (prefs.auto_save, prefs.preferred_mic_device, prefs.preferred_system_device, prefs.owner_name)
             }
             Err(e) => {
                 warn!("Failed to load recording preferences, using defaults: {}", e);
-                (true, None, None)
+                (true, None, None, "Me".to_string())
             }
         };
 
@@ -399,6 +399,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     let meeting_id = format!("meeting-{}", uuid::Uuid::new_v4());
     manager.set_meeting_id(Some(meeting_id.clone()));
     manager.set_project(project.clone());
+    manager.set_owner_name(prefs_owner_name); // spec 4.4
     if let Some(state) = app.try_state::<crate::state::AppState>() {
         match crate::database::repositories::setting::SettingsRepository::get_transcript_config(state.db_manager.pool()).await {
             Ok(Some(cfg)) => manager.set_live_transcription(Some((cfg.provider.clone(), cfg.model.clone()))),
@@ -465,6 +466,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
                     display_time: update.timestamp.clone(), // Use wall-clock timestamp for display
                     confidence: update.confidence,
                     sequence_id: update.sequence_id,
+                    speaker: update.speaker.clone(), // spec 4.4
                 };
 
                 // Save to recording manager
@@ -575,14 +577,14 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     let mut manager = RecordingManager::new();
 
     // Load recording preferences to check auto_save setting
-    let auto_save = match super::recording_preferences::load_recording_preferences(&app).await {
+    let (auto_save, prefs_owner_name) = match super::recording_preferences::load_recording_preferences(&app).await {
         Ok(prefs) => {
             info!("📋 Loaded recording preferences: auto_save={}", prefs.auto_save);
-            prefs.auto_save
+            (prefs.auto_save, prefs.owner_name)
         }
         Err(e) => {
             warn!("Failed to load recording preferences, defaulting to auto_save=true: {}", e);
-            true // Default to saving if preferences can't be loaded
+            (true, "Me".to_string()) // Default to saving if preferences can't be loaded
         }
     };
 
@@ -600,6 +602,7 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     let meeting_id = format!("meeting-{}", uuid::Uuid::new_v4());
     manager.set_meeting_id(Some(meeting_id.clone()));
     manager.set_project(project.clone());
+    manager.set_owner_name(prefs_owner_name); // spec 4.4
     if let Some(state) = app.try_state::<crate::state::AppState>() {
         match crate::database::repositories::setting::SettingsRepository::get_transcript_config(state.db_manager.pool()).await {
             Ok(Some(cfg)) => manager.set_live_transcription(Some((cfg.provider.clone(), cfg.model.clone()))),
@@ -666,6 +669,7 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
                     display_time: update.timestamp.clone(), // Use wall-clock timestamp for display
                     confidence: update.confidence,
                     sequence_id: update.sequence_id,
+                    speaker: update.speaker.clone(), // spec 4.4
                 };
 
                 // Save to recording manager

@@ -49,20 +49,28 @@ pub(crate) async fn unload_engine_after_batch(use_parakeet: bool) {
 /// Create transcript segments from transcription results.
 /// Each tuple is (text, start_ms, end_ms) from VAD timestamps.
 pub(crate) fn create_transcript_segments(transcripts: &[(String, f64, f64)]) -> Vec<TranscriptSegment> {
+    let labelled: Vec<(String, f64, f64, Option<String>)> = transcripts
+        .iter()
+        .map(|(text, s, e)| (text.clone(), *s, *e, None))
+        .collect();
+    create_labelled_transcript_segments(&labelled)
+}
+
+/// spec 4.4: segments with an optional speaker label ("me", "them", "both")
+pub(crate) fn create_labelled_transcript_segments(transcripts: &[(String, f64, f64, Option<String>)]) -> Vec<TranscriptSegment> {
     transcripts
         .iter()
-        .map(|(text, start_ms, end_ms)| {
+        .map(|(text, start_ms, end_ms, speaker)| {
             let start_seconds = start_ms / 1000.0;
             let end_seconds = end_ms / 1000.0;
-            let duration = end_seconds - start_seconds;
-
             TranscriptSegment {
                 id: format!("transcript-{}", Uuid::new_v4()),
                 text: text.trim().to_string(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 audio_start_time: Some(start_seconds),
                 audio_end_time: Some(end_seconds),
-                duration: Some(duration),
+                duration: Some(end_seconds - start_seconds),
+                speaker: speaker.clone(),
             }
         })
         .collect()
@@ -85,6 +93,7 @@ pub(crate) fn write_transcripts_json(folder: &Path, segments: &[TranscriptSegmen
                 "audio_start_time": s.audio_start_time,
                 "audio_end_time": s.audio_end_time,
                 "duration": s.duration,
+                "speaker": s.speaker, // spec 4.4
                 "sequence_id": i
             })
         }).collect::<Vec<_>>()
@@ -214,6 +223,17 @@ pub(crate) fn split_segment_at_silence(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // spec 4.4
+    #[test]
+    fn labelled_segments_keep_their_speaker() {
+        let segs = create_labelled_transcript_segments(&[
+            ("Hello".to_string(), 0.0, 1000.0, Some("me".to_string())),
+            ("Hi".to_string(), 1000.0, 2000.0, None),
+        ]);
+        assert_eq!(segs[0].speaker.as_deref(), Some("me"));
+        assert_eq!(segs[1].speaker, None);
+    }
 
     #[tokio::test]
     async fn test_engine_lifecycle_lock_serializes_acquirers() {

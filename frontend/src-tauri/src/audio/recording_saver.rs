@@ -21,6 +21,9 @@ pub struct TranscriptSegment {
     pub display_time: String,   // Formatted time for display like "[02:15]"
     pub confidence: f32,
     pub sequence_id: u64,
+    // spec 4.4: "me", "them" or "both"
+    #[serde(default)]
+    pub speaker: Option<String>,
 }
 
 /// Meeting metadata structure
@@ -49,6 +52,11 @@ pub struct MeetingMetadata {
     /// spec 4.5: "user" or "auto-stop"
     #[serde(default)]
     pub ended_by: Option<String>,
+    // spec 4.4
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speakers: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speakers_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +78,9 @@ pub struct RecordingSaver {
     meeting_id: Option<String>,
     live_transcription: Option<(String, String)>,
     ended_by: Option<String>, // spec 4.5
+    // spec 4.4
+    speaker_windows: Arc<Mutex<Vec<(f32, f32)>>>,
+    owner_name: String,
 }
 
 impl RecordingSaver {
@@ -85,7 +96,37 @@ impl RecordingSaver {
             meeting_id: None,
             live_transcription: None,
             ended_by: None,
+            speaker_windows: Arc::new(Mutex::new(Vec::new())),
+            owner_name: "Me".to_string(),
         }
+    }
+
+    /// spec 4.4: collect the per-window energies streamed by the pipeline
+    pub fn start_energy_accumulation(&mut self, mut receiver: mpsc::UnboundedReceiver<Vec<(f32, f32)>>) {
+        let windows = self.speaker_windows.clone();
+        tokio::spawn(async move {
+            while let Some(pairs) = receiver.recv().await {
+                if let Ok(mut w) = windows.lock() {
+                    w.extend(pairs);
+                }
+            }
+        });
+    }
+
+    // spec 4.4
+    pub fn set_owner_name(&mut self, name: String) {
+        // spec 4.4: one line, one space between words, so the frontmatter and the per-line contract stay intact
+        let collapsed = name.split_whitespace().collect::<Vec<_>>().join(" ");
+        self.owner_name = if collapsed.is_empty() { "Me".to_string() } else { collapsed };
+    }
+
+    /// spec 4.4: the timeline collected so far (a copy).
+    pub fn take_timeline(&self) -> super::speaker_energy::EnergyTimeline {
+        let mut t = super::speaker_energy::EnergyTimeline::new();
+        if let Ok(w) = self.speaker_windows.lock() {
+            t.extend(&w);
+        }
+        t
     }
 
     /// spec 4.5: how the recording ended; written into metadata.json at stop
@@ -177,6 +218,7 @@ impl RecordingSaver {
             display_time: "[00:00]".to_string(),
             confidence: 1.0,
             sequence_id: 0,
+            speaker: None, // spec 4.4
         };
         self.add_transcript_segment(segment);
     }
@@ -316,6 +358,8 @@ impl RecordingSaver {
                 serde_json::json!({ "live": { "provider": provider, "model": model } })
             }),
             ended_by: None, // spec 4.5
+            speakers: None,
+            speakers_file: None,
         };
 
         // Write initial metadata.json
@@ -486,6 +530,16 @@ impl RecordingSaver {
                 }
             });
 
+            // spec 4.4: persist the energy timeline and name the speakers
+            let timeline = self.take_timeline();
+            if !timeline.windows.is_empty() {
+                match timeline.save(folder) {
+                    Ok(()) => metadata.speakers_file = Some("speakers.json".to_string()),
+                    Err(e) => warn!("Failed to write speakers.json: {}", e),
+                }
+            }
+            metadata.speakers = Some(serde_json::json!({ "me": self.owner_name, "them": "Others" }));
+
             if let Err(e) = self.write_metadata(folder, &metadata) {
                 error!("❌ Failed to update metadata to completed: {}", e);
                 return Err(format!("Failed to update metadata: {}", e));
@@ -494,11 +548,21 @@ impl RecordingSaver {
             info!("✅ Metadata updated with duration: {:?}s", metadata.duration_seconds);
 
             // spec 4.3: transcript.md, quality live. Enhance rewrites it later.
-            let segments_for_md: Vec<(f64, String)> = self
+            let segments_for_md: Vec<super::transcript_md::MdSegment> = self
                 .transcript_segments
                 .lock()
-                .map(|s| s.iter().map(|t| (t.audio_start_time, t.text.clone())).collect())
+                .map(|s| {
+                    s.iter()
+                        .map(|t| super::transcript_md::MdSegment {
+                            start: t.audio_start_time,
+                            speaker: t.speaker.clone(), // spec 4.4
+                            text: t.text.clone(),
+                        })
+                        .collect()
+                })
                 .unwrap_or_default();
+            let owner_name = self.owner_name.clone(); // spec 4.4
+            let any_labelled = segments_for_md.iter().any(|m| m.speaker.is_some());
             let live_model = metadata
                 .transcription
                 .as_ref()
@@ -522,6 +586,7 @@ impl RecordingSaver {
                 duration_seconds: metadata.duration_seconds,
                 quality: "live",
                 model: &live_model,
+                speaker_names: if any_labelled { Some((owner_name.as_str(), "Others")) } else { None }, // spec 4.4
             };
             if let Err(e) = super::transcript_md::write_transcript_md(folder, &md_meta, &segments_for_md) {
                 warn!("Failed to write transcript.md: {}", e);
@@ -545,6 +610,10 @@ impl RecordingSaver {
         // Clean up transcript segments
         if let Ok(mut segments) = self.transcript_segments.lock() {
             segments.clear();
+        }
+        // spec 4.4
+        if let Ok(mut w) = self.speaker_windows.lock() {
+            w.clear();
         }
 
         Ok(Some(final_audio_path.to_string_lossy().to_string()))

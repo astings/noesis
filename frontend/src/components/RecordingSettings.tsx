@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { FolderOpen } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { DeviceSelection, SelectedDevices } from '@/components/DeviceSelection';
@@ -24,6 +25,7 @@ export interface RecordingPreferences {
   // spec 4.5
   auto_stop_on_call_end: boolean;
   auto_start_on_call: boolean;
+  owner_name: string; // spec 4.4
 }
 
 interface RecordingSettingsProps {
@@ -43,6 +45,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     enhance_language: null,
     auto_stop_on_call_end: true,
     auto_start_on_call: true,
+    owner_name: 'Me',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -74,6 +77,17 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
   // spec 4.5
   const handleAutoStartToggle = async (enabled: boolean) => {
     const next = { ...preferences, auto_start_on_call: enabled };
+    setPreferences(next);
+    await savePreferences(next);
+  };
+
+  // spec 4.4
+  const [ownerDraft, setOwnerDraft] = useState<string | null>(null);
+  const commitOwnerName = async () => {
+    const name = (ownerDraft ?? preferences.owner_name).trim() || 'Me';
+    setOwnerDraft(null);
+    if (name === preferences.owner_name) return;
+    const next = { ...preferences, owner_name: name };
     setPreferences(next);
     await savePreferences(next);
   };
@@ -292,6 +306,25 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
           </div>
           <Switch checked={preferences.auto_start_on_call} onCheckedChange={handleAutoStartToggle} disabled={saving} />
         </div>
+      </div>
+
+      {/* spec 4.4: speaker labels */}
+      <div className="p-4 border rounded-lg flex items-center justify-between gap-4">
+        <div className="flex-1">
+          <div className="font-medium">Your name in transcripts</div>
+          <div className="text-sm text-gray-600">
+            Lines from your microphone are labelled with this name; everyone else is "Others"
+          </div>
+        </div>
+        <Input
+          aria-label="Your name in transcripts"
+          className="w-44"
+          value={ownerDraft ?? preferences.owner_name}
+          onChange={(e) => setOwnerDraft(e.target.value)}
+          onBlur={commitOwnerName}
+          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+          disabled={saving}
+        />
       </div>
 
       {/* Folder Location - Only shown when auto_save is enabled */}

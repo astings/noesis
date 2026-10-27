@@ -81,6 +81,43 @@ test('readTranscript: md as written for v2, rendered for legacy, text and json',
   assert.equal(readTranscript(legacy, 'text', 60), 'Second line.\n');
 });
 
+// spec 4.4
+const labelled = { version: '1.0', total_segments: 4, segments: [
+  { id: 'a', sequence_id: 0, text: 'Hello.', audio_start_time: 0, speaker: 'me' },
+  { id: 'b', sequence_id: 1, text: 'Hi there.', audio_start_time: 4, speaker: 'them' },
+  { id: 'c', sequence_id: 2, text: 'Yes yes.', audio_start_time: 9, speaker: 'both' },
+  { id: 'd', sequence_id: 3, text: 'Unknown.', audio_start_time: 12, speaker: null },
+] };
+const labelledMeeting = (name: string, speakers: unknown, segs: unknown) => {
+  const dir = path.join(root, 'dex', name);
+  write(dir, {
+    'metadata.json': JSON.stringify({ ...v2Meta('meeting-l', 'dex', 'Labelled', 'done'), ...(speakers ? { speakers } : {}) }),
+    'transcripts.json': JSON.stringify(segs),
+  });
+  return findMeeting(root, { path: dir })!;
+};
+
+test('readTranscript md fallback carries speaker labels (spec 4.4)', () => {
+  const info = labelledMeeting('2026-10-27_14-00 l', { me: 'Alexandre', them: 'Others' }, labelled);
+  const md = readTranscript(info, 'md');
+  assert.match(md, /model: whisper large-v3\nspeakers: me=Alexandre, them=Others\n---\n/);
+  assert.ok(md.endsWith('---\n[00:00] Alexandre: Hello.\n[00:04] Others: Hi there.\n[00:09] Yes yes.\n[00:12] Unknown.\n'));
+});
+
+test('readTranscript md fallback without labels has no speakers line', () => {
+  const info = labelledMeeting('2026-10-27_14-01 u', { me: 'Alexandre', them: 'Others' }, segments);
+  const md = readTranscript(info, 'md');
+  assert.doesNotMatch(md, /speakers:/);
+  assert.ok(md.endsWith('---\n[00:00] Hello there.\n[01:05] Second line.\n'));
+});
+
+test('readTranscript md fallback defaults names to Me and Others', () => {
+  const info = labelledMeeting('2026-10-27_14-02 d', null, labelled);
+  const md = readTranscript(info, 'md');
+  assert.match(md, /speakers: me=Me, them=Others\n/);
+  assert.match(md, /\[00:00\] Me: Hello\.\n\[00:04\] Others: Hi there\.\n/);
+});
+
 test('assignMeeting moves a v2 meeting and rewrites metadata', () => {
   const a = findMeeting(root, { meeting_id: 'meeting-a' })!;
   const newPath = assignMeeting(root, a, { project: 'recruiting', title: 'Paul Kersale' });

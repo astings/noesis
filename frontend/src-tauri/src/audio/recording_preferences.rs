@@ -42,10 +42,17 @@ pub struct RecordingPreferences {
     /// Start a recording when a Zoom meeting begins.
     #[serde(default = "default_true")]
     pub auto_start_on_call: bool,
+    // spec 4.4: how the owner is named in transcripts ("me" segments)
+    #[serde(default = "default_owner_name")]
+    pub owner_name: String,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_owner_name() -> String {
+    "Me".to_string()
 }
 
 fn default_enhance_provider() -> String {
@@ -72,6 +79,7 @@ impl Default for RecordingPreferences {
             enhance_language: None,
             auto_stop_on_call_end: true,
             auto_start_on_call: true,
+            owner_name: default_owner_name(),
         }
     }
 }
@@ -453,5 +461,12 @@ mod tests {
         let d = RecordingPreferences::default();
         assert!(d.auto_stop_on_call_end);
         assert!(d.auto_start_on_call);
+    }
+
+    #[test]
+    fn owner_name_defaults_to_me() {
+        let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
+        let p: RecordingPreferences = serde_json::from_str(old).unwrap();
+        assert_eq!(p.owner_name, "Me");
     }
 }
