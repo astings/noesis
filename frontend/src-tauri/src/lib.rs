@@ -162,6 +162,7 @@ async fn start_recording<R: Runtime>(
         mic_device_name,
         system_device_name,
         meeting_name.clone(),
+        None,
     )
     .await
     {
@@ -357,7 +358,7 @@ async fn start_recording_with_devices<R: Runtime>(
     mic_device_name: Option<String>,
     system_device_name: Option<String>,
 ) -> Result<(), String> {
-    start_recording_with_devices_and_meeting(app, mic_device_name, system_device_name, None).await
+    start_recording_with_devices_and_meeting(app, mic_device_name, system_device_name, None, None).await
 }
 
 #[tauri::command]
@@ -366,6 +367,7 @@ async fn start_recording_with_devices_and_meeting<R: Runtime>(
     mic_device_name: Option<String>,
     system_device_name: Option<String>,
     meeting_name: Option<String>,
+    project: Option<String>, // spec 4.2
 ) -> Result<(), String> {
     log_info!("🚀 CALLED start_recording_with_devices_and_meeting - Mic: {:?}, System: {:?}, Meeting: {:?}",
              mic_device_name, system_device_name, meeting_name);
@@ -380,7 +382,7 @@ async fn start_recording_with_devices_and_meeting<R: Runtime>(
                 "No devices specified, starting with defaults and meeting: {:?}",
                 meeting_name
             );
-            audio::recording_commands::start_recording_with_meeting_name(app.clone(), meeting_name)
+            audio::recording_commands::start_recording_with_meeting_name(app.clone(), meeting_name, project.clone())
                 .await
         }
         _ => {
@@ -395,6 +397,7 @@ async fn start_recording_with_devices_and_meeting<R: Runtime>(
                 mic_device_name,
                 system_device_name,
                 meeting_name,
+                project,
             )
             .await
         }
@@ -584,6 +587,15 @@ pub fn run() {
                 database::setup::initialize_database_on_startup(&_app.handle()).await
             })
             .expect("Failed to initialize database");
+
+            // spec 4.2: repair the meeting index from disk once at startup
+            if let Some(state) = _app.handle().try_state::<state::AppState>() {
+                let pool = state.db_manager.pool();
+                match tauri::async_runtime::block_on(audio::library::reconcile(pool, &audio::get_default_recordings_folder())) {
+                    Ok(n) => log::info!("Library reconcile at startup: {} rows updated", n),
+                    Err(e) => log::warn!("Library reconcile at startup failed: {}", e),
+                }
+            }
 
             // Initialize bundled templates directory for dynamic template discovery
             log::info!("Initializing bundled templates directory...");
@@ -825,6 +837,8 @@ pub fn run() {
             audio::retranscription::cancel_retranscription_command,
             audio::retranscription::is_retranscription_in_progress_command,
             audio::enhance_status::list_enhance_statuses,
+            audio::library::list_projects_command,
+            audio::library::assign_meeting,
             // Import audio commands
             audio::import::select_and_validate_audio_command,
             audio::import::validate_audio_file_command,

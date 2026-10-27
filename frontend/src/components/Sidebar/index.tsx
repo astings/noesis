@@ -26,6 +26,7 @@ import {
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 
 import { MessageToast } from '../MessageToast';
+import { PROJECT_FOLDER_PREFIX } from '@/components/Sidebar/SidebarProvider';
 import Logo from '../Logo';
 import Info from '../Info';
 import { ComplianceNotification } from '../ComplianceNotification';
@@ -83,6 +84,15 @@ const Sidebar: React.FC = () => {
   const { openImportDialog } = useImportDialog();
   const { betaFeatures } = useConfig();
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['meetings']));
+  // spec 4.2: project sections are open unless the user collapsed them; the choice is kept per device
+  const COLLAPSED_PROJECTS_KEY = 'meetily.collapsedProjects';
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => {
+    try {
+      return new Set<string>(JSON.parse(localStorage.getItem(COLLAPSED_PROJECTS_KEY) || '[]'));
+    } catch {
+      return new Set<string>();
+    }
+  });
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showModelSettings, setShowModelSettings] = useState(false);
   const [modelConfig, setModelConfig] = useState<ModelConfig>({
@@ -276,66 +286,29 @@ const Sidebar: React.FC = () => {
     }
   }, [expandedFolders, searchTranscripts]);
 
+  // spec 4.2: filter meetings inside project sections; drop empty sections, keep the top folder
+  const filterTree = (items: SidebarItem[], keep: (item: SidebarItem) => boolean): SidebarItem[] => {
+    const out: SidebarItem[] = [];
+    for (const item of items) {
+      if (item.type === 'folder') {
+        const children = filterTree(item.children ?? [], keep);
+        if (children.length > 0 || item.id === 'meetings') out.push({ ...item, children });
+      } else if (keep(item)) {
+        out.push(item);
+      }
+    }
+    return out;
+  };
+
   // Combine search results with sidebar items
   const filteredSidebarItems = useMemo(() => {
     if (!searchQuery.trim()) return sidebarItems;
-
-    // If we have search results, highlight matching meetings
+    const q = searchQuery.toLowerCase();
     if (searchResults.length > 0) {
-      // Get the IDs of meetings that matched in transcripts
       const matchedMeetingIds = new Set(searchResults.map(result => result.id));
-
-      return sidebarItems
-        .map(folder => {
-          // Always include folders in the results
-          if (folder.type === 'folder') {
-            if (!folder.children) return folder;
-
-            // Filter children based on search results or title match
-            const filteredChildren = folder.children.filter(item => {
-              // Include if the meeting ID is in our search results
-              if (matchedMeetingIds.has(item.id)) return true;
-
-              // Or if the title matches the search query
-              return item.title.toLowerCase().includes(searchQuery.toLowerCase());
-            });
-
-            return {
-              ...folder,
-              children: filteredChildren
-            };
-          }
-
-          // For non-folder items, check if they match the search
-          return (matchedMeetingIds.has(folder.id) ||
-            folder.title.toLowerCase().includes(searchQuery.toLowerCase()))
-            ? folder : undefined;
-        })
-        .filter((item): item is SidebarItem => item !== undefined); // Type-safe filter
-    } else {
-      // Fall back to title-only filtering if no transcript results
-      return sidebarItems
-        .map(folder => {
-          // Always include folders in the results
-          if (folder.type === 'folder') {
-            if (!folder.children) return folder;
-
-            // Filter children based on search query
-            const filteredChildren = folder.children.filter(item =>
-              item.title.toLowerCase().includes(searchQuery.toLowerCase())
-            );
-
-            return {
-              ...folder,
-              children: filteredChildren
-            };
-          }
-
-          // For non-folder items, check if they match the search
-          return folder.title.toLowerCase().includes(searchQuery.toLowerCase()) ? folder : undefined;
-        })
-        .filter((item): item is SidebarItem => item !== undefined); // Type-safe filter
+      return filterTree(sidebarItems, item => matchedMeetingIds.has(item.id) || item.title.toLowerCase().includes(q));
     }
+    return filterTree(sidebarItems, item => item.title.toLowerCase().includes(q));
   }, [sidebarItems, searchQuery, searchResults, expandedFolders]);
 
 
@@ -443,7 +416,14 @@ const Sidebar: React.FC = () => {
   };
 
   const toggleFolder = (folderId: string) => {
-    // Normal toggle behavior for all folders
+    if (folderId.startsWith(PROJECT_FOLDER_PREFIX)) {
+      const next = new Set(collapsedProjects);
+      if (next.has(folderId)) next.delete(folderId); else next.add(folderId);
+      setCollapsedProjects(next);
+      try { localStorage.setItem(COLLAPSED_PROJECTS_KEY, JSON.stringify(Array.from(next))); } catch { /* per-device convenience only */ }
+      return;
+    }
+    // Normal toggle behavior for all other folders
     const newExpanded = new Set(expandedFolders);
     if (newExpanded.has(folderId)) {
       newExpanded.delete(folderId);
@@ -573,10 +553,12 @@ const Sidebar: React.FC = () => {
   };
 
   const renderItem = (item: SidebarItem, depth = 0) => {
-    const isExpanded = expandedFolders.has(item.id);
+    const isExpanded = item.id.startsWith(PROJECT_FOLDER_PREFIX)
+      ? !collapsedProjects.has(item.id)
+      : expandedFolders.has(item.id);
     const paddingLeft = `${depth * 12 + 12}px`;
     const isActive = item.type === 'file' && currentMeeting?.id === item.id;
-    const isMeetingItem = item.id.includes('-') && !item.id.startsWith('intro-call');
+    const isMeetingItem = item.type === 'file' && item.id.includes('-') && !item.id.startsWith('intro-call');
 
     // Check if this item has a matching transcript snippet
     const matchingResult = isMeetingItem ? findMatchingSnippet(item.id) : null;

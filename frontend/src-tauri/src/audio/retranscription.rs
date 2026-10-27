@@ -98,6 +98,11 @@ pub fn is_retranscription_in_progress() -> bool {
     RETRANSCRIPTION_IN_PROGRESS.load(Ordering::SeqCst)
 }
 
+/// spec 4.2: the meeting whose enhance job holds the in-progress flag, if any
+pub fn running_meeting_id() -> Option<String> {
+    RETRANSCRIPTION_RUNNING_MEETING.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
 /// Cancel the running job, but only if it belongs to `meeting_id` (or no id is given).
 /// spec 4.1: a queued meeting cannot be cancelled in this phase; the error says so.
 pub fn cancel_retranscription(meeting_id: Option<&str>) -> Result<(), String> {
@@ -128,15 +133,32 @@ pub async fn start_retranscription<R: Runtime>(
     model: Option<String>,
     provider: Option<String>,
 ) -> Result<RetranscriptionResult> {
-    let folder = PathBuf::from(&meeting_folder_path);
+    let queued_folder = PathBuf::from(&meeting_folder_path);
     let provider_name = provider.clone().unwrap_or_else(|| "whisper".to_string());
     let model_name = model.clone().unwrap_or_else(|| "configured".to_string());
 
-    set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_QUEUED, None);
+    set_enhance_status(&app, &meeting_id, &queued_folder, &provider_name, &model_name, STATUS_QUEUED, None);
     if ENHANCE_QUEUE.try_lock().is_err() {
         emit_progress(&app, &meeting_id, "queued", 0, "Waiting for the current enhance job to finish...");
     }
     let _queue_slot = ENHANCE_QUEUE.lock().await;
+
+    // spec 4.2: the meeting may have been moved while this job waited; trust the index
+    let meeting_folder_path = match app.try_state::<AppState>() {
+        Some(state) => {
+            let row: Option<(Option<String>,)> = sqlx::query_as("SELECT folder_path FROM meetings WHERE id = ?")
+                .bind(&meeting_id)
+                .fetch_optional(state.db_manager.pool())
+                .await
+                .unwrap_or(None);
+            match row {
+                Some((Some(p),)) if Path::new(&p).exists() => p,
+                _ => meeting_folder_path,
+            }
+        }
+        None => meeting_folder_path,
+    };
+    let folder = PathBuf::from(&meeting_folder_path);
 
     // Acquire guard - ensures the in-progress flag is cleared even on panic/early return
     let _guard = RetranscriptionGuard::acquire(&meeting_id).map_err(|e| anyhow!(e))?;
@@ -556,6 +578,37 @@ async fn run_retranscription<R: Runtime>(
         warn!("Failed to write transcripts.json: {}", e);
     }
 
+    // spec 4.3: rewrite transcript.md with the enhanced segments
+    {
+        let meta_json: serde_json::Value = std::fs::read_to_string(folder_path.join("metadata.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+        let title = meta_json.get("title").and_then(|v| v.as_str())
+            .or_else(|| meta_json.get("meeting_name").and_then(|v| v.as_str()))
+            .unwrap_or("");
+        let project = meta_json.get("project").and_then(|v| v.as_str()).unwrap_or(super::library::INBOX);
+        let created_at = meta_json.get("created_at").and_then(|v| v.as_str()).unwrap_or("");
+        let started_at = super::transcript_md::local_iso(created_at);
+        let model_label = format!("{} {}", if use_parakeet { "parakeet" } else { "whisper" }, model.as_deref().unwrap_or("configured"));
+        let md_meta = super::transcript_md::TranscriptMdMeta {
+            title,
+            project,
+            meeting_id: &meeting_id,
+            started_at: &started_at,
+            duration_seconds: Some(duration_seconds),
+            quality: "enhanced",
+            model: &model_label,
+        };
+        let md_segments: Vec<(f64, String)> = segments
+            .iter()
+            .map(|s| (s.audio_start_time.unwrap_or(0.0), s.text.clone()))
+            .collect();
+        if let Err(e) = super::transcript_md::write_transcript_md(&folder_path, &md_meta, &md_segments) {
+            warn!("Failed to write transcript.md after enhance: {}", e);
+        }
+    }
+
     // Find audio filename for metadata
     let audio_filename = audio_path
         .file_name()
@@ -824,6 +877,7 @@ fn write_retranscription_metadata(
             obj.insert("retranscribed_at".to_string(), serde_json::json!(now));
             obj.insert("status".to_string(), serde_json::json!("completed"));
             obj.insert("transcript_file".to_string(), serde_json::json!("transcripts.json"));
+            obj.insert("transcript_md".to_string(), serde_json::json!("transcript.md")); // spec 4.3
             obj.remove("detected_summary_language");
         }
         value
@@ -874,11 +928,12 @@ pub async fn start_retranscription_command<R: Runtime>(
 
     // Clone values for the spawned task
     let meeting_id_clone = meeting_id.clone();
+    let meeting_id_for_sync = meeting_id.clone();
 
     // Spawn the retranscription in a background task
     tauri::async_runtime::spawn(async move {
         let result = start_retranscription(
-            app,
+            app.clone(),
             meeting_id_clone,
             meeting_folder_path,
             language,
@@ -891,6 +946,17 @@ pub async fn start_retranscription_command<R: Runtime>(
         // so we just log here for debugging
         if let Err(e) = result {
             error!("Retranscription failed: {}", e);
+        }
+
+        // spec 4.2: a title set while the job ran was written in place; now that the folder is free,
+        // sync the folder slug and metadata to the database title.
+        if let Some(state) = app.try_state::<AppState>() {
+            let root = crate::audio::get_default_recordings_folder();
+            if let Err(e) = crate::audio::library::assign(state.db_manager.pool(), &root, &meeting_id_for_sync, None, None).await {
+                if !e.starts_with("Folder not found on disk") {
+                    warn!("Post-enhance folder sync skipped for {}: {}", meeting_id_for_sync, e);
+                }
+            }
         }
     });
 

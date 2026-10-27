@@ -300,13 +300,14 @@ async fn prepare_audio_for_recording(
 
 /// Start recording with default devices
 pub async fn start_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    start_recording_with_meeting_name(app, None).await
+    start_recording_with_meeting_name(app, None, None).await
 }
 
 /// Start recording with default devices and optional meeting name
 pub async fn start_recording_with_meeting_name<R: Runtime>(
     app: AppHandle<R>,
     meeting_name: Option<String>,
+    project: Option<String>,
 ) -> Result<(), String> {
     info!(
         "Starting recording with default devices, meeting: {:?}",
@@ -393,6 +394,18 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
         )
     });
     manager.set_meeting_name(Some(effective_meeting_name));
+    // spec 4.2: mint the id here so metadata.json carries it from the first write;
+    // the frontend reuses it when it saves the SQLite row.
+    let meeting_id = format!("meeting-{}", uuid::Uuid::new_v4());
+    manager.set_meeting_id(Some(meeting_id.clone()));
+    manager.set_project(project.clone());
+    if let Some(state) = app.try_state::<crate::state::AppState>() {
+        match crate::database::repositories::setting::SettingsRepository::get_transcript_config(state.db_manager.pool()).await {
+            Ok(Some(cfg)) => manager.set_live_transcription(Some((cfg.provider.clone(), cfg.model.clone()))),
+            Ok(None) => manager.set_live_transcription(Some(("parakeet".to_string(), crate::config::DEFAULT_PARAKEET_MODEL.to_string()))),
+            Err(e) => warn!("Could not read transcript config for metadata: {}", e),
+        }
+    }
 
     // Set up error callback
     let app_for_error = app.clone();
@@ -470,6 +483,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     // Emit success event
     app.emit("recording-started", serde_json::json!({
         "message": "Recording started successfully with parallel processing",
+        "meeting_id": meeting_id,
         "devices": ["Default Microphone", "Default System Audio"],
         "workers": 3
     })).map_err(|e| e.to_string())?;
@@ -488,7 +502,7 @@ pub async fn start_recording_with_devices<R: Runtime>(
     mic_device_name: Option<String>,
     system_device_name: Option<String>,
 ) -> Result<(), String> {
-    start_recording_with_devices_and_meeting(app, mic_device_name, system_device_name, None).await
+    start_recording_with_devices_and_meeting(app, mic_device_name, system_device_name, None, None).await
 }
 
 /// Start recording with specific devices and optional meeting name
@@ -497,6 +511,7 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     mic_device_name: Option<String>,
     system_device_name: Option<String>,
     meeting_name: Option<String>,
+    project: Option<String>,
 ) -> Result<(), String> {
     info!(
         "Starting recording with specific devices: mic={:?}, system={:?}, meeting={:?}",
@@ -580,6 +595,18 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
         )
     });
     manager.set_meeting_name(Some(effective_meeting_name));
+    // spec 4.2: mint the id here so metadata.json carries it from the first write;
+    // the frontend reuses it when it saves the SQLite row.
+    let meeting_id = format!("meeting-{}", uuid::Uuid::new_v4());
+    manager.set_meeting_id(Some(meeting_id.clone()));
+    manager.set_project(project.clone());
+    if let Some(state) = app.try_state::<crate::state::AppState>() {
+        match crate::database::repositories::setting::SettingsRepository::get_transcript_config(state.db_manager.pool()).await {
+            Ok(Some(cfg)) => manager.set_live_transcription(Some((cfg.provider.clone(), cfg.model.clone()))),
+            Ok(None) => manager.set_live_transcription(Some(("parakeet".to_string(), crate::config::DEFAULT_PARAKEET_MODEL.to_string()))),
+            Err(e) => warn!("Could not read transcript config for metadata: {}", e),
+        }
+    }
 
     // Set up error callback
     let app_for_error = app.clone();
@@ -657,6 +684,7 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     // Emit success event
     app.emit("recording-started", serde_json::json!({
         "message": "Recording started with custom devices and parallel processing",
+        "meeting_id": meeting_id,
         "devices": [
             mic_device_name.unwrap_or_else(|| "Default Microphone".to_string()),
             system_device_name.unwrap_or_else(|| "Default System Audio".to_string())
@@ -1018,12 +1046,13 @@ pub async fn stop_recording<R: Runtime>(
     );
 
     // Perform final cleanup with the manager if available
-    let (meeting_folder, meeting_name) = if let Some(mut manager) = manager_for_cleanup {
+    let (meeting_folder, meeting_name, meeting_id) = if let Some(mut manager) = manager_for_cleanup {
         info!("🧹 Performing final cleanup and saving recording data");
 
         // Extract meeting info BEFORE async operations
         let meeting_folder = manager.get_meeting_folder();
         let meeting_name = manager.get_meeting_name();
+        let meeting_id = manager.get_meeting_id();
 
         match tokio::time::timeout(
             tokio::time::Duration::from_secs(300), // 5 minutes max for file I/O
@@ -1045,10 +1074,10 @@ pub async fn stop_recording<R: Runtime>(
             }
         }
 
-        (meeting_folder, meeting_name)
+        (meeting_folder, meeting_name, meeting_id)
     } else {
         info!("ℹ️ No recording manager available for cleanup");
-        (None, None)
+        (None, None, None)
     };
 
     // Set recording flag to false
@@ -1090,7 +1119,8 @@ pub async fn stop_recording<R: Runtime>(
         serde_json::json!({
             "message": "Recording stopped - frontend will save after all transcripts received",
             "folder_path": folder_path_str,
-            "meeting_name": meeting_name_str
+            "meeting_name": meeting_name_str,
+            "meeting_id": meeting_id
         }),
     )
     .map_err(|e| e.to_string())?;

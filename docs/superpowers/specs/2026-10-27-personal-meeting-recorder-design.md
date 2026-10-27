@@ -210,13 +210,13 @@ See 4.2. Root, then project, then meeting. Legacy flat meeting folders at the ro
 }
 ```
 
-`retranscribed_at`, `created_at`, `completed_at` and `status` keep their v1 meaning so the current wiki scripts keep working. `project` and `title` in metadata win over folder names when they disagree; the reconcile scan fixes the folder.
+`retranscribed_at`, `created_at`, `completed_at` and `status` keep their v1 meaning so the current wiki scripts keep working. `project` and `title` in metadata win over the database when they disagree; the reconcile scan updates the index and leaves folders where they are.
 
 ### 5.3 transcript.md
 
 ```
 ---
-title: Western Digital onboarding
+title: "Western Digital onboarding"
 project: dex
 meeting_id: meeting-7a1f...
 started_at: 2026-10-26T14:30:05-04:00
@@ -230,7 +230,7 @@ speakers: me=Alexandre, them=Others
 [00:09] Alexandre: Did you recently get on this rotation?
 ```
 
-One segment per line, `[mm:ss]` start time, speaker name when known, text verbatim. Segments labelled `both`, and legacy segments with no label, print without a name. Nothing is paraphrased or dropped. The frontmatter keys are stable; consumers must ignore unknown keys.
+One segment per line, `[mm:ss]` start time, speaker name when known, text verbatim. Segments labelled `both`, and legacy segments with no label, print without a name. Nothing is paraphrased or dropped. The frontmatter keys are stable; consumers must ignore unknown keys. The title is a quoted YAML string so colons and quotes in a title stay valid.
 
 ### 5.4 MCP tools
 

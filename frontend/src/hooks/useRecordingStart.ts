@@ -6,6 +6,7 @@ import { useConfig } from '@/contexts/ConfigContext';
 import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateContext';
 import { recordingService } from '@/services/recordingService';
 import Analytics from '@/lib/analytics';
+import { getLastProject } from '@/lib/projects'; // spec 4.2
 import { showRecordingNotification } from '@/lib/recordingNotification';
 import {
   getProviderCommands,
@@ -160,7 +161,8 @@ export function useRecordingStart(
       await recordingService.startRecordingWithDevices(
         selectedDevices?.micDevice || null,
         selectedDevices?.systemDevice || null,
-        randomTitle
+        randomTitle,
+        getLastProject() // spec 4.2
       );
       console.log('Backend recording started successfully');
 
@@ -252,7 +254,8 @@ export function useRecordingStart(
             const result = await recordingService.startRecordingWithDevices(
               selectedDevices?.micDevice || null,
               selectedDevices?.systemDevice || null,
-              generatedMeetingTitle
+              generatedMeetingTitle,
+              getLastProject() // spec 4.2
             );
             console.log('Auto-start backend recording result:', result);
 
@@ -350,7 +353,8 @@ export function useRecordingStart(
         const result = await recordingService.startRecordingWithDevices(
           selectedDevices?.micDevice || null,
           selectedDevices?.systemDevice || null,
-          generatedMeetingTitle
+          generatedMeetingTitle,
+          getLastProject() // spec 4.2
         );
         console.log('Backend recording result:', result);
 

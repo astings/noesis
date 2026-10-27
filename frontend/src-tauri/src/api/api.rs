@@ -30,6 +30,8 @@ pub struct ApiResponse<T> {
 pub struct Meeting {
     pub id: String,
     pub title: String,
+    /// spec 4.2: project folder derived from folder_path, `_inbox` when unknown or legacy
+    pub project: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -329,6 +331,10 @@ pub async fn api_get_meetings<R: Runtime>(
         auth_token.is_some()
     );
     let pool = state.db_manager.pool();
+    // spec 4.2: the filesystem is the source of truth; repair the index before listing
+    if let Err(e) = crate::audio::library::reconcile(pool, &crate::audio::get_default_recordings_folder()).await {
+        log_warn!("Library reconcile failed: {}", e);
+    }
     let meetings: Result<Vec<MeetingModel>, sqlx::Error> =
         MeetingsRepository::get_meetings(pool).await;
 
@@ -336,11 +342,17 @@ pub async fn api_get_meetings<R: Runtime>(
         Ok(meeting_models) => {
             log_info!("Successfully got {} meetings", meeting_models.len());
 
+            let root = crate::audio::get_default_recordings_folder();
             let result: Vec<Meeting> = meeting_models
                 .into_iter()
                 .map(|m| Meeting {
                     id: m.id,
                     title: m.title,
+                    project: m
+                        .folder_path
+                        .as_deref()
+                        .map(|f| crate::audio::library::project_of(&root, std::path::Path::new(f)))
+                        .unwrap_or_else(|| crate::audio::library::INBOX.to_string()),
                 })
                 .collect();
             Ok(result)
@@ -909,15 +921,17 @@ pub async fn api_save_meeting_title<R: Runtime>(
         meeting_id,
         auth_token.is_some()
     );
+    // spec 4.2: a title change renames the folder too (slug), via the library
     let pool = state.db_manager.pool();
-    match MeetingsRepository::update_meeting_title(pool, &meeting_id, &title).await {
-        Ok(true) => {
+    let root = crate::audio::get_default_recordings_folder();
+    match crate::audio::library::assign(pool, &root, &meeting_id, None, Some(&title)).await {
+        Ok(_) => {
             log_info!("Successfully saved meeting title");
             Ok(serde_json::json!({"message": "Meeting title saved successfully"}))
         }
-        Ok(false) => {
-            log_error!("No meeting found with id {}", meeting_id);
-            Err(format!("No meeting found with id {}", meeting_id))
+        Err(e) if e.starts_with("Folder not found on disk") => {
+            log_warn!("{}", e);
+            Ok(serde_json::json!({"message": "Meeting title saved successfully"}))
         }
         Err(e) => {
             log_error!("Failed to update meeting {}", e);
@@ -933,13 +947,15 @@ pub async fn api_save_transcript<R: Runtime>(
     meeting_title: String,
     transcripts: Vec<serde_json::Value>,
     folder_path: Option<String>,
+    meeting_id: Option<String>, // spec 4.2
     auth_token: Option<String>,
 ) -> Result<serde_json::Value, String> {
     log_info!(
-        "api_save_transcript called for meeting: {}, transcripts: {}, folder_path: {:?}, auth_token: {}",
+        "api_save_transcript called for meeting: {}, transcripts: {}, folder_path: {:?}, meeting_id: {:?}, auth_token: {}",
         meeting_title,
         transcripts.len(),
         folder_path,
+        meeting_id,
         auth_token.is_some()
     );
 
@@ -978,6 +994,7 @@ pub async fn api_save_transcript<R: Runtime>(
         &meeting_title,
         &transcripts_to_save,
         folder_path,
+        meeting_id, // spec 4.2
     )
     .await
     {

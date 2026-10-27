@@ -8,6 +8,7 @@ import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
 import type { SummaryProcessResponse } from '@/types';
+import { INBOX } from '@/lib/projects';
 
 
 
@@ -19,11 +20,15 @@ interface SidebarItem {
   enhanceStatus?: string;
 }
 
+export const PROJECT_FOLDER_PREFIX = 'project:';
+
 export interface CurrentMeeting {
   id: string;
   title: string;
   // spec 4.1: "queued" | "running" | "done" | "failed", absent for legacy meetings
   enhanceStatus?: string;
+  // spec 4.2: project folder name, `_inbox` for legacy meetings
+  project?: string;
 }
 
 // Search result type for transcript search
@@ -102,7 +107,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const fetchMeetings = React.useCallback(async () => {
     if (serverAddress) {
       try {
-        const meetings = await invoke('api_get_meetings') as Array<{ id: string, title: string }>;
+        const meetings = await invoke('api_get_meetings') as Array<{ id: string, title: string, project?: string }>;
         // spec 4.1: statuses are optional; a failure here must not hide the meeting list
         const statuses = await invoke<Array<{ meeting_id: string; status: string }>>('list_enhance_statuses')
           .catch((error) => { console.warn('list_enhance_statuses failed:', error); return []; });
@@ -110,6 +115,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
         const transformedMeetings = meetings.map((meeting: any) => ({
           id: meeting.id,
           title: meeting.title,
+          project: meeting.project || INBOX,
           enhanceStatus: statusById.get(meeting.id),
         }));
         setMeetings(transformedMeetings);
@@ -161,14 +167,32 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // spec 4.2: one collapsible section per project, Inbox first
+  const meetingsByProject = new Map<string, CurrentMeeting[]>();
+  for (const meeting of meetings) {
+    const project = meeting.project || INBOX;
+    const bucket = meetingsByProject.get(project);
+    if (bucket) bucket.push(meeting); else meetingsByProject.set(project, [meeting]);
+  }
+  const projectNames = Array.from(meetingsByProject.keys()).sort((a, b) =>
+    a === INBOX ? -1 : b === INBOX ? 1 : a.localeCompare(b),
+  );
   const baseItems: SidebarItem[] = [
     {
       id: 'meetings',
       title: 'Meeting Notes',
       type: 'folder' as const,
-      children: [
-        ...meetings.map(meeting => ({ id: meeting.id, title: meeting.title, type: 'file' as const, enhanceStatus: meeting.enhanceStatus }))
-      ]
+      children: projectNames.map((project) => ({
+        id: PROJECT_FOLDER_PREFIX + project,
+        title: project === INBOX ? 'Inbox' : project,
+        type: 'folder' as const,
+        children: (meetingsByProject.get(project) ?? []).map((meeting) => ({
+          id: meeting.id,
+          title: meeting.title,
+          type: 'file' as const,
+          enhanceStatus: meeting.enhanceStatus,
+        })),
+      })),
     },
   ];
 

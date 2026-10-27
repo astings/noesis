@@ -1,6 +1,11 @@
 "use client";
 
-import { useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { toast } from 'sonner';
+import { ProjectSelect } from '@/components/ProjectSelect';
+import { INBOX, projectOfFolder } from '@/lib/projects';
+import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { Copy, FolderOpen, RefreshCw } from 'lucide-react';
@@ -29,6 +34,30 @@ export function TranscriptButtonGroup({
 }: TranscriptButtonGroupProps) {
   const { betaFeatures } = useConfig();
   const [showRetranscribeDialog, setShowRetranscribeDialog] = useState(false);
+
+  // spec 4.2: move the meeting to another project folder
+  const { refetchMeetings } = useSidebar();
+  const [root, setRoot] = useState<string>('');
+  const [moving, setMoving] = useState(false);
+  useEffect(() => {
+    invoke<string>('get_default_recordings_folder_path').then(setRoot).catch(() => setRoot(''));
+  }, []);
+  const currentProject = meetingFolderPath && root ? projectOfFolder(root, meetingFolderPath) : INBOX;
+
+  const handleMove = async (project: string) => {
+    if (!meetingId || project === currentProject) return;
+    setMoving(true);
+    try {
+      await invoke<string>('assign_meeting', { meetingId, project });
+      toast.success(`Moved to ${project === INBOX ? 'Inbox' : project}`);
+      await refetchMeetings();
+      await onRefetchTranscripts?.();
+    } catch (error) {
+      toast.error('Could not move the meeting', { description: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setMoving(false);
+    }
+  };
 
   const handleRetranscribeComplete = useCallback(async () => {
     // Refetch transcripts to show the updated data
@@ -85,6 +114,10 @@ export function TranscriptButtonGroup({
           </Button>
         )}
       </ButtonGroup>
+
+      {meetingId && meetingFolderPath && (
+        <ProjectSelect value={currentProject} onChange={handleMove} disabled={moving} compact />
+      )}
 
       {betaFeatures.importAndRetranscribe && meetingId && meetingFolderPath && (
         <RetranscribeDialog

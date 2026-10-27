@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { RecordingControls } from '@/components/RecordingControls';
+import { ProjectSelect } from '@/components/ProjectSelect'; // spec 4.2
+import { INBOX, getLastProject, setLastProject } from '@/lib/projects'; // spec 4.2
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { usePermissionCheck } from '@/hooks/usePermissionCheck';
 import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateContext';
@@ -24,6 +26,7 @@ import { useRouter } from 'next/navigation';
 export default function Home() {
   // Local page state (not moved to contexts)
   const [isRecording, setIsRecordingState] = useState(false);
+  const [project, setProject] = useState<string>(() => (typeof window === 'undefined' ? INBOX : getLastProject())); // spec 4.2
   const [barHeights, setBarHeights] = useState(['58%', '76%', '58%']);
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
 
@@ -226,6 +229,17 @@ export default function Home() {
               >
                 <div className="w-2/3 max-w-[750px] flex justify-center">
                   <div className="bg-white rounded-full shadow-lg flex items-center">
+                    {/* spec 4.2 */}
+                    {!recordingState.isRecording && (
+                      <div className="pl-3">
+                        <ProjectSelect
+                          value={project}
+                          onChange={(p) => { setProject(p); setLastProject(p); }}
+                          disabled={isRecordingDisabled}
+                          compact
+                        />
+                      </div>
+                    )}
                     <RecordingControls
                       isRecording={recordingState.isRecording}
                       onRecordingStop={(callApi = true) => handleRecordingStop(callApi)}

@@ -51,6 +51,11 @@ pub mod retranscription;
 // spec 4.1: enhance job status in metadata.json
 pub mod enhance_status;
 
+// spec 4.2: meeting library on disk (folders, projects, scan, reconcile)
+pub mod library;
+// spec 4.3: transcript.md contract
+pub mod transcript_md;
+
 // Import module (import external audio files as new meetings)
 pub mod import;
 

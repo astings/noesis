@@ -606,11 +606,24 @@ impl SummaryService {
                             extract_meeting_name_from_markdown(&generated.final_markdown)
                                 .filter(|name| !name.is_empty())
                         {
-                            if let Err(error) =
-                                MeetingsRepository::update_meeting_name(&pool, &meeting_id, &name)
-                                    .await
+                            // spec 4.2: title changes go through the library so metadata.json and the folder follow
+                            let root = crate::audio::get_default_recordings_folder();
+                            match crate::audio::library::assign(&pool, &root, &meeting_id, None, Some(&name)).await {
+                                Ok(_) => {}
+                                Err(error) if error.starts_with("Folder not found on disk") => {
+                                    warn!("Meeting {} renamed in the database only: {}", meeting_id, error);
+                                }
+                                Err(error) => {
+                                    error!("Failed to update meeting name for {}: {}", meeting_id, error);
+                                }
+                            }
+                            if let Err(error) = sqlx::query("UPDATE transcript_chunks SET meeting_name = ? WHERE meeting_id = ?")
+                                .bind(&name)
+                                .bind(&meeting_id)
+                                .execute(&pool)
+                                .await
                             {
-                                error!("Failed to update meeting name for {}: {}", meeting_id, error);
+                                warn!("Failed to update transcript_chunks name for {}: {}", meeting_id, error);
                             }
                         }
                         info!("Summary saved successfully for meeting_id: {}", meeting_id);

@@ -90,12 +90,14 @@ export class RecordingService {
   async startRecordingWithDevices(
     micDeviceName: string | null,
     systemDeviceName: string | null,
-    meetingName: string
+    meetingName: string,
+    project: string | null = null, // spec 4.2
   ): Promise<void> {
     return withStartTimeout(invoke('start_recording_with_devices_and_meeting', {
       micDeviceName,
       systemDeviceName,
-      meetingName
+      meetingName,
+      project, // spec 4.2
     }));
   }
 

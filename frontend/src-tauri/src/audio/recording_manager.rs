@@ -514,6 +514,23 @@ impl RecordingManager {
         self.recording_saver.set_meeting_name(name);
     }
 
+    // spec 4.2
+    pub fn set_project(&mut self, project: Option<String>) {
+        self.recording_saver.set_project(project);
+    }
+
+    pub fn set_meeting_id(&mut self, id: Option<String>) {
+        self.recording_saver.set_meeting_id(id);
+    }
+
+    pub fn get_meeting_id(&self) -> Option<String> {
+        self.recording_saver.get_meeting_id()
+    }
+
+    pub fn set_live_transcription(&mut self, provider_model: Option<(String, String)>) {
+        self.recording_saver.set_live_transcription(provider_model);
+    }
+
     /// Add a structured transcript segment to be saved later
     pub fn add_transcript_segment(&self, segment: super::recording_saver::TranscriptSegment) {
         self.recording_saver.add_transcript_segment(segment);

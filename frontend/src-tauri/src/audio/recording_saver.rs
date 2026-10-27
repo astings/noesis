@@ -8,7 +8,6 @@ use serde::{Serialize, Deserialize};
 use std::path::PathBuf;
 
 use super::recording_state::AudioChunk;
-use super::audio_processing::create_meeting_folder;
 use super::incremental_saver::IncrementalAudioSaver;
 
 /// Structured transcript segment for JSON export
@@ -38,6 +37,15 @@ pub struct MeetingMetadata {
     pub transcript_file: String,
     pub sample_rate: u32,
     pub status: String,  // "recording", "completed", "error"
+    // spec 5.2: v2 keys. All optional so v1 files still deserialize.
+    #[serde(default)]
+    pub project: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub transcript_md: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcription: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +62,10 @@ pub struct RecordingSaver {
     metadata: Option<MeetingMetadata>,
     transcript_segments: Arc<Mutex<Vec<TranscriptSegment>>>,
     is_saving: Arc<Mutex<bool>>,
+    // spec 4.2
+    project: Option<String>,
+    meeting_id: Option<String>,
+    live_transcription: Option<(String, String)>,
 }
 
 impl RecordingSaver {
@@ -65,12 +77,40 @@ impl RecordingSaver {
             metadata: None,
             transcript_segments: Arc::new(Mutex::new(Vec::new())),
             is_saving: Arc::new(Mutex::new(false)),
+            project: None,
+            meeting_id: None,
+            live_transcription: None,
         }
     }
 
     /// Set the meeting name for this recording session
     pub fn set_meeting_name(&mut self, name: Option<String>) {
         self.meeting_name = name;
+    }
+
+    /// spec 4.2: project folder the meeting is recorded into. Invalid or empty names fall back to `_inbox`.
+    pub fn set_project(&mut self, project: Option<String>) {
+        self.project = project.filter(|p| {
+            let ok = super::library::is_valid_project_name(p);
+            if !ok {
+                warn!("Ignoring invalid project name {:?}; recording into {}", p, super::library::INBOX);
+            }
+            ok
+        });
+    }
+
+    /// spec 4.2: the meeting id is minted at record start so metadata.json carries it from the first write
+    pub fn set_meeting_id(&mut self, id: Option<String>) {
+        self.meeting_id = id;
+    }
+
+    pub fn get_meeting_id(&self) -> Option<String> {
+        self.meeting_id.clone()
+    }
+
+    /// spec 5.2: provider and model of the live engine, recorded under transcription.live
+    pub fn set_live_transcription(&mut self, provider_model: Option<(String, String)>) {
+        self.live_transcription = provider_model;
     }
 
     /// Set device information in metadata
@@ -225,8 +265,14 @@ impl RecordingSaver {
         // Load preferences to get base recordings folder
         let base_folder = super::recording_preferences::get_default_recordings_folder();
 
-        // Create meeting folder structure (with or without .checkpoints/ subdirectory)
-        let meeting_folder = create_meeting_folder(&base_folder, meeting_name, create_checkpoints)?;
+        // spec 4.2: <root>/<project>/<stamp slug>/
+        let project = self.project.clone().unwrap_or_else(|| super::library::INBOX.to_string());
+        let meeting_folder = super::library::create_meeting_folder(
+            &base_folder,
+            &project,
+            Some(meeting_name),
+            create_checkpoints,
+        )?;
 
         // Only initialize incremental saver if checkpoints are needed (auto_save is true)
         if create_checkpoints {
@@ -239,8 +285,8 @@ impl RecordingSaver {
 
         // Create initial metadata
         let metadata = MeetingMetadata {
-            version: "1.0".to_string(),
-            meeting_id: None,  // Will be set by backend
+            version: "2.0".to_string(),
+            meeting_id: self.meeting_id.clone(),
             meeting_name: Some(meeting_name.to_string()),
             created_at: chrono::Utc::now().to_rfc3339(),
             completed_at: None,
@@ -253,6 +299,12 @@ impl RecordingSaver {
             transcript_file: "transcripts.json".to_string(),
             sample_rate: 48000,
             status: "recording".to_string(),
+            project: Some(project.clone()),
+            title: Some(meeting_name.to_string()),
+            transcript_md: Some("transcript.md".to_string()),
+            transcription: self.live_transcription.as_ref().map(|(provider, model)| {
+                serde_json::json!({ "live": { "provider": provider, "model": model } })
+            }),
         };
 
         // Write initial metadata.json
@@ -428,6 +480,40 @@ impl RecordingSaver {
             }
 
             info!("✅ Metadata updated with duration: {:?}s", metadata.duration_seconds);
+
+            // spec 4.3: transcript.md, quality live. Enhance rewrites it later.
+            let segments_for_md: Vec<(f64, String)> = self
+                .transcript_segments
+                .lock()
+                .map(|s| s.iter().map(|t| (t.audio_start_time, t.text.clone())).collect())
+                .unwrap_or_default();
+            let live_model = metadata
+                .transcription
+                .as_ref()
+                .and_then(|t| t.get("live"))
+                .map(|l| {
+                    format!(
+                        "{} {}",
+                        l.get("provider").and_then(|v| v.as_str()).unwrap_or(""),
+                        l.get("model").and_then(|v| v.as_str()).unwrap_or("")
+                    )
+                    .trim()
+                    .to_string()
+                })
+                .unwrap_or_else(|| "live".to_string());
+            let started_at = super::transcript_md::local_iso(&metadata.created_at);
+            let md_meta = super::transcript_md::TranscriptMdMeta {
+                title: metadata.title.as_deref().or(metadata.meeting_name.as_deref()).unwrap_or(""),
+                project: metadata.project.as_deref().unwrap_or(super::library::INBOX),
+                meeting_id: metadata.meeting_id.as_deref().unwrap_or(""),
+                started_at: &started_at,
+                duration_seconds: metadata.duration_seconds,
+                quality: "live",
+                model: &live_model,
+            };
+            if let Err(e) = super::transcript_md::write_transcript_md(folder, &md_meta, &segments_for_md) {
+                warn!("Failed to write transcript.md: {}", e);
+            }
         }
 
         // Emit save event with audio and transcript paths
