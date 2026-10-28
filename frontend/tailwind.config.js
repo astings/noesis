@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-    darkMode: ['class'],
+    darkMode: 'media',
     content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -10,7 +10,7 @@ module.exports = {
   	extend: {
   		fontFamily: {
   			sans: [
-  				'var(--font-source-sans-3)'
+  				'-apple-system', 'BlinkMacSystemFont', '"SF Pro Text"', '"Helvetica Neue"', 'system-ui', 'sans-serif'
   			]
   		},
   		colors: {
@@ -48,13 +48,9 @@ module.exports = {
   				DEFAULT: 'hsl(var(--destructive))',
   				foreground: 'hsl(var(--destructive-foreground))'
   			},
-  			chart: {
-  				'1': 'hsl(var(--chart-1))',
-  				'2': 'hsl(var(--chart-2))',
-  				'3': 'hsl(var(--chart-3))',
-  				'4': 'hsl(var(--chart-4))',
-  				'5': 'hsl(var(--chart-5))'
-  			}
+  			recording: 'hsl(var(--recording))',
+  			success: 'hsl(var(--success))',
+  			warning: 'hsl(var(--warning))'
   		},
   		borderRadius: {
   			lg: 'var(--radius)',
