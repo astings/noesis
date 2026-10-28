@@ -582,6 +582,7 @@ impl RecordingSaver {
                 })
                 .unwrap_or_else(|| "live".to_string());
             let started_at = super::transcript_md::local_iso(&metadata.created_at);
+            let tags = super::search_index::metadata_tags(folder);
             let md_meta = super::transcript_md::TranscriptMdMeta {
                 title: metadata.title.as_deref().or(metadata.meeting_name.as_deref()).unwrap_or(""),
                 project: metadata.project.as_deref().unwrap_or(super::library::INBOX),
@@ -591,6 +592,7 @@ impl RecordingSaver {
                 quality: "live",
                 model: &live_model,
                 speaker_names: if any_labelled { Some((owner_name.as_str(), "Others")) } else { None }, // spec 4.4
+                tags: &tags,
             };
             if let Err(e) = super::transcript_md::write_transcript_md(folder, &md_meta, &segments_for_md) {
                 warn!("Failed to write transcript.md: {}", e);

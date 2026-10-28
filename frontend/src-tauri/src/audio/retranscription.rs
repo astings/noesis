@@ -160,15 +160,19 @@ pub async fn start_retranscription<R: Runtime>(
     };
     let folder = PathBuf::from(&meeting_folder_path);
 
-    // Acquire guard - ensures the in-progress flag is cleared even on panic/early return
-    let _guard = RetranscriptionGuard::acquire(&meeting_id).map_err(|e| anyhow!(e))?;
-
-    // Reset cancellation flag
-    RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
-    set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_RUNNING, None);
-
     let use_parakeet = provider.as_deref() == Some("parakeet");
-    let result = run_retranscription(app.clone(), meeting_id.clone(), meeting_folder_path, language, model, provider).await;
+    // The guard covers the transcription work only, so `library::assign` can rename the
+    // folder afterwards; `_queue_slot` keeps post-processing serialized to the end.
+    let result = {
+        // Acquire guard - ensures the in-progress flag is cleared even on panic/early return
+        let _guard = RetranscriptionGuard::acquire(&meeting_id).map_err(|e| anyhow!(e))?;
+
+        // Reset cancellation flag
+        RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
+        set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_RUNNING, None);
+
+        run_retranscription(app.clone(), meeting_id.clone(), meeting_folder_path, language, model, provider).await
+    };
 
     // Unload the engine after the batch job (success, failure, or cancellation)
     super::common::unload_engine_after_batch(use_parakeet).await;
@@ -181,9 +185,32 @@ pub async fn start_retranscription<R: Runtime>(
                     warn!("search index: reindex failed for {}: {}", meeting_id, e);
                 }
             }
+            let prefs = super::recording_preferences::load_recording_preferences(&app).await;
+            // phase 9: name and tag the meeting; a failure is logged and never changes the enhance result
+            if res.segments_count > 0 && matches!(&prefs, Ok(p) if p.auto_title_tags) {
+                match super::meeting_tagging::run_step(&app, &meeting_id, false).await {
+                    Ok(msg) => info!("Title and tags for {}: {}", meeting_id, msg),
+                    Err(e) => warn!("Title and tags skipped for {}: {}", meeting_id, e),
+                }
+            }
+            // the title may have renamed the folder: the hook reads the current one
+            let folder = match app.try_state::<AppState>() {
+                Some(state) => {
+                    let row: Option<(Option<String>,)> = sqlx::query_as("SELECT folder_path FROM meetings WHERE id = ?")
+                        .bind(&meeting_id)
+                        .fetch_optional(state.db_manager.pool())
+                        .await
+                        .unwrap_or(None);
+                    match row {
+                        Some((Some(p),)) if Path::new(&p).exists() => PathBuf::from(p),
+                        _ => folder.clone(),
+                    }
+                }
+                None => folder.clone(),
+            };
             // spec 4.7: hand the finished transcript to the user's hook, if configured
             if res.segments_count > 0 {
-                match super::recording_preferences::load_recording_preferences(&app).await {
+                match prefs {
                     // spec 8: auto-run is opt-in; otherwise the "Run hook" action starts it
                     Ok(prefs) if prefs.hook_auto_run => {
                         let ctx = super::post_enhance_hook::read_context(&folder, &meeting_id);
@@ -680,6 +707,7 @@ async fn run_retranscription<R: Runtime>(
         } else {
             None
         };
+        let tags = super::search_index::metadata_tags(&folder_path);
         let md_meta = super::transcript_md::TranscriptMdMeta {
             title,
             project,
@@ -689,6 +717,7 @@ async fn run_retranscription<R: Runtime>(
             quality: "enhanced",
             model: &model_label,
             speaker_names, // spec 4.4
+            tags: &tags,
         };
         let md_segments: Vec<super::transcript_md::MdSegment> = segments
             .iter()

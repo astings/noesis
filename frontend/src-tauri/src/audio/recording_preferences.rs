@@ -67,6 +67,9 @@ pub struct RecordingPreferences {
     // spec 8: off means the hook only runs from the "Run hook" action
     #[serde(default)]
     pub hook_auto_run: bool,
+    // spec phase 9 section 1: the summary model names and tags meetings after enhance
+    #[serde(default = "default_true")]
+    pub auto_title_tags: bool,
 }
 
 fn default_true() -> bool {
@@ -111,6 +114,7 @@ impl Default for RecordingPreferences {
             wiki_targets: Vec::new(),
             wiki_budget_usd: default_wiki_budget_usd(),
             hook_auto_run: false,
+            auto_title_tags: default_true(),
         }
     }
 }
@@ -510,6 +514,14 @@ mod tests {
         let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
         let p: RecordingPreferences = serde_json::from_str(old).unwrap();
         assert_eq!(p.post_enhance_command, "");
+    }
+
+    #[test]
+    fn auto_title_tags_defaults_on() {
+        let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
+        let p: RecordingPreferences = serde_json::from_str(old).unwrap();
+        assert!(p.auto_title_tags);
+        assert!(RecordingPreferences::default().auto_title_tags);
     }
 
     #[test]

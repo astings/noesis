@@ -18,6 +18,8 @@ pub struct TranscriptMdMeta<'a> {
     pub model: &'a str,
     /// spec 4.4: (name for "me", name for "them"); None when the meeting has no labels
     pub speaker_names: Option<(&'a str, &'a str)>,
+    /// phase 9: topic tags from metadata.json; the line is omitted when empty
+    pub tags: &'a [String],
 }
 
 /// spec 4.4
@@ -60,6 +62,9 @@ pub fn render_transcript_md(meta: &TranscriptMdMeta, segments: &[MdSegment]) -> 
     // spec 4.4
     if let Some((me, them)) = meta.speaker_names {
         out.push_str(&format!("speakers: me={}, them={}\n", me, them));
+    }
+    if !meta.tags.is_empty() {
+        out.push_str(&format!("tags: [{}]\n", meta.tags.join(", ")));
     }
     out.push_str("---\n");
     for seg in segments {
@@ -111,6 +116,7 @@ mod tests {
             quality: "enhanced",
             model: "whisper large-v3",
             speaker_names: None,
+            tags: &[],
         };
         let segments = vec![
             MdSegment { start: 0.0, speaker: None, text: "Thank you. Hello.".to_string() },
@@ -137,6 +143,7 @@ model: whisper large-v3\n\
             title: "t", project: "_inbox", meeting_id: "m", started_at: "2026-10-27T12:03:09+00:00",
             duration_seconds: None, quality: "live", model: "parakeet parakeet-tdt-0.6b-v3-int8",
             speaker_names: None,
+            tags: &[],
         };
         let md = render_transcript_md(&meta, &[]);
         assert!(!md.contains("duration_seconds"));
@@ -150,6 +157,7 @@ model: whisper large-v3\n\
             title: "t", project: "p", meeting_id: "m", started_at: "2026-10-27T12:03:09+00:00",
             duration_seconds: Some(1.0), quality: "live", model: "x",
             speaker_names: None,
+            tags: &[],
         };
         write_transcript_md(dir.path(), &meta, &[MdSegment { start: 0.0, speaker: None, text: "hi".into() }]).unwrap();
         let text = std::fs::read_to_string(dir.path().join("transcript.md")).unwrap();
@@ -165,6 +173,19 @@ model: whisper large-v3\n\
         assert_eq!(local_iso("not a date"), "not a date");
     }
 
+    #[test]
+    fn tags_render_after_speakers_before_the_closing_rule() {
+        let tags = vec!["a".to_string(), "b".to_string()];
+        let meta = TranscriptMdMeta {
+            title: "t", project: "dex", meeting_id: "m", started_at: "2026-10-27T12:03:09-04:00",
+            duration_seconds: None, quality: "enhanced", model: "whisper large-v3",
+            speaker_names: Some(("Me", "Others")),
+            tags: &tags,
+        };
+        let md = render_transcript_md(&meta, &[]);
+        assert!(md.contains("speakers: me=Me, them=Others\ntags: [a, b]\n---\n"), "{}", md);
+    }
+
     // spec 4.4
     #[test]
     fn labelled_lines_carry_names_and_frontmatter_lists_speakers() {
@@ -172,6 +193,7 @@ model: whisper large-v3\n\
             title: "t", project: "dex", meeting_id: "m", started_at: "2026-10-27T12:03:09-04:00",
             duration_seconds: None, quality: "enhanced", model: "whisper large-v3",
             speaker_names: Some(("Alexandre", "Others")),
+            tags: &[],
         };
         let segments = vec![
             MdSegment { start: 0.0, speaker: Some("me".into()), text: "Hello.".into() },
