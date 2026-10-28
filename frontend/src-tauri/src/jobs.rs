@@ -438,7 +438,6 @@ pub async fn cancel_job(app: AppHandle, id: String) -> Result<(), String> {
             } else if running(STEP_TRANSCRIBE) {
                 crate::audio::retranscription::cancel_retranscription(job.meeting_id.as_deref())?;
             }
-            // title step: not interruptible; start_retranscription skips the wiki step after it
         }
         Control::Summary { started_at } => {
             let process_id = started_at.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
@@ -455,7 +454,7 @@ pub async fn cancel_job(app: AppHandle, id: String) -> Result<(), String> {
             crate::summary::summary_engine::commands::builtin_ai_cancel_download(app.clone(), app.state(), job.title.clone()).await?;
             finish(&id, Outcome::Cancelled); // its download error path is silent on cancel
         }
-        // the batch checks the flag between meetings; one LLM call is not interruptible
+        // the batch checks the flag between meetings; each call is aborted while waiting for the model
         Control::Tagging => {}
     }
     Ok(())

@@ -239,7 +239,7 @@ pub async fn start_retranscription<R: Runtime>(
             // phase 9: name and tag the meeting; a failure is logged and never changes the enhance result
             if res.segments_count > 0 && matches!(&prefs, Ok(p) if p.auto_title_tags) {
                 jobs::step(&job_id, STEP_TITLE, JobState::Running, None);
-                match super::meeting_tagging::run_after_enhance(&app, &meeting_id).await {
+                match super::meeting_tagging::run_after_enhance(&app, &meeting_id, Some(&job_id)).await {
                     Ok(msg) => {
                         info!("Title and tags for {}: {}", meeting_id, msg);
                         jobs::step(&job_id, STEP_TITLE, JobState::Done, None);

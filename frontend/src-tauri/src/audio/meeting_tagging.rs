@@ -13,6 +13,7 @@ const TAIL: usize = 8_000;
 pub const RUNNING: &str = "running";
 pub const DONE: &str = "done";
 pub const FAILED: &str = "failed";
+pub const CANCELLED: &str = "cancelled";
 
 pub const SYSTEM_PROMPT: &str = "You name and tag meeting transcripts. Reply with JSON only, no prose: \
 {\"title\": \"<3 to 8 words, no date, no quotes>\", \"tags\": [\"<1 to 3 words>\", ...]}. \
@@ -91,7 +92,25 @@ fn status_for(meeting_id: &str, folder: Option<&Path>) -> Option<&'static str> {
     in_memory.or_else(|| folder.filter(|f| !super::search_index::metadata_tags(f).is_empty()).map(|_| DONE))
 }
 
-async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title: bool) -> Result<String, String> {
+pub(crate) const CANCELLED_MSG: &str = "Cancelled";
+
+/// Runs `fut` unless the job is cancelled first; polls every 250 ms. Only the wait for the
+/// model goes through here, never the writes after it, so a cancel cannot split a rename.
+async fn unless_cancelled<T>(job: Option<&str>, fut: impl std::future::Future<Output = Result<T, String>>) -> Result<T, String> {
+    let Some(job) = job else { return fut.await };
+    let job = job.to_string();
+    let cancelled = async move {
+        while !crate::jobs::is_cancel_requested(&job) {
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    };
+    tokio::select! {
+        r = fut => r,
+        _ = cancelled => Err(CANCELLED_MSG.to_string()),
+    }
+}
+
+async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title: bool, job: Option<&str>) -> Result<String, String> {
     let state = app.state::<crate::state::AppState>();
     let pool = state.db_manager.pool();
 
@@ -123,7 +142,7 @@ async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title
     let system_prompt = if custom_prompt.is_empty() { SYSTEM_PROMPT } else { custom_prompt.as_str() };
     let cfg = crate::summary::llm_config::load(pool).await?;
     let app_data_dir = app.path().app_data_dir().ok();
-    let completion = crate::summary::llm_client::generate_summary(
+    let completion = unless_cancelled(job, crate::summary::llm_client::generate_summary(
         &reqwest::Client::new(),
         &cfg.provider,
         &cfg.model,
@@ -137,7 +156,7 @@ async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title
         cfg.top_p,
         app_data_dir.as_ref(),
         None,
-    )
+    ))
     .await?;
     let (new_title, tags) = parse_reply(&completion.content)?;
 
@@ -178,11 +197,12 @@ fn write_tags(folder: &Path, tags: &[String]) -> Result<(), String> {
 }
 
 /// Name (when untitled or `force_title`) and tag one meeting with the summary model.
-pub async fn run_step<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title: bool) -> Result<String, String> {
+pub async fn run_step<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title: bool, job: Option<&str>) -> Result<String, String> {
     set(app, meeting_id, RUNNING, None);
-    let result = run_inner(app, meeting_id, force_title).await;
+    let result = run_inner(app, meeting_id, force_title, job).await;
     match &result {
         Ok(_) => set(app, meeting_id, DONE, None),
+        Err(e) if e == CANCELLED_MSG => set(app, meeting_id, CANCELLED, None),
         Err(e) => {
             log::warn!("tagging failed for {}: {}", meeting_id, e);
             set(app, meeting_id, FAILED, Some(e));
@@ -193,7 +213,7 @@ pub async fn run_step<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_ti
 
 /// The automatic step after enhance. With no summary model configured it does nothing
 /// (auto titles are on by default), so the meeting is not marked failed.
-pub async fn run_after_enhance<R: Runtime>(app: &AppHandle<R>, meeting_id: &str) -> Result<String, String> {
+pub async fn run_after_enhance<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, job: Option<&str>) -> Result<String, String> {
     let state = app.state::<crate::state::AppState>();
     if let Err(e) = crate::summary::llm_config::load(state.db_manager.pool()).await {
         if e == crate::summary::llm_config::NO_SUMMARY_MODEL {
@@ -201,7 +221,7 @@ pub async fn run_after_enhance<R: Runtime>(app: &AppHandle<R>, meeting_id: &str)
             return Ok("Skipped: no summary model configured".to_string());
         }
     }
-    run_step(app, meeting_id, false).await
+    run_step(app, meeting_id, false, job).await
 }
 
 #[tauri::command]
@@ -209,7 +229,7 @@ pub async fn run_meeting_tagging<R: Runtime>(app: AppHandle<R>, meeting_id: Stri
     use crate::jobs::{self, Control, JobKind, Outcome};
     let job_id = uuid::Uuid::new_v4().to_string();
     jobs::add(&job_id, JobKind::Tagging, Some(&meeting_id), "", Control::Tagging, true);
-    let result = run_step(&app, &meeting_id, true).await;
+    let result = run_step(&app, &meeting_id, true, Some(&job_id)).await;
     jobs::finish(&job_id, match &result {
         Ok(_) => Outcome::Done,
         Err(e) => Outcome::Failed(e.clone()),
@@ -253,7 +273,7 @@ async fn tag_untagged<R: Runtime>(app: &AppHandle<R>, job_id: &str) -> Result<St
             break;
         }
         crate::jobs::progress(job_id, (i * 100 / todo.len()) as u8, Some(format!("{} / {}", i, todo.len())));
-        if run_step(app, id, false).await.is_ok() {
+        if run_step(app, id, false, Some(job_id)).await.is_ok() {
             ok += 1;
         }
     }
@@ -283,6 +303,19 @@ pub async fn list_tagging_statuses(state: tauri::State<'_, crate::state::AppStat
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn unless_cancelled_returns_cancelled_when_the_job_is_cancelled() {
+        crate::jobs::add("tag-c", crate::jobs::JobKind::Tagging, Some("m"), "", crate::jobs::Control::Tagging, true);
+        let slow = async { tokio::time::sleep(std::time::Duration::from_secs(30)).await; Ok::<_, String>(1) };
+        let canceller = async {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            crate::jobs::request_cancel("tag-c");
+        };
+        let (res, _) = tokio::join!(unless_cancelled(Some("tag-c"), slow), canceller);
+        assert_eq!(res.unwrap_err(), CANCELLED_MSG);
+        assert_eq!(unless_cancelled(None, async { Ok::<_, String>(2) }).await.unwrap(), 2);
+    }
 
     #[test]
     fn tags_are_normalized_deduped_and_capped() {
