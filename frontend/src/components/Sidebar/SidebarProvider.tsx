@@ -16,6 +16,7 @@ interface SidebarItem {
   type: 'folder' | 'file';
   children?: SidebarItem[];
   enhanceStatus?: string;
+  hookStatus?: string;
 }
 
 export const PROJECT_FOLDER_PREFIX = 'project:';
@@ -25,6 +26,8 @@ export interface CurrentMeeting {
   title: string;
   // spec 4.1: "queued" | "running" | "done" | "failed", absent for legacy meetings
   enhanceStatus?: string;
+  // "running" | "done" | "failed", absent when the hook never ran
+  hookStatus?: string;
   // spec 4.2: project folder name, `_inbox` for legacy meetings
   project?: string;
 }
@@ -96,11 +99,15 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
         const statuses = await invoke<Array<{ meeting_id: string; status: string }>>('list_enhance_statuses')
           .catch((error) => { console.warn('list_enhance_statuses failed:', error); return []; });
         const statusById = new Map(statuses.map((s) => [s.meeting_id, s.status]));
+        const hookStatuses = await invoke<Array<{ meeting_id: string; status: string }>>('list_hook_statuses')
+          .catch((error) => { console.warn('list_hook_statuses failed:', error); return []; });
+        const hookById = new Map(hookStatuses.map((s) => [s.meeting_id, s.status]));
         const transformedMeetings = meetings.map((meeting: any) => ({
           id: meeting.id,
           title: meeting.title,
           project: meeting.project || INBOX,
           enhanceStatus: statusById.get(meeting.id),
+          hookStatus: hookById.get(meeting.id),
         }));
         setMeetings(transformedMeetings);
       } catch (error) {
@@ -126,6 +133,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let unlistenError: (() => void) | undefined;
+    let unlistenHook: (() => void) | undefined;
     let cancelled = false;
     listen<{ meeting_id: string; status: string }>('enhance-status-changed', (event) => {
       setMeetings((prev) =>
@@ -134,6 +142,17 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     }).then((fn) => {
       if (cancelled) fn();
       else unlisten = fn;
+    });
+    listen<{ meeting_id: string; status: string }>('hook-status-changed', (event) => {
+      setMeetings((prev) =>
+        prev.map((m) => (m.id === event.payload.meeting_id ? { ...m, hookStatus: event.payload.status } : m)),
+      );
+      if (event.payload.status === 'failed') {
+        toast.error('Hook failed', { description: 'See hook.log in the meeting folder.' });
+      }
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlistenHook = fn;
     });
     // spec 4.1: an unattended job has no open dialog, so surface its error here
     listen<{ meeting_id: string; error: string }>('retranscription-error', (event) => {
@@ -146,6 +165,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       unlisten?.();
       unlistenError?.();
+      unlistenHook?.();
     };
   }, []);
 
@@ -173,6 +193,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
           title: meeting.title,
           type: 'file' as const,
           enhanceStatus: meeting.enhanceStatus,
+          hookStatus: meeting.hookStatus,
         })),
       })),
     },

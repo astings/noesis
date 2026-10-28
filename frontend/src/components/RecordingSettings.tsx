@@ -32,6 +32,7 @@ export interface RecordingPreferences {
   owner_name: string; // spec 4.4
   post_enhance_command: string; // spec 4.7
   wiki_automation: boolean; // spec 4.8
+  hook_auto_run: boolean;
   wiki_targets: WikiTarget[];
   wiki_budget_usd: number;
 }
@@ -56,6 +57,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     owner_name: 'Me',
     post_enhance_command: '',
     wiki_automation: false,
+    hook_auto_run: false,
     wiki_targets: [],
     wiki_budget_usd: 5,
   });
@@ -339,6 +341,11 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
 
       {/* spec 4.7: post-enhance hook */}
       <SettingsGroup title="Advanced">
+        <SettingRow
+          label="Run hook automatically after enhance"
+          hint="Off: run it from the meeting page or the right-click menu."
+          control={<Switch aria-label="Run hook automatically after enhance" checked={preferences.hook_auto_run} onCheckedChange={(on) => applyPreferences({ ...preferences, hook_auto_run: on })} disabled={saving} />}
+        />
         <SettingRow
           label="Custom command"
           hint="Shell command started after an enhance when wiki automation is off or the project has no wiki. It gets NOESIS_FOLDER, NOESIS_PROJECT, NOESIS_TITLE and NOESIS_MEETING_ID (the MEETILY_* names still work); output goes to hook.log in the meeting folder. Empty means off."

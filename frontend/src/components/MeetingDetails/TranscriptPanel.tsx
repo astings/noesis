@@ -4,6 +4,8 @@ import { Transcript, TranscriptSegmentData } from '@/types';
 import { VirtualizedTranscriptView } from '@/components/VirtualizedTranscriptView';
 import { TranscriptButtonGroup } from './TranscriptButtonGroup';
 import { useMemo } from 'react';
+import { useSidebar } from '@/components/Sidebar/SidebarProvider';
+import { MeetingStatusTags } from '@/components/MeetingStatusTags';
 import { format, isValid, parseISO } from 'date-fns';
 
 interface TranscriptPanelProps {
@@ -65,6 +67,8 @@ export function TranscriptPanel({
     }));
   }, [transcripts, usePagination, segments]);
 
+  const { meetings } = useSidebar();
+  const status = meetings.find((m) => m.id === meetingId);
   const created = createdAt ? parseISO(createdAt) : null;
 
   return (
@@ -76,6 +80,7 @@ export function TranscriptPanel({
           {created && isValid(created) && (
             <span className="font-normal text-muted-foreground"> · {format(created, 'd MMM, HH:mm')}</span>
           )}
+          <MeetingStatusTags enhanceStatus={status?.enhanceStatus} hookStatus={status?.hookStatus} />
         </h1>
         <TranscriptButtonGroup
           transcriptCount={usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length || 0)}

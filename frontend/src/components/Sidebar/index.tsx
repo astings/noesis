@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/context-menu';
 import { INBOX } from '@/lib/projects';
 import { PROJECT_FOLDER_PREFIX } from '@/components/Sidebar/SidebarProvider';
+import { MeetingStatusTags } from '@/components/MeetingStatusTags';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '../ui/input-group';
 
 interface SidebarItem {
@@ -34,27 +35,16 @@ interface SidebarItem {
   type: 'folder' | 'file';
   children?: SidebarItem[];
   enhanceStatus?: string;
+  hookStatus?: string;
 }
 
-// spec 4.1: compact status dot next to the meeting title; the label lives in the tooltip. "done" shows nothing.
-const ENHANCE_BADGE: Record<string, { label: string; className: string }> = {
-  queued: { label: 'Enhance queued', className: 'bg-muted-foreground/40' },
-  running: { label: 'Enhancing transcript', className: 'bg-primary animate-pulse' },
-  failed: { label: 'Enhance failed', className: 'bg-destructive' },
+const runHook = async (meetingId: string) => {
+  try {
+    toast.success(await invoke<string>('run_meeting_hook', { meetingId }));
+  } catch (error) {
+    toast.error(String(error));
+  }
 };
-
-function EnhanceBadge({ status }: { status?: string }) {
-  const badge = status ? ENHANCE_BADGE[status] : undefined;
-  if (!badge) return null;
-  return (
-    <span
-      role="img"
-      aria-label={badge.label}
-      title={badge.label}
-      className={`ml-2 inline-block h-2 w-2 flex-shrink-0 rounded-full ${badge.className}`}
-    />
-  );
-}
 
 const Sidebar: React.FC = () => {
   const router = useRouter();
@@ -450,7 +440,7 @@ const Sidebar: React.FC = () => {
             <div className="flex flex-col w-full min-w-0">
               <div className="flex items-center w-full min-w-0">
                 <span className="flex-1 truncate" title={item.title}>{item.title}</span>
-                {isMeetingItem && <EnhanceBadge status={item.enhanceStatus} />}
+                {isMeetingItem && <MeetingStatusTags enhanceStatus={item.enhanceStatus} hookStatus={item.hookStatus} />}
                 {isMeetingItem && (
                   <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                     <button
@@ -531,6 +521,7 @@ const Sidebar: React.FC = () => {
                   ))}
                 </ContextMenuSubContent>
               </ContextMenuSub>
+              <ContextMenuItem disabled={item.hookStatus === 'running'} onSelect={() => runHook(item.id)}>Run hook</ContextMenuItem>
               <ContextMenuSeparator />
               <ContextMenuItem destructive onSelect={() => setDeleteModalState({ isOpen: true, itemId: item.id })}>Delete</ContextMenuItem>
             </ContextMenuContent>

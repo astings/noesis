@@ -7,7 +7,7 @@ import { ProjectSelect } from '@/components/ProjectSelect';
 import { INBOX, projectOfFolder } from '@/lib/projects';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { Button } from '@/components/ui/button';
-import { Copy, FolderOpen, RefreshCw } from 'lucide-react';
+import { Copy, FolderOpen, RefreshCw, Webhook } from 'lucide-react';
 import { RetranscribeDialog } from './RetranscribeDialog';
 
 interface TranscriptButtonGroupProps {
@@ -30,7 +30,15 @@ export function TranscriptButtonGroup({
   const [showRetranscribeDialog, setShowRetranscribeDialog] = useState(false);
 
   // spec 4.2: move the meeting to another project folder
-  const { refetchMeetings } = useSidebar();
+  const { refetchMeetings, meetings } = useSidebar();
+  const hookRunning = meetings.find((m) => m.id === meetingId)?.hookStatus === 'running';
+  const handleRunHook = async () => {
+    try {
+      toast.success(await invoke<string>('run_meeting_hook', { meetingId }));
+    } catch (error) {
+      toast.error(String(error));
+    }
+  };
   const [root, setRoot] = useState<string>('');
   const [moving, setMoving] = useState(false);
   useEffect(() => {
@@ -102,6 +110,16 @@ export function TranscriptButtonGroup({
           >
             <RefreshCw />
             Enhance
+          </Button>
+          <Button
+            size="sm"
+            className="px-2.5 text-[13px] shadow-none"
+            onClick={handleRunHook}
+            disabled={hookRunning}
+            title="Run the post-enhance hook for this meeting"
+          >
+            <Webhook />
+            Run hook
           </Button>
           <RetranscribeDialog
             open={showRetranscribeDialog}
