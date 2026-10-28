@@ -277,6 +277,7 @@ pub async fn start_retranscription<R: Runtime>(
                     // spec 8: auto-run is opt-in; otherwise the "Run hook" action starts it
                     Ok(prefs) if prefs.hook_auto_run => {
                         let ctx = super::post_enhance_hook::read_context(&folder, &meeting_id);
+                        jobs::await_hook(&job_id);
                         match super::post_enhance_hook::dispatch(&app, &prefs, &ctx, false) {
                             Ok(kind) => {
                                 hook_started = true;

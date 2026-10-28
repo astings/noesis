@@ -87,6 +87,9 @@ pub struct Job {
     pub cancel_requested: bool,
     #[serde(skip)]
     pub hook_pid: Option<u32>,
+    /// set when the enhance handed its transcript to the post-enhance hook
+    #[serde(skip)]
+    awaiting_hook: bool,
     #[serde(skip)]
     started: Option<Instant>,
     #[serde(skip)]
@@ -118,6 +121,7 @@ impl Registry {
             control,
             cancel_requested: false,
             hook_pid: None,
+            awaiting_hook: false,
             started: None,
             last: None,
             rate: None,
@@ -131,11 +135,22 @@ impl Registry {
         self.jobs.iter_mut().find(|j| j.id == id && !j.state.is_terminal())
     }
 
-    /// The oldest live enhance job of a meeting: the running one comes before any re-queued one.
-    fn enhance_of(&mut self, meeting_id: &str) -> Option<&mut Job> {
+    fn live_enhances<'a>(&'a mut self, meeting_id: &'a str) -> impl Iterator<Item = &'a mut Job> + 'a {
         self.jobs
             .iter_mut()
-            .find(|j| j.kind == JobKind::Enhance && !j.state.is_terminal() && j.meeting_id.as_deref() == Some(meeting_id))
+            .filter(move |j| j.kind == JobKind::Enhance && !j.state.is_terminal() && j.meeting_id.as_deref() == Some(meeting_id))
+    }
+
+    /// The first live enhance job of the meeting that handed its transcript to the hook.
+    fn hook_job<'a>(&'a mut self, meeting_id: &'a str) -> Option<&'a mut Job> {
+        self.live_enhances(meeting_id).find(|j| j.awaiting_hook)
+    }
+
+    /// Marks the job as waiting for the post-enhance hook (called just before dispatch).
+    pub fn await_hook(&mut self, id: &str) {
+        if let Some(j) = self.get(id) {
+            j.awaiting_hook = true;
+        }
     }
 
     pub fn start(&mut self, id: &str, now: Instant) {
@@ -182,7 +197,11 @@ impl Registry {
     }
 
     pub fn enhance_progress(&mut self, meeting_id: &str, pct: u8, detail: Option<String>, now: Instant) -> bool {
-        match self.enhance_of(meeting_id).map(|j| j.id.clone()) {
+        let target = self
+            .live_enhances(meeting_id)
+            .find(|j| j.steps.iter().any(|s| s.name == STEP_TRANSCRIBE && s.state == JobState::Running))
+            .map(|j| j.id.clone());
+        match target {
             Some(id) => self.progress(&id, pct, detail, now),
             None => false,
         }
@@ -226,7 +245,7 @@ impl Registry {
 
     /// True when the enhance job for this meeting has a cancel request pending.
     pub fn hook_cancel_requested(&mut self, meeting_id: &str) -> bool {
-        self.enhance_of(meeting_id).is_some_and(|j| j.cancel_requested)
+        self.hook_job(meeting_id).is_some_and(|j| j.cancel_requested)
     }
 
     /// Marks the cancel; a queued job ends at once. Returns the job as it was before, or
@@ -244,7 +263,7 @@ impl Registry {
     /// Wiki step of the meeting's live enhance job, driven by `hook-status-changed` values.
     /// A hook run with no enhance job (the manual "Run hook" action) is ignored.
     pub fn hook_status(&mut self, meeting_id: &str, status: &str) {
-        let Some(j) = self.enhance_of(meeting_id) else { return };
+        let Some(j) = self.hook_job(meeting_id) else { return };
         let id = j.id.clone();
         let cancelled = j.cancel_requested;
         match status {
@@ -253,6 +272,10 @@ impl Registry {
             "done" | "failed" if cancelled => {
                 self.step(&id, STEP_WIKI, JobState::Cancelled, None);
                 self.finish(&id, Outcome::Cancelled);
+            }
+            "done" => {
+                self.step(&id, STEP_WIKI, JobState::Done, None);
+                self.finish(&id, Outcome::Done);
             }
             "failed" => {
                 // spec 5: the transcript is the success criterion; the step carries the failure
@@ -264,7 +287,7 @@ impl Registry {
     }
 
     pub fn set_hook_pid(&mut self, meeting_id: &str, pid: Option<u32>) {
-        if let Some(j) = self.enhance_of(meeting_id) {
+        if let Some(j) = self.hook_job(meeting_id) {
             j.hook_pid = pid;
         }
     }
@@ -315,13 +338,11 @@ pub fn init(app: AppHandle) {
 
 /// Runs `f` on the registry and emits the new list when `f` says something changed.
 fn update<T>(f: impl FnOnce(&mut Registry) -> (T, bool)) -> T {
-    let (out, snapshot) = {
-        let mut r = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
-        let (out, changed) = f(&mut r);
-        (out, changed.then(|| r.snapshot()))
-    };
-    if let (Some(list), Some(app)) = (snapshot, APP.get()) {
-        let _ = app.emit("jobs-changed", list);
+    // emit under the lock so snapshots reach the UI in order (no Rust-side listener, no deadlock)
+    let mut r = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+    let (out, changed) = f(&mut r);
+    if let (true, Some(app)) = (changed, APP.get()) {
+        let _ = app.emit("jobs-changed", r.snapshot());
     }
     out
 }
@@ -360,6 +381,9 @@ pub fn request_cancel(id: &str) -> Option<Job> {
         let changed = j.is_some();
         (j, changed)
     })
+}
+pub fn await_hook(id: &str) {
+    update(|r| (r.await_hook(id), false))
 }
 pub fn hook_status(meeting_id: &str, status: &str) {
     update(|r| (r.hook_status(meeting_id, status), true))
@@ -430,7 +454,10 @@ pub async fn cancel_job(app: AppHandle, id: String) -> Result<(), String> {
 
 /// Kills the hook's whole process group (Claude Code and its children). The hook is
 /// spawned with `process_group(0)`, so its pid is the group id.
-fn kill_group(pid: u32) {
+pub(crate) fn kill_group(pid: u32) {
+    if pid <= 1 {
+        return;
+    }
     let _ = std::process::Command::new("kill").args(["-TERM", &format!("-{}", pid)]).status();
 }
 
@@ -449,10 +476,10 @@ pub async fn retry_job(app: AppHandle, id: String) -> Result<(), String> {
         let result = match job.control {
             Control::Enhance { folder, language, model, provider } => {
                 let meeting_id = job.meeting_id.unwrap_or_default();
-                crate::audio::retranscription::start_retranscription(app, meeting_id, folder, language, model, provider)
+                // the command also syncs the folder slug after the run
+                crate::audio::retranscription::start_retranscription_command(app, meeting_id, folder, language, model, provider)
                     .await
                     .map(|_| ())
-                    .map_err(|e| e.to_string())
             }
             Control::WhisperDownload => crate::whisper_engine::commands::whisper_download_model(app, model).await,
             Control::ParakeetDownload => crate::parakeet_engine::commands::parakeet_download_model(app, model).await,
@@ -573,6 +600,7 @@ mod tests {
         let t = Instant::now();
         r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, t);
         r.add("b", JobKind::Enhance, Some("m"), "", enhance(), false, t);
+        r.await_hook("a");
         r.hook_status("m", "running");
         r.hook_status("m", "failed");
         let a = &r.snapshot()[0];
@@ -585,6 +613,7 @@ mod tests {
     fn hook_failure_after_cancel_is_cancelled() {
         let mut r = Registry::default();
         r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
+        r.await_hook("a");
         r.hook_status("m", "running");
         r.request_cancel("a");
         r.hook_status("m", "failed");
@@ -595,6 +624,7 @@ mod tests {
     fn hook_done_after_cancel_is_cancelled() {
         let mut r = Registry::default();
         r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
+        r.await_hook("a");
         r.hook_status("m", "running");
         r.request_cancel("a");
         r.hook_status("m", "done");
@@ -606,6 +636,7 @@ mod tests {
         let mut r = Registry::default();
         assert!(!r.hook_cancel_requested("m"));
         r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
+        r.await_hook("a");
         assert!(!r.hook_cancel_requested("m"));
         r.request_cancel("a");
         assert!(r.hook_cancel_requested("m"));
@@ -618,5 +649,48 @@ mod tests {
         r.add("a", JobKind::Enhance, Some("m"), "", enhance(), false, Instant::now());
         assert!(!r.enhance_progress("m", 0, Some("Waiting".into()), Instant::now()));
         assert_eq!(r.snapshot()[0].progress, None);
+    }
+
+    #[test]
+    fn hook_done_ends_the_enhance_done() {
+        let mut r = Registry::default();
+        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
+        r.await_hook("a");
+        r.hook_status("m", "running");
+        r.hook_status("m", "done");
+        let a = &r.snapshot()[0];
+        assert_eq!(a.state, JobState::Done);
+        assert_eq!(a.steps[0], Step { name: STEP_WIKI.into(), state: JobState::Done, error: None });
+    }
+
+    #[test]
+    fn hook_and_progress_target_different_jobs_of_one_meeting() {
+        let mut r = Registry::default();
+        let t = Instant::now();
+        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, t);
+        r.await_hook("a");
+        r.add("b", JobKind::Enhance, Some("m"), "", enhance(), true, t);
+        r.step("b", STEP_TRANSCRIBE, JobState::Running, None);
+        assert!(r.enhance_progress("m", 40, None, t));
+        r.hook_status("m", "running");
+        let s = r.snapshot();
+        assert_eq!(s[1].progress, Some(40));
+        assert_eq!(s[0].progress, None);
+        assert_eq!(s[0].steps[0].name, STEP_WIKI);
+        assert!(s[1].steps.iter().all(|x| x.name != STEP_WIKI));
+    }
+
+    #[test]
+    fn hook_lookups_ignore_a_job_not_awaiting_the_hook() {
+        let mut r = Registry::default();
+        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
+        r.step("a", STEP_TRANSCRIBE, JobState::Running, None);
+        r.hook_status("m", "running");
+        r.set_hook_pid("m", Some(42));
+        r.request_cancel("a");
+        assert!(!r.hook_cancel_requested("m"));
+        let a = &r.snapshot()[0];
+        assert_eq!(a.steps.len(), 1);
+        assert_eq!(a.hook_pid, None);
     }
 }

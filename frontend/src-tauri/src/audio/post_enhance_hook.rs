@@ -57,9 +57,15 @@ pub fn spawn_logged(mut command: Command, header: &str, folder: &Path, meeting_i
         .context("spawn post-enhance hook")?;
     info!("Post-enhance hook started (pid {}) for {} in {}", child.id(), meeting_id, folder.display());
     crate::jobs::set_hook_pid(meeting_id, Some(child.id()));
+    // a cancel that landed before the pid was registered killed nothing
+    if crate::jobs::hook_cancel_requested(meeting_id) {
+        crate::jobs::kill_group(child.id());
+    }
     let meeting_id = meeting_id.to_string();
     std::thread::spawn(move || {
-        let success = match child.wait() {
+        let waited = child.wait();
+        crate::jobs::set_hook_pid(&meeting_id, None);
+        let success = match waited {
             Ok(status) => {
                 info!("Post-enhance hook for {} exited with {}", meeting_id, status);
                 status.success()
