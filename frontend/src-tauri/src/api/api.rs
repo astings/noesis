@@ -773,9 +773,31 @@ pub async fn api_delete_meeting<R: Runtime>(
 
     let pool = state.db_manager.pool();
 
+    // Read the folder before the rows disappear.
+    let folder_path: Option<String> =
+        sqlx::query_scalar("SELECT folder_path FROM meetings WHERE id = ?")
+            .bind(&meeting_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .flatten();
+
     match MeetingsRepository::delete_meeting(pool, &meeting_id).await {
         Ok(true) => {
             log_info!("Successfully deleted meeting {}", meeting_id);
+            if let Some(folder) = folder_path.filter(|f| !f.trim().is_empty()) {
+                let root = crate::audio::recording_preferences::get_default_recordings_folder();
+                if let Err(e) =
+                    crate::audio::library::trash_meeting_folder(&root, std::path::Path::new(&folder))
+                {
+                    log_error!("Could not trash folder of meeting {}: {}", meeting_id, e);
+                    return Err(format!(
+                        "Meeting removed from the list, but its folder could not be moved to the Trash: {}",
+                        e
+                    ));
+                }
+            }
             Ok(serde_json::json!({
                 "status": "success",
                 "message": "Meeting deleted successfully"

@@ -410,6 +410,34 @@ pub async fn assign_meeting(
         .map(|p| p.to_string_lossy().to_string())
 }
 
+/// Guard for deletion: true only for `<root>/<project>/<meeting>` (depth 2) or a legacy flat
+/// meeting folder directly under root (depth 1) that holds `metadata.json`.
+pub fn trashable_folder(root: &Path, folder: &Path) -> bool {
+    if folder.components().any(|c| c == std::path::Component::ParentDir) {
+        return false;
+    }
+    let (Ok(root), Ok(folder)) = (root.canonicalize(), folder.canonicalize()) else {
+        return false;
+    };
+    match folder.strip_prefix(&root).map(|r| r.components().count()) {
+        Ok(2) => true,
+        Ok(1) => folder.join("metadata.json").is_file(),
+        _ => false,
+    }
+}
+
+/// Move a meeting folder to the OS Trash if the guard passes. A missing folder is Ok.
+pub fn trash_meeting_folder(root: &Path, folder: &Path) -> Result<()> {
+    if !folder.exists() {
+        log::info!("trash_meeting_folder: {} already gone", folder.display());
+        return Ok(());
+    }
+    if !trashable_folder(root, folder) {
+        anyhow::bail!("refusing to trash {}: not a meeting folder under the recordings root", folder.display());
+    }
+    trash::delete(folder).map_err(|e| anyhow::anyhow!("{}", e))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -560,5 +588,34 @@ mod tests {
         assert!(create_meeting_folder_with_stamp(root.path(), "../escape", "2026-10-27_12-03", None, false).is_err());
         assert!(create_meeting_folder_with_stamp(root.path(), "/tmp/x", "2026-10-27_12-03", None, false).is_err());
         assert!(!root.path().parent().unwrap().join("escape").exists());
+    }
+
+    #[test]
+    fn trashable_folder_guard() {
+        let t = tempfile::tempdir().unwrap();
+        let root = t.path();
+        let meeting = root.join("proj/2026-10-28_10-00 x");
+        std::fs::create_dir_all(&meeting).unwrap();
+        let flat = root.join("2026-10-27_09-00 legacy");
+        write_meta(&flat, "{}");
+        let flat_no_meta = root.join("random");
+        std::fs::create_dir_all(&flat_no_meta).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+
+        assert!(trashable_folder(root, &meeting));
+        assert!(trashable_folder(root, &flat));
+        assert!(!trashable_folder(root, root));
+        assert!(!trashable_folder(root, &root.join("proj")));
+        assert!(!trashable_folder(root, &flat_no_meta));
+        assert!(!trashable_folder(root, &meeting.join("sub")));
+        assert!(!trashable_folder(root, &root.join("proj/../proj")));
+        assert!(!trashable_folder(root, &meeting.join("../../..")));
+        assert!(!trashable_folder(root, outside.path()));
+    }
+
+    #[test]
+    fn trash_missing_folder_is_ok() {
+        let t = tempfile::tempdir().unwrap();
+        assert!(trash_meeting_folder(t.path(), &t.path().join("proj/nope")).is_ok());
     }
 }
