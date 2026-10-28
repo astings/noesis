@@ -33,14 +33,14 @@ export function JobsButton() {
   const { meetings } = useSidebar();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [seenAt, setSeenAt] = useState(() => new Date().toISOString());
+  const [seenAt, setSeenAt] = useState(() => Date.now());
   const [now, setNow] = useState(Date.now());
 
   const running = jobs.filter((j) => j.state === 'running');
   const queued = jobs.filter((j) => j.state === 'queued');
   const recent = jobs.filter((j) => isTerminal(j.state)).sort((a, b) => (b.finished_at ?? '').localeCompare(a.finished_at ?? ''));
   const active = running.length + queued.length;
-  const unseenFailure = recent.some((j) => j.state === 'failed' && (j.finished_at ?? '') > seenAt);
+  const unseenFailure = recent.some((j) => j.state === 'failed' && Date.parse(j.finished_at ?? '') > seenAt);
 
   // elapsed clocks tick only while the panel shows a running job
   useEffect(() => {
@@ -49,7 +49,10 @@ export function JobsButton() {
     return () => clearInterval(t);
   }, [open, running.length]);
 
-  const name = (j: Job) => (j.meeting_id ? meetings.find((m) => m.id === j.meeting_id)?.title ?? 'Meeting' : j.title);
+  const failed = recent.filter((j) => j.state === 'failed').length;
+  const summary = [running.length && `${running.length} running`, queued.length && `${queued.length} queued`, failed && `${failed} failed`].filter(Boolean).join(', ');
+
+  const name = (j: Job) => (j.meeting_id ? meetings.find((m) => m.id === j.meeting_id)?.title || j.title || 'Meeting' : j.title);
   const call = (cmd: string, id?: string) => invoke(cmd, id ? { id } : {}).catch((e) => toast.error(String(e)));
   const openMeeting = (j: Job) => {
     if (!j.meeting_id) return;
@@ -57,14 +60,14 @@ export function JobsButton() {
     router.push(`/meeting-details?id=${j.meeting_id}`);
   };
 
-  const Title = ({ j }: { j: Job }) =>
+  const title = (j: Job) =>
     j.meeting_id ? (
       <button type="button" onClick={() => openMeeting(j)} className="min-w-0 truncate text-left font-medium hover:underline">{name(j)}</button>
     ) : (
       <span className="min-w-0 truncate font-medium">{name(j)}</span>
     );
 
-  const Cancel = ({ j }: { j: Job }) => (
+  const cancel = (j: Job) => (
     <button type="button" aria-label={`Cancel ${KIND[j.kind]} of ${name(j)}`} title="Cancel" onClick={() => call('cancel_job', j.id)}
       className="flex h-6 w-6 flex-none items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground">
       <X className="h-3.5 w-3.5" />
@@ -77,7 +80,7 @@ export function JobsButton() {
   };
 
   return (
-    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) setSeenAt(new Date().toISOString()); }}>
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); setSeenAt(Date.now()); }}>
       <PopoverTrigger asChild>
         <button type="button" aria-label={active ? `Background jobs, ${active} active` : 'Background jobs'} title="Background jobs"
           className="relative flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/60 hover:text-foreground">
@@ -85,11 +88,12 @@ export function JobsButton() {
           {active > 0 && (
             <span className="absolute -right-0.5 -top-0.5 min-w-[14px] rounded-full bg-primary px-1 text-center text-[10px] leading-[14px] text-primary-foreground">{active}</span>
           )}
-          {unseenFailure && active === 0 && <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-destructive" aria-hidden />}
+          {unseenFailure && <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-destructive" aria-hidden />}
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[360px] p-0" role="dialog" aria-label="Background jobs">
-        <div aria-live="polite" className="max-h-[70vh] overflow-y-auto p-2 text-[13px]">
+        <div className="max-h-[70vh] overflow-y-auto p-2 text-[13px]">
+          <p className="sr-only" aria-live="polite">{summary}</p>
           {active === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">Nothing running</p>}
 
           {running.length > 0 && <h3 className="px-2 pb-1 pt-1 text-[11px] font-medium uppercase text-muted-foreground">Running</h3>}
@@ -97,10 +101,10 @@ export function JobsButton() {
             {running.map((j) => (
               <li key={j.id} className="mb-1 rounded-md border border-border p-2">
                 <div className="flex items-center gap-1.5">
-                  <Title j={j} />
+                  {title(j)}
                   <span className="flex-none text-muted-foreground">— {KIND[j.kind]}</span>
                   <span className="flex-1" />
-                  <Cancel j={j} />
+                  {cancel(j)}
                 </div>
                 {j.steps.length > 0 && (
                   <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
@@ -109,7 +113,7 @@ export function JobsButton() {
                     ))}
                   </div>
                 )}
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={j.progress ?? undefined}>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={`${KIND[j.kind]} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={j.progress ?? undefined}>
                   {j.progress === null
                     ? <div className="h-full w-1/3 animate-pulse rounded-full bg-primary/60" />
                     : <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${j.progress}%` }} />}
@@ -126,10 +130,10 @@ export function JobsButton() {
           <ul>
             {queued.map((j, i) => (
               <li key={j.id} className="flex items-center gap-1.5 rounded px-2 py-1">
-                <Title j={j} />
+                {title(j)}
                 <span className="flex-none text-muted-foreground">— {KIND[j.kind]} · {ordinal(i + 1)} in queue</span>
                 <span className="flex-1" />
-                <Cancel j={j} />
+                {cancel(j)}
               </li>
             ))}
           </ul>
@@ -144,8 +148,8 @@ export function JobsButton() {
             {recent.map((j) => (
               <li key={j.id} className="flex items-center gap-1.5 rounded px-2 py-1 text-xs">
                 <StepIcon state={j.state} />
-                <Title j={j} />
-                <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                {title(j)}
+                <span className="min-w-0 flex-1 truncate text-muted-foreground" title={j.error ?? undefined}>
                   — {KIND[j.kind]} · {j.state === 'done' ? minutes(j) : j.state}{j.error ? `: ${j.error}` : ''}
                   {j.steps.filter((s) => s.state === 'failed').map((s) => ` · ${s.name} failed`).join('')}
                 </span>
