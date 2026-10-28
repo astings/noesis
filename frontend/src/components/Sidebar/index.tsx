@@ -177,7 +177,7 @@ const Sidebar: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to delete meeting:', error);
-      // The row is already gone when only the Trash move failed, so refresh the list either way.
+      // The meeting is kept when the Trash move fails; refresh so the list matches the backend.
       await refetchMeetings();
       toast.error("Failed to delete meeting", {
         description: error instanceof Error ? error.message : String(error)
