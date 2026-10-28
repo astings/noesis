@@ -224,6 +224,11 @@ impl Registry {
         self.jobs.iter().any(|j| j.id == id && j.cancel_requested)
     }
 
+    /// True when the enhance job for this meeting has a cancel request pending.
+    pub fn hook_cancel_requested(&mut self, meeting_id: &str) -> bool {
+        self.enhance_of(meeting_id).is_some_and(|j| j.cancel_requested)
+    }
+
     /// Marks the cancel; a queued job ends at once. Returns the job as it was before, or
     /// `None` when unknown or already terminal (nothing to stop).
     pub fn request_cancel(&mut self, id: &str) -> Option<Job> {
@@ -341,6 +346,9 @@ pub fn finish(id: &str, outcome: Outcome) {
 }
 pub fn is_cancel_requested(id: &str) -> bool {
     REGISTRY.lock().unwrap_or_else(|e| e.into_inner()).is_cancel_requested(id)
+}
+pub fn hook_cancel_requested(meeting_id: &str) -> bool {
+    REGISTRY.lock().unwrap_or_else(|e| e.into_inner()).hook_cancel_requested(meeting_id)
 }
 pub fn request_cancel(id: &str) -> Option<Job> {
     update(|r| {
@@ -587,6 +595,17 @@ mod tests {
         r.request_cancel("a");
         r.hook_status("m", "done");
         assert_eq!(r.snapshot()[0].state, JobState::Cancelled);
+    }
+
+    #[test]
+    fn hook_cancel_requested_follows_the_enhance_job() {
+        let mut r = Registry::default();
+        assert!(!r.hook_cancel_requested("m"));
+        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
+        assert!(!r.hook_cancel_requested("m"));
+        r.request_cancel("a");
+        assert!(r.hook_cancel_requested("m"));
+        assert!(!r.hook_cancel_requested("other"));
     }
 
     #[test]

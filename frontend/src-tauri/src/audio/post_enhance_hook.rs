@@ -69,6 +69,8 @@ pub fn spawn_logged(mut command: Command, header: &str, folder: &Path, meeting_i
                 false
             }
         };
+        // a cancelled hook may still exit 0; it must not count as done (no hook.done, status failed)
+        let success = success && !crate::jobs::hook_cancel_requested(&meeting_id);
         if let Some(f) = on_exit {
             f(success);
         }
@@ -306,14 +308,15 @@ mod tests {
         // the hook shell runs in the meeting folder; $$ is its pid (the group id once grouped),
         // the backgrounded sleep is a child that must die with the group
         spawn("echo $$ > hook.pid; sleep 60 & echo $! > child.pid; wait", &ctx, Some(Box::new(move |ok| tx.send(ok).unwrap()))).unwrap();
-        let child_file = dir.path().join("child.pid");
-        assert!(wait_until(|| child_file.exists()), "hook started");
-        let read = |f: &str| std::fs::read_to_string(dir.path().join(f)).unwrap().trim().to_string();
+        let read = |f: &str| std::fs::read_to_string(dir.path().join(f)).unwrap_or_default().trim().to_string();
+        assert!(wait_until(|| read("child.pid").parse::<u32>().is_ok()), "hook started a child with a pid");
+        let child_pid = read("child.pid");
         std::process::Command::new("kill").args(["-TERM", &format!("-{}", read("hook.pid"))]).status().unwrap();
         // the exit status is not deterministic once the group is signalled; only that the hook settled matters
         assert!(rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok(), "on_exit runs after the group is killed");
-        let alive = std::process::Command::new("kill").args(["-0", &read("child.pid")]).status().unwrap().success();
-        assert!(!alive, "the backgrounded child is gone too");
+        // kill -0 also succeeds on a zombie, so poll until the child is reaped
+        let alive = || std::process::Command::new("kill").args(["-0", &child_pid]).status().unwrap().success();
+        assert!(wait_until(|| !alive()), "the backgrounded child is gone too");
     }
 
     type Seen = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;
