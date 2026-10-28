@@ -21,6 +21,21 @@ interface SidebarItem {
 
 export const PROJECT_FOLDER_PREFIX = 'project:';
 
+// Meetings whose manual hook start is awaiting its reply. A start failure emits a failed
+// status event and then returns Err; the caller toasts the Err, so the listener stays quiet.
+const startingHooks = new Set<string>();
+
+export async function runMeetingHook(meetingId: string) {
+  startingHooks.add(meetingId);
+  try {
+    toast.success(await invoke<string>('run_meeting_hook', { meetingId }));
+  } catch (error) {
+    toast.error(String(error));
+  } finally {
+    startingHooks.delete(meetingId);
+  }
+}
+
 export interface CurrentMeeting {
   id: string;
   title: string;
@@ -147,7 +162,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       setMeetings((prev) =>
         prev.map((m) => (m.id === event.payload.meeting_id ? { ...m, hookStatus: event.payload.status } : m)),
       );
-      if (event.payload.status === 'failed') {
+      if (event.payload.status === 'failed' && !startingHooks.has(event.payload.meeting_id)) {
         toast.error('Hook failed', { description: 'See hook.log in the meeting folder.' });
       }
     }).then((fn) => {

@@ -80,8 +80,8 @@ export function TranscriptPanel({
           {created && isValid(created) && (
             <span className="font-normal text-muted-foreground"> · {format(created, 'd MMM, HH:mm')}</span>
           )}
-          <MeetingStatusTags enhanceStatus={status?.enhanceStatus} hookStatus={status?.hookStatus} />
         </h1>
+        <MeetingStatusTags enhanceStatus={status?.enhanceStatus} hookStatus={status?.hookStatus} />
         <TranscriptButtonGroup
           transcriptCount={usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length || 0)}
           onCopyTranscript={onCopyTranscript}

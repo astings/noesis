@@ -25,7 +25,7 @@ import {
   ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { INBOX } from '@/lib/projects';
-import { PROJECT_FOLDER_PREFIX } from '@/components/Sidebar/SidebarProvider';
+import { PROJECT_FOLDER_PREFIX, runMeetingHook } from '@/components/Sidebar/SidebarProvider';
 import { MeetingStatusTags } from '@/components/MeetingStatusTags';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '../ui/input-group';
 
@@ -37,14 +37,6 @@ interface SidebarItem {
   enhanceStatus?: string;
   hookStatus?: string;
 }
-
-const runHook = async (meetingId: string) => {
-  try {
-    toast.success(await invoke<string>('run_meeting_hook', { meetingId }));
-  } catch (error) {
-    toast.error(String(error));
-  }
-};
 
 const Sidebar: React.FC = () => {
   const router = useRouter();
@@ -521,7 +513,7 @@ const Sidebar: React.FC = () => {
                   ))}
                 </ContextMenuSubContent>
               </ContextMenuSub>
-              <ContextMenuItem disabled={item.hookStatus === 'running'} onSelect={() => runHook(item.id)}>Run hook</ContextMenuItem>
+              <ContextMenuItem disabled={item.hookStatus === 'running'} onSelect={() => runMeetingHook(item.id)}>Run hook</ContextMenuItem>
               <ContextMenuSeparator />
               <ContextMenuItem destructive onSelect={() => setDeleteModalState({ isOpen: true, itemId: item.id })}>Delete</ContextMenuItem>
             </ContextMenuContent>

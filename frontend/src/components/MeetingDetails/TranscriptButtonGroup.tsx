@@ -5,7 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { ProjectSelect } from '@/components/ProjectSelect';
 import { INBOX, projectOfFolder } from '@/lib/projects';
-import { useSidebar } from '@/components/Sidebar/SidebarProvider';
+import { useSidebar, runMeetingHook } from '@/components/Sidebar/SidebarProvider';
 import { Button } from '@/components/ui/button';
 import { Copy, FolderOpen, RefreshCw, Webhook } from 'lucide-react';
 import { RetranscribeDialog } from './RetranscribeDialog';
@@ -32,13 +32,6 @@ export function TranscriptButtonGroup({
   // spec 4.2: move the meeting to another project folder
   const { refetchMeetings, meetings } = useSidebar();
   const hookRunning = meetings.find((m) => m.id === meetingId)?.hookStatus === 'running';
-  const handleRunHook = async () => {
-    try {
-      toast.success(await invoke<string>('run_meeting_hook', { meetingId }));
-    } catch (error) {
-      toast.error(String(error));
-    }
-  };
   const [root, setRoot] = useState<string>('');
   const [moving, setMoving] = useState(false);
   useEffect(() => {
@@ -114,7 +107,7 @@ export function TranscriptButtonGroup({
           <Button
             size="sm"
             className="px-2.5 text-[13px] shadow-none"
-            onClick={handleRunHook}
+            onClick={() => runMeetingHook(meetingId)}
             disabled={hookRunning}
             title="Run the post-enhance hook for this meeting"
           >
