@@ -113,39 +113,22 @@ impl Default for RecordingPreferences {
 
 /// Get the default recordings folder based on platform
 pub fn get_default_recordings_folder() -> PathBuf {
+    recordings_base_dir().join(crate::app_names::RECORDINGS_DIR_NAME)
+}
+
+/// Parent of the default recordings folder: Music on Windows, Movies on macOS,
+/// Documents elsewhere (Documents is also the fallback). The migration reuses it.
+pub fn recordings_base_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
-    {
-        // Windows: %USERPROFILE%\Music\noesis-recordings
-        if let Some(music_dir) = dirs::audio_dir() {
-            music_dir.join(crate::app_names::RECORDINGS_DIR_NAME)
-        } else {
-            // Fallback to Documents if Music folder is not available
-            dirs::document_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(crate::app_names::RECORDINGS_DIR_NAME)
-        }
-    }
-
+    let preferred = dirs::audio_dir();
     #[cfg(target_os = "macos")]
-    {
-        // macOS: ~/Movies/noesis-recordings
-        if let Some(movies_dir) = dirs::video_dir() {
-            movies_dir.join(crate::app_names::RECORDINGS_DIR_NAME)
-        } else {
-            // Fallback to Documents if Movies folder is not available
-            dirs::document_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(crate::app_names::RECORDINGS_DIR_NAME)
-        }
-    }
-
+    let preferred = dirs::video_dir();
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        // Linux/Others: ~/Documents/noesis-recordings
-        dirs::document_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(crate::app_names::RECORDINGS_DIR_NAME)
-    }
+    let preferred: Option<PathBuf> = None;
+
+    preferred
+        .or_else(dirs::document_dir)
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 /// Ensure the recordings directory exists

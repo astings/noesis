@@ -43,6 +43,7 @@ pub mod call_detector; // spec 4.5
 pub mod config;
 pub mod console_utils;
 pub mod database;
+pub mod migration; // spec 5.1
 pub mod notifications;
 pub mod ollama;
 pub mod onboarding;
@@ -478,6 +479,10 @@ pub fn run() {
         .manage(audio::init_system_audio_state())
         .manage(summary::summary_engine::ModelManagerState(Arc::new(tokio::sync::Mutex::new(None))))
         .setup(|_app| {
+            // spec 5.1: move the Meetily dirs before anything resolves app_data_dir(),
+            // opens a store file, sets the model dirs or opens the database
+            let migration_outcome = migration::migrate_dirs();
+
             #[cfg(target_os = "windows")]
             match _app.path().resolve(
                 "onnxruntime.dll",
@@ -587,6 +592,13 @@ pub fn run() {
                 database::setup::initialize_database_on_startup(&_app.handle()).await
             })
             .expect("Failed to initialize database");
+
+            // spec 5.1: rewrite absolute paths into a moved recordings root
+            {
+                let handle = _app.handle();
+                let pool = handle.try_state::<state::AppState>().map(|s| s.db_manager.pool().clone());
+                tauri::async_runtime::block_on(migration::finish(handle, pool.as_ref(), &migration_outcome));
+            }
 
             // spec 4.2: repair the meeting index from disk once at startup
             if let Some(state) = _app.handle().try_state::<state::AppState>() {
