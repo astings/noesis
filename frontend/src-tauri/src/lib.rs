@@ -43,6 +43,7 @@ pub mod call_detector; // spec 4.5
 pub mod config;
 pub mod console_utils;
 pub mod database;
+pub mod jobs; // job queue panel
 pub mod migration; // spec 5.1
 pub mod notifications;
 pub mod ollama;
