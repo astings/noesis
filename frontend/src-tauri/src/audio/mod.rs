@@ -59,6 +59,7 @@ pub mod transcript_md;
 pub mod speaker_energy;
 // spec 4.7: post-enhance hook
 pub mod post_enhance_hook;
+pub mod hook_status;
 // spec 4.8: built-in wiki automation
 pub mod wiki_automation;
 

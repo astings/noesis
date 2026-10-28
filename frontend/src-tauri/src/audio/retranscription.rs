@@ -179,26 +179,15 @@ pub async fn start_retranscription<R: Runtime>(
             // spec 4.7: hand the finished transcript to the user's hook, if configured
             if res.segments_count > 0 {
                 match super::recording_preferences::load_recording_preferences(&app).await {
-                    Ok(prefs) => {
+                    // spec 8: auto-run is opt-in; otherwise the "Run hook" action starts it
+                    Ok(prefs) if prefs.hook_auto_run => {
                         let ctx = super::post_enhance_hook::read_context(&folder, &meeting_id);
-                        // spec 4.8: the built-in run wins when the project has a wiki row
-                        let built_in = prefs.wiki_automation
-                            && match super::wiki_automation::find_target(&prefs.wiki_targets, &ctx.project) {
-                                Some(target) => {
-                                    if let Err(e) = super::wiki_automation::run(target, &ctx, prefs.wiki_budget_usd) {
-                                        warn!("Wiki automation did not start for {}: {}", meeting_id, e);
-                                    }
-                                    true
-                                }
-                                None => false,
-                            };
-                        let command = prefs.post_enhance_command.trim();
-                        if !built_in && !command.is_empty() {
-                            if let Err(e) = super::post_enhance_hook::spawn(command, &ctx) {
-                                warn!("Post-enhance hook failed to start for {}: {}", meeting_id, e);
-                            }
+                        match super::post_enhance_hook::dispatch(&app, &prefs, &ctx, false) {
+                            Ok(kind) => info!("Post-enhance hook ({:?}) dispatched for {}", kind, meeting_id),
+                            Err(e) => warn!("Post-enhance hook did not start for {}: {}", meeting_id, e),
                         }
                     }
+                    Ok(_) => info!("Post-enhance hook not auto-run for {} (hook_auto_run off)", meeting_id),
                     Err(e) => warn!("Post-enhance hook skipped for {}: could not load preferences: {}", meeting_id, e),
                 }
             }

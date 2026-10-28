@@ -296,6 +296,14 @@ async fn update_title_in_place(
 /// Rules (spec 4.2): the folder keeps its stamp; the title decides the slug; the project
 /// decides the parent; a legacy folder gets its meeting_id written; the database is
 /// updated even when the folder is gone (title only).
+/// True when `folder` is the folder of the recording in progress.
+pub async fn is_live_folder(folder: Option<&str>) -> bool {
+    if !crate::audio::recording_commands::is_recording().await {
+        return false;
+    }
+    matches!(crate::audio::recording_commands::get_meeting_folder_path().await, Ok(Some(active)) if folder == Some(active.as_str()))
+}
+
 pub async fn assign(
     pool: &sqlx::SqlitePool,
     root: &Path,
@@ -321,12 +329,8 @@ pub async fn assign(
     if enhance_running && project.is_some() {
         return Err("This meeting is being enhanced right now. Try moving it when it finishes.".to_string());
     }
-    if crate::audio::recording_commands::is_recording().await {
-        if let Ok(Some(active)) = crate::audio::recording_commands::get_meeting_folder_path().await {
-            if folder_path.as_deref() == Some(active.as_str()) {
-                return Err("This meeting is being recorded right now.".to_string());
-            }
-        }
+    if is_live_folder(folder_path.as_deref()).await {
+        return Err("This meeting is being recorded right now.".to_string());
     }
 
     let new_title = title.map(str::to_string).unwrap_or(db_title);

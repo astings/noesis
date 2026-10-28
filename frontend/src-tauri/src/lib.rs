@@ -857,6 +857,8 @@ pub fn run() {
             audio::retranscription::cancel_retranscription_command,
             audio::retranscription::is_retranscription_in_progress_command,
             audio::enhance_status::list_enhance_statuses,
+            audio::hook_status::list_hook_statuses,
+            audio::hook_status::run_meeting_hook,
             audio::library::list_projects_command,
             audio::wiki_automation::locate_claude_cli,
             audio::wiki_automation::select_wiki_directory,

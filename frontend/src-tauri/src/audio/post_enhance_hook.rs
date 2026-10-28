@@ -72,8 +72,17 @@ pub fn spawn_logged(mut command: Command, header: &str, folder: &Path, meeting_i
     Ok(())
 }
 
+/// `hook.done` holds the time of the successful run; both hook kinds write it.
+pub fn write_done_marker(folder: &Path) {
+    let marker = folder.join("hook.done");
+    if let Err(e) = std::fs::write(&marker, format!("{}\n", chrono::Local::now().to_rfc3339())) {
+        warn!("Could not write {}: {}", marker.display(), e);
+    }
+}
+
 /// Start `sh -c command` in the meeting folder and return at once. Output is appended to hook.log.
-pub fn spawn(command: &str, ctx: &HookContext) -> Result<()> {
+/// Exit 0 writes `hook.done`; `then` runs after that.
+pub fn spawn(command: &str, ctx: &HookContext, then: Option<OnExit>) -> Result<()> {
     let mut cmd = Command::new("sh");
     cmd.arg("-c")
         .arg(command)
@@ -86,7 +95,90 @@ pub fn spawn(command: &str, ctx: &HookContext) -> Result<()> {
         .env("MEETILY_PROJECT", &ctx.project)
         .env("MEETILY_TITLE", &ctx.title)
         .env("MEETILY_MEETING_ID", &ctx.meeting_id);
-    spawn_logged(cmd, &format!("sh -c {}", command.replace('\n', " ")), &ctx.folder, &ctx.meeting_id, None)
+    let folder = ctx.folder.clone();
+    let on_exit: OnExit = Box::new(move |success| {
+        if success {
+            write_done_marker(&folder);
+        }
+        if let Some(f) = then {
+            f(success);
+        }
+    });
+    spawn_logged(cmd, &format!("sh -c {}", command.replace('\n', " ")), &ctx.folder, &ctx.meeting_id, Some(on_exit))
+}
+
+// spec 8: one dispatch for the auto run after enhance and the manual "Run hook"
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HookKind {
+    Wiki,
+    Command,
+}
+
+/// Receives `(meeting_id, status)` on every hook status transition.
+pub type Notify = std::sync::Arc<dyn Fn(&str, &str) + Send + Sync>;
+
+pub const NO_HOOK: &str = "No hook configured. Set one in Settings, Recordings.";
+
+/// The wiki row for the meeting's project wins, else the custom command. `force` re-runs
+/// wiki automation even when `hook.done` exists.
+pub fn dispatch<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    prefs: &super::recording_preferences::RecordingPreferences,
+    ctx: &HookContext,
+    force: bool,
+) -> std::result::Result<HookKind, String> {
+    use tauri::Emitter;
+    let app = app.clone();
+    let notify: Notify = std::sync::Arc::new(move |id: &str, status: &str| {
+        let _ = app.emit("hook-status-changed", serde_json::json!({ "meeting_id": id, "status": status }));
+    });
+    dispatch_with(prefs, ctx, force, notify)
+}
+
+pub fn dispatch_with(
+    prefs: &super::recording_preferences::RecordingPreferences,
+    ctx: &HookContext,
+    force: bool,
+    notify: Notify,
+) -> std::result::Result<HookKind, String> {
+    use super::hook_status::{set, DONE, FAILED, RUNNING};
+    let target = if prefs.wiki_automation { super::wiki_automation::find_target(&prefs.wiki_targets, &ctx.project) } else { None };
+    let command = prefs.post_enhance_command.trim();
+    if target.is_none() && command.is_empty() {
+        return Err(NO_HOOK.to_string());
+    }
+    let id = ctx.meeting_id.clone();
+    let transition = move |status: &'static str| {
+        set(&id, status);
+        notify(&id, status);
+    };
+    // Running before the spawn: a fast child must not finish before it is marked running.
+    transition(RUNNING);
+    let t = transition.clone();
+    let then: OnExit = Box::new(move |success| t(if success { DONE } else { FAILED }));
+    match target {
+        Some(target) => match super::wiki_automation::run(target, ctx, prefs.wiki_budget_usd, force, Some(then)) {
+            Ok(true) => Ok(HookKind::Wiki),
+            // Skipped on hook.done (auto run only): report what the folder says.
+            Ok(false) if !force && ctx.folder.join("hook.done").exists() => {
+                transition(DONE);
+                Ok(HookKind::Wiki)
+            }
+            // Skipped because a run is in flight; its own exit settles the status.
+            Ok(false) => Err("Wiki automation is already running for this meeting.".to_string()),
+            Err(e) => {
+                transition(FAILED);
+                Err(e.to_string())
+            }
+        },
+        None => match spawn(command, ctx, Some(then)) {
+            Ok(()) => Ok(HookKind::Command),
+            Err(e) => {
+                transition(FAILED);
+                Err(format!("Hook failed to start: {}", e))
+            }
+        },
+    }
 }
 
 #[cfg(test)]
@@ -124,7 +216,7 @@ mod tests {
             title: "Weekly sync".into(),
             meeting_id: "m-1".into(),
         };
-        spawn("echo \"$MEETILY_PROJECT|$MEETILY_TITLE|$MEETILY_MEETING_ID|$MEETILY_FOLDER|$(pwd)\"; echo \"$NOESIS_PROJECT|$NOESIS_TITLE|$NOESIS_MEETING_ID|$NOESIS_FOLDER\"; echo oops >&2; echo END", &ctx).unwrap();
+        spawn("echo \"$MEETILY_PROJECT|$MEETILY_TITLE|$MEETILY_MEETING_ID|$MEETILY_FOLDER|$(pwd)\"; echo \"$NOESIS_PROJECT|$NOESIS_TITLE|$NOESIS_MEETING_ID|$NOESIS_FOLDER\"; echo oops >&2; echo END", &ctx, None).unwrap();
         let log = wait_for(&dir.path().join("hook.log"));
         assert!(log.starts_with("=== "), "header line first: {}", log);
         let real = dir.path().canonicalize().unwrap(); // macOS: /var -> /private/var in pwd
@@ -140,7 +232,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("hook.log"), "previous run\n").unwrap();
         let ctx = read_context(dir.path(), "m-3");
-        spawn("echo END", &ctx).unwrap();
+        spawn("echo END", &ctx, None).unwrap();
         let log = wait_for(&dir.path().join("hook.log"));
         assert!(log.starts_with("previous run\n=== "), "{}", log);
     }
@@ -170,5 +262,82 @@ mod tests {
         assert_eq!(outcome_after(ok.path(), "echo END"), "ok");
         let bad = tempfile::tempdir().unwrap();
         assert_eq!(outcome_after(bad.path(), "echo END; exit 3"), "fail");
+    }
+
+    fn wait_until(mut ok: impl FnMut() -> bool) -> bool {
+        for _ in 0..250 {
+            if ok() {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        false
+    }
+
+    // spec 8: the custom command reports done the same way as wiki automation
+    #[test]
+    fn custom_command_writes_hook_done_only_on_exit_zero() {
+        let ok = tempfile::tempdir().unwrap();
+        spawn("exit 0", &read_context(ok.path(), "m-done-ok"), None).unwrap();
+        assert!(wait_until(|| ok.path().join("hook.done").exists()), "hook.done after exit 0");
+        let bad = tempfile::tempdir().unwrap();
+        let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let f = finished.clone();
+        spawn("exit 1", &read_context(bad.path(), "m-done-bad"), Some(Box::new(move |_| f.store(true, std::sync::atomic::Ordering::SeqCst)))).unwrap();
+        assert!(wait_until(|| finished.load(std::sync::atomic::Ordering::SeqCst)));
+        assert!(!bad.path().join("hook.done").exists(), "no hook.done after exit 1");
+    }
+
+    type Seen = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;
+    fn recorder() -> (Seen, Notify) {
+        let seen: Seen = Default::default();
+        let s = seen.clone();
+        (seen, std::sync::Arc::new(move |id: &str, status: &str| s.lock().unwrap().push((id.into(), status.into()))))
+    }
+
+    #[test]
+    fn dispatch_without_any_hook_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefs = super::super::recording_preferences::RecordingPreferences::default();
+        let (seen, notify) = recorder();
+        let err = dispatch_with(&prefs, &read_context(dir.path(), "m-none"), false, notify).unwrap_err();
+        assert_eq!(err, "No hook configured. Set one in Settings, Recordings.");
+        assert!(seen.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn dispatch_runs_the_command_and_tracks_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut prefs = super::super::recording_preferences::RecordingPreferences::default();
+        prefs.post_enhance_command = "exit 0".into();
+        let (seen, notify) = recorder();
+        assert_eq!(dispatch_with(&prefs, &read_context(dir.path(), "m-cmd-ok"), false, notify).unwrap(), HookKind::Command);
+        assert!(wait_until(|| seen.lock().unwrap().len() == 2), "{:?}", seen.lock().unwrap());
+        assert_eq!(*seen.lock().unwrap(), vec![("m-cmd-ok".to_string(), "running".to_string()), ("m-cmd-ok".to_string(), "done".to_string())]);
+        assert_eq!(super::super::hook_status::memory_status("m-cmd-ok"), None, "done lives on disk");
+
+        let bad = tempfile::tempdir().unwrap();
+        prefs.post_enhance_command = "exit 2".into();
+        let (seen, notify) = recorder();
+        dispatch_with(&prefs, &read_context(bad.path(), "m-cmd-bad"), false, notify).unwrap();
+        assert!(wait_until(|| seen.lock().unwrap().len() == 2));
+        assert_eq!(seen.lock().unwrap()[1].1, "failed");
+        assert_eq!(super::super::hook_status::memory_status("m-cmd-bad"), Some("failed"));
+    }
+
+    #[test]
+    fn dispatch_prefers_the_wiki_row_and_marks_a_failed_start() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("metadata.json"), r#"{"project":"dex"}"#).unwrap();
+        let mut prefs = super::super::recording_preferences::RecordingPreferences::default();
+        prefs.post_enhance_command = "touch command-ran".into();
+        prefs.wiki_automation = true;
+        prefs.wiki_targets = vec![super::super::recording_preferences::WikiTarget { project: "dex".into(), directory: "/nonexistent/wiki".into(), skill: String::new() }];
+        let (seen, notify) = recorder();
+        let err = dispatch_with(&prefs, &read_context(dir.path(), "m-wiki"), true, notify).unwrap_err();
+        assert!(err.contains("/nonexistent/wiki"), "{}", err);
+        assert_eq!(seen.lock().unwrap().last().unwrap().1, "failed");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(!dir.path().join("command-ran").exists(), "the command does not run when a wiki row exists");
     }
 }

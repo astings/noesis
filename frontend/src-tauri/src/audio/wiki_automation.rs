@@ -6,7 +6,7 @@ use anyhow::{bail, Result};
 use log::warn;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use super::post_enhance_hook::{spawn_logged, HookContext, OnExit};
+use super::post_enhance_hook::{spawn_logged, write_done_marker, HookContext, OnExit};
 use super::recording_preferences::WikiTarget;
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
@@ -91,14 +91,16 @@ fn note(folder: &Path, line: &str) {
 }
 
 /// Run Claude Code in the wiki for this meeting. Errors are also noted in hook.log.
-pub fn run(target: &WikiTarget, ctx: &HookContext, budget_usd: f64) -> Result<()> {
-    if ctx.folder.join("hook.done").exists() {
+/// `Ok(false)` means skipped (`hook.done` exists and `force` is off, or a run is in flight).
+/// `then` runs after the child exits, once the marker is written.
+pub fn run(target: &WikiTarget, ctx: &HookContext, budget_usd: f64, force: bool, then: Option<OnExit>) -> Result<bool> {
+    if !force && ctx.folder.join("hook.done").exists() {
         note(&ctx.folder, "skipped: hook.done exists");
-        return Ok(());
+        return Ok(false);
     }
     if running().lock().unwrap_or_else(|e| e.into_inner()).contains(&ctx.meeting_id) {
         note(&ctx.folder, "skipped: a run for this meeting is still in progress");
-        return Ok(());
+        return Ok(false);
     }
     let dir = expand_home(target.directory.trim());
     if !dir.is_dir() {
@@ -126,20 +128,23 @@ pub fn run(target: &WikiTarget, ctx: &HookContext, budget_usd: f64) -> Result<()
     let header = format!("{} {}", claude.display(), args.join(" "));
     running().lock().unwrap_or_else(|e| e.into_inner()).insert(ctx.meeting_id.clone());
     let id = ctx.meeting_id.clone();
-    let marker = ctx.folder.join("hook.done");
+    let folder = ctx.folder.clone();
     let on_exit: OnExit = Box::new(move |success| {
         // Marker first, then release the id: a re-enhance arriving in between sees the marker.
         if success {
-            if let Err(e) = std::fs::write(&marker, format!("{}\n", chrono::Local::now().to_rfc3339())) {
-                warn!("Could not write {}: {}", marker.display(), e);
-            }
+            write_done_marker(&folder);
         }
         running().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+        if let Some(f) = then {
+            f(success);
+        }
     });
-    spawn_logged(cmd, &header, &ctx.folder, &ctx.meeting_id, Some(on_exit)).inspect_err(|e| {
-        running().lock().unwrap_or_else(|e| e.into_inner()).remove(&ctx.meeting_id);
-        warn!("Wiki automation failed to start for {}: {}", ctx.meeting_id, e)
-    })
+    spawn_logged(cmd, &header, &ctx.folder, &ctx.meeting_id, Some(on_exit))
+        .inspect_err(|e| {
+            running().lock().unwrap_or_else(|e| e.into_inner()).remove(&ctx.meeting_id);
+            warn!("Wiki automation failed to start for {}: {}", ctx.meeting_id, e)
+        })
+        .map(|_| true)
 }
 
 /// spec 4.8: where the settings card says Claude Code was found
@@ -226,7 +231,7 @@ mod tests {
         let mut c = ctx(dir.path());
         c.meeting_id = "m-running".into();
         running().lock().unwrap().insert("m-running".into());
-        run(&target("dex", dir.path().to_str().unwrap(), ""), &c, 5.0).unwrap();
+        assert!(!run(&target("dex", dir.path().to_str().unwrap(), ""), &c, 5.0, false, None).unwrap());
         running().lock().unwrap().remove("m-running");
         let log = std::fs::read_to_string(dir.path().join("hook.log")).unwrap();
         assert!(log.contains("still in progress"), "{}", log);
@@ -237,15 +242,26 @@ mod tests {
     fn run_skips_when_hook_done_exists() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("hook.done"), "x").unwrap();
-        run(&target("dex", dir.path().to_str().unwrap(), ""), &ctx(dir.path()), 5.0).unwrap();
+        assert!(!run(&target("dex", dir.path().to_str().unwrap(), ""), &ctx(dir.path()), 5.0, false, None).unwrap());
         let log = std::fs::read_to_string(dir.path().join("hook.log")).unwrap();
         assert!(log.contains("skipped: hook.done exists"), "{}", log);
     }
 
     #[test]
+    fn forced_run_ignores_hook_done() {
+        // Gets past the marker check and fails on the missing wiki, so no claude is started.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("hook.done"), "x").unwrap();
+        let err = run(&target("dex", "/nonexistent/wiki", ""), &ctx(dir.path()), 5.0, true, None).unwrap_err();
+        assert!(err.to_string().contains("/nonexistent/wiki"), "{}", err);
+        let log = std::fs::read_to_string(dir.path().join("hook.log")).unwrap();
+        assert!(!log.contains("skipped"), "{}", log);
+    }
+
+    #[test]
     fn run_fails_cleanly_when_the_wiki_directory_is_missing() {
         let dir = tempfile::tempdir().unwrap();
-        let err = run(&target("dex", "/nonexistent/wiki", ""), &ctx(dir.path()), 5.0).unwrap_err();
+        let err = run(&target("dex", "/nonexistent/wiki", ""), &ctx(dir.path()), 5.0, false, None).unwrap_err();
         assert!(err.to_string().contains("/nonexistent/wiki"), "{}", err);
         let log = std::fs::read_to_string(dir.path().join("hook.log")).unwrap();
         assert!(log.contains("/nonexistent/wiki"), "{}", log);

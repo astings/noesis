@@ -64,6 +64,9 @@ pub struct RecordingPreferences {
     pub wiki_targets: Vec<WikiTarget>,
     #[serde(default = "default_wiki_budget_usd")]
     pub wiki_budget_usd: f64,
+    // spec 8: off means the hook only runs from the "Run hook" action
+    #[serde(default)]
+    pub hook_auto_run: bool,
 }
 
 fn default_true() -> bool {
@@ -107,6 +110,7 @@ impl Default for RecordingPreferences {
             wiki_automation: false,
             wiki_targets: Vec::new(),
             wiki_budget_usd: default_wiki_budget_usd(),
+            hook_auto_run: false,
         }
     }
 }
@@ -443,6 +447,15 @@ pub async fn get_audio_backend_info() -> Result<Vec<BackendInfo>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // spec 8: the hook waits for a manual run unless the owner opts in
+    #[test]
+    fn hook_auto_run_defaults_off_for_new_and_old_preferences() {
+        assert!(!RecordingPreferences::default().hook_auto_run);
+        let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4","post_enhance_command":"echo hi"}"#;
+        let p: RecordingPreferences = serde_json::from_str(old).unwrap();
+        assert!(!p.hook_auto_run);
+    }
 
     #[test]
     fn default_recordings_folder_is_noesis() {
