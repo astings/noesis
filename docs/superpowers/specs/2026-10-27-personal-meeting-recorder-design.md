@@ -211,6 +211,9 @@ See 4.2. Root, then project, then meeting. Legacy flat meeting folders at the ro
   "transcript_md": "transcript.md",
   "speakers_file": "speakers.json",
   "speakers": {"me": "Alexandre", "them": "Others"},
+  "tags": ["onboarding", "western-digital"],
+  "tagged_at": "2026-10-26T19:32:10Z",
+  "audio_deleted_at": "2026-10-27T19:40:00Z",
   "transcription": {
     "live": {"provider": "parakeet", "model": "parakeet-tdt-0.6b-v3-int8"},
     "enhanced": {"provider": "whisper", "model": "large-v3", "status": "done", "at": "2026-10-26T19:31:30Z", "error": null}
@@ -219,7 +222,7 @@ See 4.2. Root, then project, then meeting. Legacy flat meeting folders at the ro
 }
 ```
 
-`retranscribed_at`, `created_at`, `completed_at` and `status` keep their v1 meaning so the current wiki scripts keep working. `project` and `title` in metadata win over the database when they disagree; the reconcile scan updates the index and leaves folders where they are.
+`tags` (lowercase-kebab slugs), `tagged_at` and `audio_deleted_at` are optional and set after enhance; `audio_deleted_at` means `audio.mp4` was removed and `audio_file` is `""`. `retranscribed_at`, `created_at`, `completed_at` and `status` keep their v1 meaning so the current wiki scripts keep working. `project` and `title` in metadata win over the database when they disagree; the reconcile scan updates the index and leaves folders where they are.
 
 ### 5.3 transcript.md
 
@@ -233,6 +236,7 @@ duration_seconds: 2555
 quality: enhanced
 model: whisper large-v3
 speakers: me=Alexandre, them=Others
+tags: [onboarding, western-digital]
 ---
 [00:00] Alexandre: Thank you. Hello, how are you?
 [00:04] Others: Yes, it's been a long time.
@@ -246,10 +250,15 @@ One segment per line, `[mm:ss]` start time, speaker name when known, text verbat
 ```
 list_projects() -> [{name, meeting_count, last_meeting_at}]
 
-list_meetings({project?: string, since?: ISO date, until?: ISO date, limit?: number = 20})
-  -> [{meeting_id, project, title, started_at, duration_seconds, quality: "live"|"enhanced"|"enhancing"|"failed", path}]
+list_meetings({project?: string, tag?: string, since?: ISO date, until?: ISO date, limit?: number = 20})
+  -> [{meeting_id, project, title, started_at, duration_seconds, quality: "live"|"enhanced"|"enhancing"|"failed", path, tags: string[]}]
   Sorted newest first. `_inbox` includes legacy root-level folders.
   quality "enhancing" covers both queued and running jobs.
+
+search_meetings({query: string, project?: string, tags?: string[], since?: ISO date, until?: ISO date, limit?: number = 10})
+  -> [{meeting_id, project, title, started_at, tags, path, score,
+       hits: [{start_seconds, end_seconds, snippet}]}]
+  Keyword search (not semantic) over titles, tags and transcript text; best meeting first. `tags` filters to meetings carrying all the given tags. Read context with get_transcript(start_seconds, end_seconds).
 
 get_transcript({meeting_id?: string, path?: string, format?: "md"|"text"|"json" = "md", start_seconds?: number, end_seconds?: number})
   -> string. "md" is transcript.md (rendered from transcripts.json for legacy folders), "text" strips timestamps, "json" is the raw segments.

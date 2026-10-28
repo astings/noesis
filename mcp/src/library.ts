@@ -15,6 +15,7 @@ export type MeetingInfo = {
   quality: Quality;
   path: string;
   legacy: boolean;
+  tags: string[];
 };
 
 type Json = Record<string, unknown>;
@@ -74,6 +75,7 @@ function infoFrom(dir: string, legacy: boolean): MeetingInfo | null {
     quality: qualityOf(meta),
     path: dir,
     legacy,
+    tags: Array.isArray(meta.tags) ? meta.tags.filter((t): t is string => typeof t === 'string') : [],
   };
 }
 
@@ -115,7 +117,7 @@ export function findMeeting(root: string, ref: { meeting_id?: string; path?: str
 
 type Segment = { start: number; text: string; speaker: string | null; raw: Json };
 
-function readSegments(info: MeetingInfo): Segment[] {
+export function readSegments(info: MeetingInfo): Segment[] {
   const data = readJson(path.join(info.path, 'transcripts.json'));
   const list = Array.isArray(data?.segments) ? (data!.segments as Json[]) : [];
   return list
