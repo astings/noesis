@@ -116,7 +116,7 @@ export function JobsButton() {
                 )}
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={`${KIND[j.kind]} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={j.progress ?? undefined}>
                   {j.progress === null
-                    ? <div className="h-full w-1/3 animate-pulse rounded-full bg-primary/60" />
+                    ? <div className="h-full w-1/4 animate-indeterminate rounded-full bg-primary motion-reduce:w-full motion-reduce:animate-pulse motion-reduce:bg-primary/40" />
                     : <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${j.progress}%` }} />}
                 </div>
                 <div className="mt-1 flex gap-2 text-xs text-muted-foreground">
