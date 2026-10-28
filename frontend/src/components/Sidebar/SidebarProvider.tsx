@@ -7,7 +7,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
-import type { SummaryProcessResponse } from '@/types';
 import { INBOX } from '@/lib/projects';
 
 
@@ -39,12 +38,6 @@ interface TranscriptSearchResult {
   timestamp: string;
 }
 
-interface SummaryPoll {
-  processId: string;
-  timer: NodeJS.Timeout;
-  inFlight: boolean;
-}
-
 interface SidebarContextType {
   currentMeeting: CurrentMeeting | null;
   setCurrentMeeting: (meeting: CurrentMeeting | null) => void;
@@ -63,13 +56,6 @@ interface SidebarContextType {
   serverAddress: string;
   transcriptServerAddress: string;
   setTranscriptServerAddress: (address: string) => void;
-  // Summary polling management
-  startSummaryPolling: (
-    meetingId: string,
-    processId: string,
-    onUpdate: (result: SummaryProcessResponse) => void | Promise<void>
-  ) => void;
-  stopSummaryPolling: (meetingId: string, processId?: string) => void;
   // Refetch meetings from backend
   refetchMeetings: () => Promise<void>;
 
@@ -95,7 +81,6 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [isSearching, setIsSearching] = useState(false);
   const [serverAddress, setServerAddress] = useState('');
   const [transcriptServerAddress, setTranscriptServerAddress] = useState('');
-  const summaryPollsRef = React.useRef(new Map<string, SummaryPoll>());
 
   // Use recording state from RecordingStateContext (single source of truth)
   const { isRecording } = useRecordingState();
@@ -256,105 +241,6 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Summary polling management
-  const stopSummaryPolling = React.useCallback((meetingId: string, processId?: string) => {
-    const poll = summaryPollsRef.current.get(meetingId);
-    if (!poll || (processId && poll.processId !== processId)) {
-      return;
-    }
-    clearInterval(poll.timer);
-    summaryPollsRef.current.delete(meetingId);
-  }, []);
-
-  const startSummaryPolling = React.useCallback((
-    meetingId: string,
-    processId: string,
-    onUpdate: (result: SummaryProcessResponse) => void | Promise<void>
-  ) => {
-    stopSummaryPolling(meetingId);
-    let pollCount = 0;
-    const maxPolls = 200;
-    const poll = async () => {
-      const entry = summaryPollsRef.current.get(meetingId);
-      if (!entry || entry.processId !== processId || entry.inFlight) {
-        return;
-      }
-      entry.inFlight = true;
-      try {
-        pollCount += 1;
-        if (pollCount >= maxPolls) {
-          await onUpdate({
-            status: 'error',
-            meetingName: null,
-            meeting_id: meetingId,
-            start: processId,
-            end: null,
-            data: null,
-            error: 'Summary generation timed out after 15 minutes. Please try again or check your model configuration.',
-          });
-          if (summaryPollsRef.current.get(meetingId) === entry) {
-            stopSummaryPolling(meetingId, processId);
-          }
-          return;
-        }
-
-        const result = await invoke<SummaryProcessResponse>('api_get_summary', { meetingId });
-        const current = summaryPollsRef.current.get(meetingId);
-        if (current !== entry || result.start !== processId) {
-          return;
-        }
-        await onUpdate(result);
-        if (summaryPollsRef.current.get(meetingId) !== entry) return;
-        if (
-          result.status === 'completed'
-          || result.status === 'error'
-          || result.status === 'failed'
-          || result.status === 'cancelled'
-          || (result.status === 'idle' && pollCount > 1)
-        ) {
-          stopSummaryPolling(meetingId, processId);
-        }
-      } catch (error) {
-        const current = summaryPollsRef.current.get(meetingId);
-        if (current !== entry) {
-          return;
-        }
-        try {
-          await onUpdate({
-            status: 'error',
-            meetingName: null,
-            meeting_id: meetingId,
-            start: processId,
-            end: null,
-            data: null,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
-        } catch (callbackError) {
-          console.error('Failed to handle summary polling error:', callbackError);
-        } finally {
-          if (summaryPollsRef.current.get(meetingId) === entry) {
-            stopSummaryPolling(meetingId, processId);
-          }
-        }
-      } finally {
-        const current = summaryPollsRef.current.get(meetingId);
-        if (current === entry) {
-          current.inFlight = false;
-        }
-      }
-    };
-
-    const timer = setInterval(() => void poll(), 5000);
-    summaryPollsRef.current.set(meetingId, { processId, timer, inFlight: false });
-  }, [stopSummaryPolling]);
-
-  useEffect(() => () => {
-    summaryPollsRef.current.forEach(({ timer }) => clearInterval(timer));
-    summaryPollsRef.current.clear();
-  }, []);
-
-
-
   return (
     <SidebarContext.Provider value={{
       currentMeeting,
@@ -374,8 +260,6 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       serverAddress,
       transcriptServerAddress,
       setTranscriptServerAddress,
-      startSummaryPolling,
-      stopSummaryPolling,
       refetchMeetings: fetchMeetings,
 
     }}>

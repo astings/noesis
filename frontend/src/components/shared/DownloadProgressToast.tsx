@@ -4,7 +4,6 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import { X, Download, Check, Loader2, ArrowBigDownDash } from 'lucide-react';
-import { getDownloadTotalMb } from '@/lib/onboarding-summary-model';
 import type { ParakeetDownloadProgressEvent } from '@/lib/parakeet';
 
 interface DownloadProgress {
@@ -290,54 +289,6 @@ export function useDownloadProgressToast() {
       unlistenProgress.then((fn) => fn());
       unlistenComplete.then((fn) => fn());
       unlistenError.then((fn) => fn());
-    };
-  }, [updateDownload, cleanupDownload]);
-
-  // Listen to Built-in AI summary model download events
-  useEffect(() => {
-    const unlisten = listen<{
-      model: string;
-      progress: number;
-      downloaded_mb?: number;
-      total_mb?: number;
-      speed_mbps?: number;
-      status: string;
-      error?: string;
-    }>('builtin-ai-download-progress', (event) => {
-      const { model, progress, downloaded_mb, total_mb, speed_mbps, status, error } = event.payload;
-
-      const downloadData: DownloadProgress = {
-        modelName: model,
-        displayName: `Summary Model (${model})`,
-        progress: progress ?? 0,
-        downloadedMb: downloaded_mb ?? 0,
-        totalMb: getDownloadTotalMb(total_mb, model),
-        speedMbps: speed_mbps ?? 0,
-        unitLabel: 'MiB',
-        status: status === 'completed' || progress >= 100
-          ? 'completed'
-          : status === 'cancelled'
-            ? 'cancelled'
-            : status === 'error'
-              ? 'error'
-              : 'downloading',
-        error: status === 'error' ? categorizeError(error || 'Download failed') : undefined,
-      };
-
-      updateDownload(model, downloadData);
-
-      // Clean up finished downloads after delay to prevent endless toasts
-      if (downloadData.status === 'completed') {
-        cleanupDownload(model, 4000);  // 3s toast + 1s buffer
-      } else if (downloadData.status === 'error') {
-        cleanupDownload(model, 11000); // 10s toast + 1s buffer
-      } else if (downloadData.status === 'cancelled') {
-        cleanupDownload(model, 6000);  // 5s toast + 1s buffer
-      }
-    });
-
-    return () => {
-      unlisten.then((fn) => fn());
     };
   }, [updateDownload, cleanupDownload]);
 
