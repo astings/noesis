@@ -48,37 +48,24 @@ fn size_of(p: &Path) -> u64 {
     }
 }
 
-fn invalid(msg: String) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::InvalidData, msg)
-}
-
 /// Remove the audio file and `.checkpoints`, then mark metadata.json. metadata.json is read
 /// first (missing is fine, unreadable is not) so a failure leaves the audio in place.
 pub fn delete_audio(folder: &Path, now: DateTime<Utc>) -> std::io::Result<u64> {
-    let meta_path = folder.join("metadata.json");
-    let mut meta: serde_json::Value = match std::fs::read_to_string(&meta_path) {
-        Ok(t) => serde_json::from_str(&t).map_err(|e| invalid(format!("metadata.json is not valid JSON: {}", e)))?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
-        Err(e) => return Err(e),
-    };
-    let obj = meta.as_object_mut().ok_or_else(|| invalid("metadata.json root is not an object".into()))?;
-
-    let mut freed = 0;
-    if let Ok(audio) = super::retranscription::find_audio_file(folder) {
-        freed += size_of(&audio);
-        std::fs::remove_file(&audio)?;
-    }
-    let cp = folder.join(".checkpoints");
-    if cp.exists() {
-        freed += size_of(&cp);
-        std::fs::remove_dir_all(&cp)?;
-    }
-    obj.insert("audio_file".into(), "".into());
-    obj.insert("audio_deleted_at".into(), now.to_rfc3339().into());
-    let tmp = folder.join(".metadata.json.tmp");
-    std::fs::write(&tmp, serde_json::to_string_pretty(&meta)?)?;
-    std::fs::rename(&tmp, &meta_path)?;
-    Ok(freed)
+    super::metadata_file::update_metadata(folder, |obj| {
+        let mut freed = 0;
+        if let Ok(audio) = super::retranscription::find_audio_file(folder) {
+            freed += size_of(&audio);
+            std::fs::remove_file(&audio)?;
+        }
+        let cp = folder.join(".checkpoints");
+        if cp.exists() {
+            freed += size_of(&cp);
+            std::fs::remove_dir_all(&cp)?;
+        }
+        obj.insert("audio_file".into(), "".into());
+        obj.insert("audio_deleted_at".into(), now.to_rfc3339().into());
+        Ok(freed)
+    })
 }
 
 fn read_meta(folder: &Path) -> serde_json::Value {
@@ -89,7 +76,17 @@ fn read_meta(folder: &Path) -> serde_json::Value {
 }
 
 /// Delete audio for every meeting that passes `check` with the retention window. Returns the count.
+/// The enhance queue is held across check and delete so no job starts on a folder mid-delete;
+/// a busy queue skips the whole tick.
 pub async fn run_once(pool: &sqlx::SqlitePool, now: DateTime<Utc>, retention_hours: u32) -> usize {
+    let Some(_idle) = super::retranscription::enhance_idle() else {
+        log::info!("audio cleanup: an enhance job is running; skipping this tick");
+        return 0;
+    };
+    sweep(pool, now, retention_hours).await
+}
+
+async fn sweep(pool: &sqlx::SqlitePool, now: DateTime<Utc>, retention_hours: u32) -> usize {
     let rows: Vec<(String, String)> = match sqlx::query_as("SELECT id, folder_path FROM meetings WHERE folder_path IS NOT NULL")
         .fetch_all(pool)
         .await
@@ -100,10 +97,9 @@ pub async fn run_once(pool: &sqlx::SqlitePool, now: DateTime<Utc>, retention_hou
             return 0;
         }
     };
-    let running = super::retranscription::running_meeting_id();
     let mut deleted = 0;
     for (id, folder_path) in rows {
-        if running.as_deref() == Some(id.as_str()) || super::library::is_live_folder(Some(&folder_path)).await {
+        if super::library::is_live_folder(Some(&folder_path)).await {
             continue;
         }
         let folder = PathBuf::from(&folder_path);
@@ -160,6 +156,7 @@ pub async fn delete_meeting_audio<R: Runtime>(app: AppHandle<R>, meeting_id: Str
     if super::retranscription::running_meeting_id().as_deref() == Some(meeting_id.as_str()) {
         return Err("This meeting is being enhanced right now.".to_string());
     }
+    let _idle = super::retranscription::enhance_idle().ok_or("An enhance job is running; try again when it finishes.")?;
     let folder = folder_path.map(PathBuf::from).filter(|p| p.is_dir()).ok_or("Folder not found on disk")?;
     let md = std::fs::read_to_string(folder.join("transcript.md")).ok();
     check(&read_meta(&folder), md.as_deref(), Utc::now(), None)?;
@@ -254,19 +251,38 @@ mod tests {
         f
     }
 
+    async fn pool_with(folders: &[(&str, &PathBuf)]) -> sqlx::SqlitePool {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        sqlx::query("CREATE TABLE meetings (id TEXT PRIMARY KEY, folder_path TEXT)").execute(&pool).await.unwrap();
+        for (id, f) in folders {
+            sqlx::query("INSERT INTO meetings (id, folder_path) VALUES (?, ?)")
+                .bind(id).bind(f.to_str().unwrap()).execute(&pool).await.unwrap();
+        }
+        pool
+    }
+
+    // These call `sweep` (run_once minus the enhance-queue guard) so they never race the
+    // retranscription test that holds ENHANCE_QUEUE.
     #[tokio::test]
     async fn run_once_only_deletes_past_the_window() {
         let root = tempfile::tempdir().unwrap();
         let old = enhanced_folder(root.path(), "old", "2026-10-20T00:00:00Z");
         let recent = enhanced_folder(root.path(), "recent", "2026-10-28T11:00:00Z");
-        let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
-        sqlx::query("CREATE TABLE meetings (id TEXT PRIMARY KEY, folder_path TEXT)").execute(&pool).await.unwrap();
-        for (id, f) in [("a", &old), ("b", &recent)] {
-            sqlx::query("INSERT INTO meetings (id, folder_path) VALUES (?, ?)")
-                .bind(id).bind(f.to_str().unwrap()).execute(&pool).await.unwrap();
-        }
-        assert_eq!(run_once(&pool, now(), 24).await, 1);
+        let pool = pool_with(&[("a", &old), ("b", &recent)]).await;
+        assert_eq!(sweep(&pool, now(), 24).await, 1);
         assert!(!old.join("audio.mp4").exists());
         assert!(recent.join("audio.mp4").exists());
+    }
+
+    #[tokio::test]
+    async fn run_once_skips_a_meeting_whose_metadata_says_queued_or_running() {
+        let root = tempfile::tempdir().unwrap();
+        let queued = enhanced_folder(root.path(), "queued", "2026-10-20T00:00:00Z");
+        let running = enhanced_folder(root.path(), "running", "2026-10-20T00:00:00Z");
+        std::fs::write(queued.join("metadata.json"), meta("queued", "2026-10-20T00:00:00Z").to_string()).unwrap();
+        std::fs::write(running.join("metadata.json"), meta("running", "2026-10-20T00:00:00Z").to_string()).unwrap();
+        let pool = pool_with(&[("q", &queued), ("r", &running)]).await;
+        assert_eq!(sweep(&pool, now(), 24).await, 0);
+        assert!(queued.join("audio.mp4").exists() && running.join("audio.mp4").exists());
     }
 }

@@ -265,21 +265,14 @@ async fn update_title_in_place(
     title: &str,
     now: chrono::DateTime<chrono::Utc>,
 ) -> std::result::Result<(), String> {
-    let meta_path = folder.join("metadata.json");
-    if let Ok(text) = std::fs::read_to_string(&meta_path) {
-        if let Ok(mut meta) = serde_json::from_str::<serde_json::Value>(&text) {
-            if let Some(obj) = meta.as_object_mut() {
-                obj.insert("meeting_id".into(), serde_json::json!(meeting_id));
-                obj.insert("title".into(), serde_json::json!(title));
-                let tmp = folder.join(".metadata.json.tmp");
-                if let Err(e) = std::fs::write(&tmp, serde_json::to_string_pretty(&meta).unwrap_or_default())
-                    .and_then(|_| std::fs::rename(&tmp, &meta_path))
-                {
-                    log::warn!("Could not update metadata.json title in place: {}", e);
-                }
-            }
-        } else {
-            log::warn!("metadata.json at {} does not parse; title written to the database only", meta_path.display());
+    // A missing metadata.json stays missing; an unreadable one is left alone and the title goes to SQLite only.
+    if folder.join("metadata.json").exists() {
+        if let Err(e) = super::metadata_file::update_metadata(folder, |obj| {
+            obj.insert("meeting_id".into(), serde_json::json!(meeting_id));
+            obj.insert("title".into(), serde_json::json!(title));
+            Ok(())
+        }) {
+            log::warn!("Could not update metadata.json title in place at {}: {}", folder.display(), e);
         }
     }
     sqlx::query("UPDATE meetings SET title = ?, updated_at = ? WHERE id = ?")
@@ -367,7 +360,7 @@ async fn assign_inner(
     }
 
     let meta_path = old_path.join("metadata.json");
-    let mut meta: serde_json::Value = std::fs::read_to_string(&meta_path)
+    let meta: serde_json::Value = std::fs::read_to_string(&meta_path)
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_else(|| serde_json::json!({}));
@@ -402,17 +395,15 @@ async fn assign_inner(
         std::fs::rename(&old_path, &new_path).map_err(|e| format!("Cannot move folder: {}", e))?;
     }
 
-    if let Some(obj) = meta.as_object_mut() {
+    // Re-read after the move so a write that landed in between is kept.
+    if let Err(e) = super::metadata_file::update_metadata(&new_path, |obj| {
         obj.insert("meeting_id".into(), serde_json::json!(meeting_id));
         obj.insert("project".into(), serde_json::json!(new_project));
         obj.insert("title".into(), serde_json::json!(new_title));
         obj.entry("version").or_insert(serde_json::json!("2.0"));
-        let tmp = new_path.join(".metadata.json.tmp");
-        if let Err(e) = std::fs::write(&tmp, serde_json::to_string_pretty(&meta).unwrap_or_default())
-            .and_then(|_| std::fs::rename(&tmp, new_path.join("metadata.json")))
-        {
-            log::warn!("Could not update metadata.json after move: {}", e);
-        }
+        Ok(())
+    }) {
+        log::warn!("Could not update metadata.json after move: {}", e);
     }
 
     sqlx::query("UPDATE meetings SET folder_path = ?, title = ?, updated_at = ? WHERE id = ?")

@@ -1,8 +1,6 @@
 use anyhow::{bail, Context, Result};
-use once_cell::sync::Lazy;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 use super::processor::language_name_from_code;
 
@@ -10,7 +8,8 @@ const SUMMARY_LANGUAGE_FIELD: &str = "summary_language";
 const DETECTED_SUMMARY_LANGUAGE_FIELD: &str = "detected_summary_language";
 const METADATA_FILE: &str = "metadata.json";
 const METADATA_TEMP_FILE_PREFIX: &str = ".metadata.json.";
-static METADATA_WRITE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+// Noesis: share the lock every other metadata.json writer takes.
+use crate::audio::metadata_file::METADATA_LOCK as METADATA_WRITE_LOCK;
 
 pub(crate) fn read_summary_language_from_metadata(folder: &Path) -> Result<Option<String>> {
     read_language_field_from_metadata(folder, SUMMARY_LANGUAGE_FIELD)

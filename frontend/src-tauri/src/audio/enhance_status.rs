@@ -27,34 +27,25 @@ pub fn write_enhance_status(
     status: &str,
     error: Option<&str>,
 ) -> Result<()> {
-    let path = folder.join("metadata.json");
-    let mut root: serde_json::Value = if path.exists() {
-        serde_json::from_str(&std::fs::read_to_string(&path)?)?
-    } else {
-        serde_json::json!({})
-    };
-    let obj = root
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("metadata.json root is not an object"))?;
-    let transcription = obj
-        .entry("transcription")
-        .or_insert_with(|| serde_json::json!({}));
-    if !transcription.is_object() {
-        *transcription = serde_json::json!({});
-    }
-    transcription.as_object_mut().unwrap().insert(
-        "enhanced".to_string(),
-        serde_json::json!({
-            "provider": provider,
-            "model": model,
-            "status": status,
-            "at": chrono::Utc::now().to_rfc3339(),
-            "error": error,
-        }),
-    );
-    let tmp = folder.join(".metadata.json.tmp");
-    std::fs::write(&tmp, serde_json::to_string_pretty(&root)?)?;
-    std::fs::rename(&tmp, &path)?;
+    super::metadata_file::update_metadata(folder, |obj| {
+        let transcription = obj
+            .entry("transcription")
+            .or_insert_with(|| serde_json::json!({}));
+        if !transcription.is_object() {
+            *transcription = serde_json::json!({});
+        }
+        transcription.as_object_mut().unwrap().insert(
+            "enhanced".to_string(),
+            serde_json::json!({
+                "provider": provider,
+                "model": model,
+                "status": status,
+                "at": chrono::Utc::now().to_rfc3339(),
+                "error": error,
+            }),
+        );
+        Ok(())
+    })?;
     Ok(())
 }
 

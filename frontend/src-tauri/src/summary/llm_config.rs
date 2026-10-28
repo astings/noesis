@@ -74,6 +74,8 @@ pub async fn load_for(pool: &SqlitePool, provider: &str, model: &str) -> Result<
     Ok(cfg)
 }
 
+pub const NO_SUMMARY_MODEL: &str = "No summary model configured. Set one in Settings, Summary.";
+
 /// The summary model configured in Settings.
 pub async fn load(pool: &SqlitePool) -> Result<LlmConfig, String> {
     let row = SettingsRepository::get_model_config(pool)
@@ -81,6 +83,6 @@ pub async fn load(pool: &SqlitePool) -> Result<LlmConfig, String> {
         .map_err(|e| format!("Failed to read the summary model setting: {}", e))?;
     match row {
         Some(s) if !s.provider.trim().is_empty() && !s.model.trim().is_empty() => load_for(pool, &s.provider, &s.model).await,
-        _ => Err("No summary model configured. Set one in Settings, Summary.".to_string()),
+        _ => Err(NO_SUMMARY_MODEL.to_string()),
     }
 }

@@ -42,12 +42,13 @@ export async function runMeetingHook(meetingId: string) {
   }
 }
 
-// Title and tags run: the status events drive the badge, the Err is toasted here.
+// Title and tags run: the status events drive the badge, and the failed event carries
+// the error and toasts it, so the Err is only logged here.
 export async function runMeetingTagging(meetingId: string) {
   try {
     toast.success(await invoke<string>('run_meeting_tagging', { meetingId }));
   } catch (error) {
-    toast.error(String(error));
+    console.warn('run_meeting_tagging failed:', error);
   }
 }
 
@@ -205,13 +206,14 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       if (cancelled) fn();
       else unlistenHook = fn;
     });
-    listen<{ meeting_id: string; status: string }>('tagging-status-changed', (event) => {
+    listen<{ meeting_id: string; status: string; error?: string | null }>('tagging-status-changed', (event) => {
       setMeetings((prev) =>
         prev.map((m) => (m.id === event.payload.meeting_id ? { ...m, taggingStatus: event.payload.status } : m)),
       );
       // the title may have changed
       if (event.payload.status === 'done') fetchMeetings();
-      else if (event.payload.status === 'failed') toast.error('Title and tags failed');
+      else if (event.payload.status === 'failed')
+        toast.error('Title and tags failed', { description: event.payload.error ?? undefined });
     }).then((fn) => {
       if (cancelled) fn();
       else unlistenTagging = fn;

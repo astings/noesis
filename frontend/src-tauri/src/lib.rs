@@ -618,8 +618,6 @@ pub fn run() {
             }
 
             // spec phase 9 section 3: delete audio after enhance, hourly
-
-            // spec phase 9 section 3: delete audio after enhance, hourly
             tauri::async_runtime::spawn(audio::audio_cleanup::run(_app.handle().clone()));
 
             // spec 4.5: stop (and optionally start) recordings with the Zoom meeting

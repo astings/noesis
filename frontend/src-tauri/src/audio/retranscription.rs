@@ -98,6 +98,12 @@ pub fn is_retranscription_in_progress() -> bool {
     RETRANSCRIPTION_IN_PROGRESS.load(Ordering::SeqCst)
 }
 
+/// The enhance queue slot when no job holds it. Holding it keeps any enhance job from
+/// starting; never hold it longer than one short task.
+pub fn enhance_idle() -> Option<tokio::sync::MutexGuard<'static, ()>> {
+    ENHANCE_QUEUE.try_lock().ok()
+}
+
 /// spec 4.2: the meeting whose enhance job holds the in-progress flag, if any
 pub fn running_meeting_id() -> Option<String> {
     RETRANSCRIPTION_RUNNING_MEETING.lock().unwrap_or_else(|e| e.into_inner()).clone()
@@ -171,7 +177,14 @@ pub async fn start_retranscription<R: Runtime>(
         RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
         set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_RUNNING, None);
 
-        run_retranscription(app.clone(), meeting_id.clone(), meeting_folder_path, language, model, provider).await
+        let result = run_retranscription(app.clone(), meeting_id.clone(), meeting_folder_path, language, model, provider).await;
+        // Terminal status before the guard drops: a project move cannot slip in and leave
+        // the moved metadata at `running`.
+        match &result {
+            Ok(_) => set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_DONE, None),
+            Err(e) => set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_FAILED, Some(&e.to_string())),
+        }
+        result
     };
 
     // Unload the engine after the batch job (success, failure, or cancellation)
@@ -179,16 +192,27 @@ pub async fn start_retranscription<R: Runtime>(
 
     match &result {
         Ok(res) => {
-            set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_DONE, None);
             if let Some(state) = app.try_state::<crate::state::AppState>() {
                 if let Err(e) = super::search_index::reindex_meeting(state.db_manager.pool(), &meeting_id).await {
                     warn!("search index: reindex failed for {}: {}", meeting_id, e);
                 }
             }
+            // Complete before tagging so the Enhance dialog does not wait on the summary model;
+            // a title rename is picked up through `meeting-moved`.
+            notify_enhance_complete(&app).await;
+            let _ = app.emit(
+                "retranscription-complete",
+                serde_json::json!({
+                    "meeting_id": res.meeting_id,
+                    "segments_count": res.segments_count,
+                    "duration_seconds": res.duration_seconds,
+                    "language": res.language
+                }),
+            );
             let prefs = super::recording_preferences::load_recording_preferences(&app).await;
             // phase 9: name and tag the meeting; a failure is logged and never changes the enhance result
             if res.segments_count > 0 && matches!(&prefs, Ok(p) if p.auto_title_tags) {
-                match super::meeting_tagging::run_step(&app, &meeting_id, false).await {
+                match super::meeting_tagging::run_after_enhance(&app, &meeting_id).await {
                     Ok(msg) => info!("Title and tags for {}: {}", meeting_id, msg),
                     Err(e) => warn!("Title and tags skipped for {}: {}", meeting_id, e),
                 }
@@ -223,19 +247,8 @@ pub async fn start_retranscription<R: Runtime>(
                     Err(e) => warn!("Post-enhance hook skipped for {}: could not load preferences: {}", meeting_id, e),
                 }
             }
-            notify_enhance_complete(&app).await;
-            let _ = app.emit(
-                "retranscription-complete",
-                serde_json::json!({
-                    "meeting_id": res.meeting_id,
-                    "segments_count": res.segments_count,
-                    "duration_seconds": res.duration_seconds,
-                    "language": res.language
-                }),
-            );
         }
         Err(e) => {
-            set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_FAILED, Some(&e.to_string()));
             let _ = app.emit(
                 "retranscription-error",
                 RetranscriptionError {
@@ -995,24 +1008,18 @@ fn write_retranscription_metadata(
     audio_filename: &str,
 ) -> Result<()> {
     let metadata_path = folder.join("metadata.json");
-    let temp_path = folder.join(".metadata.json.tmp");
     let now = chrono::Utc::now().to_rfc3339();
 
-    // Try to read existing metadata and update it
-    let json = if metadata_path.exists() {
-        let existing = std::fs::read_to_string(&metadata_path)?;
-        let mut value: serde_json::Value = serde_json::from_str(&existing)?;
-        if let Some(obj) = value.as_object_mut() {
+    super::metadata_file::update_metadata(folder, |obj| {
+        // Checked under the metadata lock: update existing metadata, or write a fresh record.
+        if metadata_path.exists() {
             obj.insert("duration_seconds".to_string(), serde_json::json!(duration_seconds));
             obj.insert("retranscribed_at".to_string(), serde_json::json!(now));
             obj.insert("status".to_string(), serde_json::json!("completed"));
             obj.insert("transcript_file".to_string(), serde_json::json!("transcripts.json"));
             obj.insert("transcript_md".to_string(), serde_json::json!("transcript.md")); // spec 4.3
             obj.remove("detected_summary_language");
-        }
-        value
-    } else {
-        serde_json::json!({
+        } else if let serde_json::Value::Object(fresh) = serde_json::json!({
             "version": "1.0",
             "meeting_id": meeting_id,
             "created_at": now,
@@ -1023,12 +1030,11 @@ fn write_retranscription_metadata(
             "transcript_file": "transcripts.json",
             "status": "completed",
             "source": "retranscription"
-        })
-    };
-
-    let json_string = serde_json::to_string_pretty(&json)?;
-    std::fs::write(&temp_path, &json_string)?;
-    std::fs::rename(&temp_path, &metadata_path)?;
+        }) {
+            *obj = fresh;
+        }
+        Ok(())
+    })?;
 
     info!("Wrote metadata.json to {}", metadata_path.display());
     Ok(())

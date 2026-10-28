@@ -57,6 +57,8 @@ pub mod library;
 pub mod search_index;
 pub mod meeting_tagging;
 pub mod audio_cleanup;
+// serialized metadata.json writes shared by every writer
+pub mod metadata_file;
 // spec 4.3: transcript.md contract
 pub mod transcript_md;
 // spec 4.4: speaker labels from per-stream energy

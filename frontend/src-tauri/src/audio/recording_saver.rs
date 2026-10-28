@@ -377,13 +377,7 @@ impl RecordingSaver {
 
     /// Write metadata.json to disk (atomic write with temp file)
     fn write_metadata(&self, folder: &PathBuf, metadata: &MeetingMetadata) -> Result<()> {
-        let metadata_path = folder.join("metadata.json");
-        let temp_path = folder.join(".metadata.json.tmp");
-
-        let json_string = serde_json::to_string_pretty(metadata)?;
-        std::fs::write(&temp_path, json_string)?;
-        std::fs::rename(&temp_path, &metadata_path)?;  // Atomic
-
+        super::metadata_file::write_metadata(folder, metadata)?;
         Ok(())
     }
 

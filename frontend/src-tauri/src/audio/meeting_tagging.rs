@@ -74,13 +74,16 @@ fn memory() -> std::sync::MutexGuard<'static, HashMap<String, &'static str>> {
     MEMORY.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn set<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, status: &'static str) {
+fn set<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, status: &'static str, error: Option<&str>) {
     if status == DONE {
         memory().remove(meeting_id);
     } else {
         memory().insert(meeting_id.to_string(), status);
     }
-    let _ = app.emit("tagging-status-changed", serde_json::json!({ "meeting_id": meeting_id, "status": status }));
+    let _ = app.emit(
+        "tagging-status-changed",
+        serde_json::json!({ "meeting_id": meeting_id, "status": status, "error": error }),
+    );
 }
 
 fn status_for(meeting_id: &str, folder: Option<&Path>) -> Option<&'static str> {
@@ -137,7 +140,10 @@ async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title
 
     if force_title || title.trim().is_empty() || super::library::is_auto_title(&title) {
         match super::library::assign(pool, &super::get_default_recordings_folder(), meeting_id, None, Some(&new_title)).await {
-            Ok(_) => {}
+            // the meeting page refetches its folder on this event
+            Ok(_) => {
+                let _ = app.emit("meeting-moved", serde_json::json!({ "meeting_id": meeting_id }));
+            }
             Err(e) if e.starts_with("Folder not found on disk") => log::warn!("tagging: rename skipped for {}: {}", meeting_id, e),
             Err(e) => return Err(e),
         }
@@ -150,18 +156,12 @@ async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title
 
 /// `tags` and `tagged_at` into metadata.json, and the tags line into transcript.md when it exists.
 fn write_tags(folder: &Path, tags: &[String]) -> Result<(), String> {
-    let path = folder.join("metadata.json");
-    let mut root: serde_json::Value = match std::fs::read_to_string(&path) {
-        Ok(t) => serde_json::from_str(&t).map_err(|e| format!("metadata.json is not valid JSON: {}", e))?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
-        Err(e) => return Err(format!("Could not read metadata.json: {}", e)),
-    };
-    let obj = root.as_object_mut().ok_or("metadata.json root is not an object")?;
-    obj.insert("tags".into(), serde_json::json!(tags));
-    obj.insert("tagged_at".into(), serde_json::json!(chrono::Utc::now().to_rfc3339()));
-    let tmp = folder.join(".metadata.json.tmp");
-    std::fs::write(&tmp, serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    super::metadata_file::update_metadata(folder, |obj| {
+        obj.insert("tags".into(), serde_json::json!(tags));
+        obj.insert("tagged_at".into(), serde_json::json!(chrono::Utc::now().to_rfc3339()));
+        Ok(())
+    })
+    .map_err(|e| format!("Could not update metadata.json: {}", e))?;
 
     let md_path = folder.join("transcript.md");
     if let Ok(md) = std::fs::read_to_string(&md_path) {
@@ -174,16 +174,29 @@ fn write_tags(folder: &Path, tags: &[String]) -> Result<(), String> {
 
 /// Name (when untitled or `force_title`) and tag one meeting with the summary model.
 pub async fn run_step<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title: bool) -> Result<String, String> {
-    set(app, meeting_id, RUNNING);
+    set(app, meeting_id, RUNNING, None);
     let result = run_inner(app, meeting_id, force_title).await;
     match &result {
-        Ok(_) => set(app, meeting_id, DONE),
+        Ok(_) => set(app, meeting_id, DONE, None),
         Err(e) => {
             log::warn!("tagging failed for {}: {}", meeting_id, e);
-            set(app, meeting_id, FAILED);
+            set(app, meeting_id, FAILED, Some(e));
         }
     }
     result
+}
+
+/// The automatic step after enhance. With no summary model configured it does nothing
+/// (auto titles are on by default), so the meeting is not marked failed.
+pub async fn run_after_enhance<R: Runtime>(app: &AppHandle<R>, meeting_id: &str) -> Result<String, String> {
+    let state = app.state::<crate::state::AppState>();
+    if let Err(e) = crate::summary::llm_config::load(state.db_manager.pool()).await {
+        if e == crate::summary::llm_config::NO_SUMMARY_MODEL {
+            log::info!("tagging: skipped for {}: {}", meeting_id, e);
+            return Ok("Skipped: no summary model configured".to_string());
+        }
+    }
+    run_step(app, meeting_id, false).await
 }
 
 #[tauri::command]
