@@ -1,7 +1,10 @@
 import { test } from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import {
-  INBOX, isValidProjectName, slug, isAutoTitle, stampOfFolder, meetingFolderName, formatMmss, toLocalIso, parseBound,
+  INBOX, recordingsRoot, isValidProjectName, slug, isAutoTitle, stampOfFolder, meetingFolderName, formatMmss, toLocalIso, parseBound,
 } from '../src/paths.ts';
 
 test('project names are single normal components', () => {
@@ -42,4 +45,17 @@ test('parseBound: date-only covers the local day, datetimes pass through, junk i
   assert.equal(parseBound('2026-10-27', true), new Date(2026, 9, 27, 23, 59, 59, 999).getTime());
   assert.equal(parseBound('2026-10-27T10:00:00Z', false), Date.parse('2026-10-27T10:00:00Z'));
   assert.ok(Number.isNaN(parseBound('10/27/2026', false)));
+});
+
+test('recordingsRoot: env vars, then existing dirs, noesis by default', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'noesis-paths-'));
+  const movies = (n: string) => path.join(home, 'Movies', n);
+  assert.equal(recordingsRoot({ NOESIS_RECORDINGS: '/a', MEETILY_RECORDINGS: '/b' }, home), '/a');
+  assert.equal(recordingsRoot({ MEETILY_RECORDINGS: '/b' }, home), '/b');
+  assert.equal(recordingsRoot({}, home), movies('noesis-recordings'));
+  fs.mkdirSync(movies('meetily-recordings'), { recursive: true });
+  assert.equal(recordingsRoot({}, home), movies('meetily-recordings'));
+  fs.mkdirSync(movies('noesis-recordings'));
+  assert.equal(recordingsRoot({}, home), movies('noesis-recordings'));
+  fs.rmSync(home, { recursive: true });
 });

@@ -1,9 +1,9 @@
 {
-  "name": "meetily-mcp",
+  "name": "noesis-mcp",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MCP server exposing the Meetily recordings library (projects, meetings, transcripts).",
+  "description": "MCP server exposing the Noesis recordings library (projects, meetings, transcripts).",
   "engines": { "node": ">=22.18" },
   "scripts": {
     "start": "node src/index.ts",

@@ -26,7 +26,7 @@ export function SetupOverviewStep() {
   return (
     <OnboardingContainer
       title="Setup Overview"
-      description="Meetily requires that you download the transcription model for the software to work."
+      description="Noesis requires that you download the transcription model for the software to work."
       step={2}
       totalSteps={isMac ? 4 : 3}
     >

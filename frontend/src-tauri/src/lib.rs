@@ -37,6 +37,7 @@ pub(crate) use perf_trace;
 // Declare audio module
 pub mod analytics;
 pub mod api;
+pub mod app_names;
 pub mod audio;
 pub mod call_detector; // spec 4.5
 pub mod config;

@@ -24,7 +24,7 @@ const write = (dir: string, files: Record<string, string>) => {
 };
 
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'meetily-mcp-'));
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'noesis-mcp-'));
   write(path.join(root, 'dex', '2026-10-27_12-03 wd'), {
     'metadata.json': JSON.stringify(v2Meta('meeting-a', 'dex', 'WD onboarding', 'done')),
     'transcripts.json': JSON.stringify(segments),

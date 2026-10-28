@@ -78,6 +78,10 @@ pub fn spawn(command: &str, ctx: &HookContext) -> Result<()> {
     cmd.arg("-c")
         .arg(command)
         .current_dir(&ctx.folder)
+        .env("NOESIS_FOLDER", &ctx.folder)
+        .env("NOESIS_PROJECT", &ctx.project)
+        .env("NOESIS_TITLE", &ctx.title)
+        .env("NOESIS_MEETING_ID", &ctx.meeting_id)
         .env("MEETILY_FOLDER", &ctx.folder)
         .env("MEETILY_PROJECT", &ctx.project)
         .env("MEETILY_TITLE", &ctx.title)
@@ -120,12 +124,14 @@ mod tests {
             title: "Weekly sync".into(),
             meeting_id: "m-1".into(),
         };
-        spawn("echo \"$MEETILY_PROJECT|$MEETILY_TITLE|$MEETILY_MEETING_ID|$MEETILY_FOLDER|$(pwd)\"; echo oops >&2; echo END", &ctx).unwrap();
+        spawn("echo \"$MEETILY_PROJECT|$MEETILY_TITLE|$MEETILY_MEETING_ID|$MEETILY_FOLDER|$(pwd)\"; echo \"$NOESIS_PROJECT|$NOESIS_TITLE|$NOESIS_MEETING_ID|$NOESIS_FOLDER\"; echo oops >&2; echo END", &ctx).unwrap();
         let log = wait_for(&dir.path().join("hook.log"));
         assert!(log.starts_with("=== "), "header line first: {}", log);
         let real = dir.path().canonicalize().unwrap(); // macOS: /var -> /private/var in pwd
         let expected = format!("dex|Weekly sync|m-1|{}|{}", dir.path().display(), real.display());
         assert!(log.contains(&expected), "{}", log);
+        let noesis = format!("dex|Weekly sync|m-1|{}", dir.path().display());
+        assert!(log.contains(&format!("{}\n", noesis)), "NOESIS_* set too: {}", log);
         assert!(log.contains("oops"), "stderr is captured too: {}", log);
     }
 

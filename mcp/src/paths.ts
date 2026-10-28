@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -6,9 +7,13 @@ export const INBOX = '_inbox';
 const AUTO_TITLE = /^Meeting (\d{2}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}|\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})$/;
 const STAMP_PREFIX = /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}/;
 
-/** MEETILY_RECORDINGS or ~/Movies/meetily-recordings. */
-export function recordingsRoot(): string {
-  return process.env.MEETILY_RECORDINGS || path.join(os.homedir(), 'Movies', 'meetily-recordings');
+/** NOESIS_RECORDINGS, then MEETILY_RECORDINGS (legacy), then ~/Movies/noesis-recordings, falling back to the legacy ~/Movies/meetily-recordings only while it exists and the new one does not. */
+export function recordingsRoot(env: NodeJS.ProcessEnv = process.env, home: string = os.homedir()): string {
+  const fromEnv = env.NOESIS_RECORDINGS || env.MEETILY_RECORDINGS;
+  if (fromEnv) return fromEnv;
+  const next = path.join(home, 'Movies', 'noesis-recordings');
+  const legacy = path.join(home, 'Movies', 'meetily-recordings');
+  return !fs.existsSync(next) && fs.existsSync(legacy) ? legacy : next;
 }
 
 export function isValidProjectName(name: string): boolean {

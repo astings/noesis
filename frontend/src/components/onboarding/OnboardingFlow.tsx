@@ -28,7 +28,7 @@ export function OnboardingFlow() {
   }, []);
 
   // 4-Step Onboarding Flow (System-Recommended Models):
-  // Step 1: Welcome - Introduce Meetily features
+  // Step 1: Welcome - Introduce Noesis features
   // Step 2: Setup Overview - Database initialization + show recommended downloads
   // Step 3: Download Progress - Download Parakeet
   // Step 4: Permissions - Request mic + system audio (macOS only)

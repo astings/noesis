@@ -558,7 +558,7 @@ const Sidebar: React.FC = () => {
             {/* Wordmark routes home; the separate Home entry is gone */}
             <div className="flex items-center px-1 pb-2">
               <button onClick={() => router.push('/')} className="rounded-md px-1 text-sm font-semibold text-foreground">
-                Meetily
+                Noesis
               </button>
             </div>
 

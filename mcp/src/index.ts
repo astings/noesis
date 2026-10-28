@@ -6,14 +6,14 @@ import { recordingsRoot, parseBound } from './paths.ts';
 import { listProjects, scanMeetings, findMeeting, readTranscript, assignMeeting } from './library.ts';
 
 const root = recordingsRoot();
-const server = new McpServer({ name: 'meetily', version: '0.1.0' });
+const server = new McpServer({ name: 'noesis', version: '0.1.0' });
 
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] });
 const fail = (message: string) => ({ isError: true as const, content: [{ type: 'text' as const, text: message }] });
 
 server.registerTool(
   'list_projects',
-  { description: `Project folders under the Meetily recordings root (${root}). "_inbox" holds untagged and legacy meetings.`, inputSchema: {} },
+  { description: `Project folders under the Noesis recordings root (${root}). "_inbox" holds untagged and legacy meetings.`, inputSchema: {} },
   async () => {
     const all = scanMeetings(root);
     return text(listProjects(root).map((name) => {
@@ -26,7 +26,7 @@ server.registerTool(
 server.registerTool(
   'list_meetings',
   {
-    description: 'Meetings recorded by Meetily, newest first. Filter by project folder and/or ISO date range. quality is live, enhanced, enhancing or failed.',
+    description: 'Meetings recorded by Noesis, newest first. Filter by project folder and/or ISO date range. quality is live, enhanced, enhancing or failed.',
     inputSchema: {
       project: z.string().optional().describe('Project folder name, e.g. "dex". "_inbox" for untagged and legacy meetings.'),
       since: z.string().optional().describe('ISO 8601: YYYY-MM-DD (whole local day) or a datetime; only meetings started at or after it.'),
@@ -75,7 +75,7 @@ server.registerTool(
 server.registerTool(
   'assign_meeting',
   {
-    description: 'Move a meeting to a project folder and/or set its title. Renames the folder; the Meetily app picks the change up on its next refresh. A legacy flat folder is only moved when a project is given. Legacy flat folders have no id: after a move or rename the Meetily sidebar keeps their old title and path; only these tools see the meeting under its project.',
+    description: 'Move a meeting to a project folder and/or set its title. Renames the folder; the Noesis app picks the change up on its next refresh. A legacy flat folder is only moved when a project is given. Legacy flat folders have no id: after a move or rename the Noesis sidebar keeps their old title and path; only these tools see the meeting under its project.',
     inputSchema: {
       meeting_id: z.string().optional(),
       path: z.string().optional().describe('For legacy meetings without an id: absolute folder path or folder name.'),

@@ -28,8 +28,8 @@ pub fn expand_home(path: &str) -> PathBuf {
     }
 }
 
-pub const ALLOWED_TOOLS: [&str; 2] = ["mcp__open-knowledge", "mcp__meetily"];
-pub const DENIED_TOOLS: [&str; 3] = ["mcp__open-knowledge__delete", "mcp__open-knowledge__move", "mcp__meetily__assign_meeting"];
+pub const ALLOWED_TOOLS: [&str; 2] = ["mcp__open-knowledge", "mcp__noesis"];
+pub const DENIED_TOOLS: [&str; 3] = ["mcp__open-knowledge__delete", "mcp__open-knowledge__move", "mcp__noesis__assign_meeting"];
 
 pub fn find_target<'a>(targets: &'a [WikiTarget], project: &str) -> Option<&'a WikiTarget> {
     targets.iter().find(|t| t.project == project && !t.directory.trim().is_empty())
@@ -115,6 +115,10 @@ pub fn run(target: &WikiTarget, ctx: &HookContext, budget_usd: f64) -> Result<()
     cmd.args(&args)
         .current_dir(&dir)
         .env("PATH", hook_path_env())
+        .env("NOESIS_FOLDER", &ctx.folder)
+        .env("NOESIS_PROJECT", &ctx.project)
+        .env("NOESIS_TITLE", &ctx.title)
+        .env("NOESIS_MEETING_ID", &ctx.meeting_id)
         .env("MEETILY_FOLDER", &ctx.folder)
         .env("MEETILY_PROJECT", &ctx.project)
         .env("MEETILY_TITLE", &ctx.title)
@@ -195,8 +199,8 @@ mod tests {
         let a = claude_args("hello", 5.0);
         assert_eq!(a, vec![
             "-p", "hello", "--permission-mode", "acceptEdits",
-            "--allowedTools", "mcp__open-knowledge", "mcp__meetily",
-            "--disallowedTools", "mcp__open-knowledge__delete", "mcp__open-knowledge__move", "mcp__meetily__assign_meeting",
+            "--allowedTools", "mcp__open-knowledge", "mcp__noesis",
+            "--disallowedTools", "mcp__open-knowledge__delete", "mcp__open-knowledge__move", "mcp__noesis__assign_meeting",
             "--max-budget-usd", "5",
         ]);
     }

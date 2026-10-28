@@ -341,7 +341,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
       <SettingsGroup title="Advanced">
         <SettingRow
           label="Custom command"
-          hint="Shell command started after an enhance when wiki automation is off or the project has no wiki. It gets MEETILY_FOLDER, MEETILY_PROJECT, MEETILY_TITLE and MEETILY_MEETING_ID; output goes to hook.log in the meeting folder. Empty means off."
+          hint="Shell command started after an enhance when wiki automation is off or the project has no wiki. It gets NOESIS_FOLDER, NOESIS_PROJECT, NOESIS_TITLE and NOESIS_MEETING_ID (the MEETILY_* names still work); output goes to hook.log in the meeting folder. Empty means off."
         >
           <Input
             aria-label="Custom command (advanced)"
