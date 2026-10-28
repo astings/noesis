@@ -15,7 +15,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { toast } from 'sonner';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
 import { useImportDialog } from '@/contexts/ImportDialogContext';
-import { useConfig } from '@/contexts/ConfigContext';
 
 import {
   Dialog,
@@ -82,7 +81,6 @@ const Sidebar: React.FC = () => {
   // Get recording state from RecordingStateContext (single source of truth)
   const { isRecording } = useRecordingState();
   const { openImportDialog } = useImportDialog();
-  const { betaFeatures } = useConfig();
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['meetings']));
   // spec 4.2: project sections are open unless the user collapsed them; the choice is kept per device
   const COLLAPSED_PROJECTS_KEY = 'meetily.collapsedProjects';
@@ -491,7 +489,7 @@ const Sidebar: React.FC = () => {
             </TooltipContent>
           </Tooltip>
 
-          {betaFeatures.importAndRetranscribe && (
+          {false && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
@@ -796,7 +794,7 @@ const Sidebar: React.FC = () => {
               )}
             </button>
 
-            {betaFeatures.importAndRetranscribe && (
+            {false && (
               <button
                 onClick={() => openImportDialog()}
                 className="w-full flex items-center justify-center px-3 py-2 mt-1 text-sm font-medium text-gray-700 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors shadow-sm"
