@@ -28,7 +28,7 @@ export function ProjectSelect({ value, onChange, disabled, compact }: ProjectSel
       .catch((error) => console.warn('[ProjectSelect] list_projects_command failed:', error));
   }, []);
 
-  const options = projects.includes(value) ? projects : [...projects, value];
+  const options = !value || projects.includes(value) ? projects : [...projects, value]; // spec 4.8: an unset value must not become an empty item
 
   const confirmNew = () => {
     const name = normalizeProjectName(draft);

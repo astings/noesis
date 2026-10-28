@@ -12,7 +12,7 @@ This repository is a personal fork. The direction is a dumb, accurate recorder t
 - Live code is `audio/`. `audio_v2/`, `lib_old_complex.rs`, `audio/stt.rs` and `whisper_engine/parallel_processor.rs` are dead and must not be built upon.
 - Changes are additive and go in new modules where possible so upstream merges stay feasible. Do not delete upstream features for taste.
 - Implementation plans live in `docs/superpowers/plans/`, one per phase.
-- Post-enhance hook (spec 4.7): the `post_enhance_command` preference runs after a successful enhance with `MEETILY_FOLDER`, `MEETILY_PROJECT`, `MEETILY_TITLE` and `MEETILY_MEETING_ID` set; output lands in `hook.log` in the meeting folder. `scripts/post-enhance.sh` is the reference dispatcher to the wikis.
+- Post-enhance automation (spec 4.7 and 4.8): with "Wiki automation" on, the app runs Claude Code in the wiki directory configured for the meeting's project after a successful enhance (draft only, deny list, cost cap), logging to `hook.log` and marking `hook.done`. Projects without a row fall through to the `post_enhance_command` preference, run through `sh -c` with `MEETILY_FOLDER`, `MEETILY_PROJECT`, `MEETILY_TITLE` and `MEETILY_MEETING_ID`. `scripts/post-enhance.sh` is the advanced example of such a command.
 
 ## Project Overview
 

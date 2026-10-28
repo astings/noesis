@@ -846,6 +846,8 @@ pub fn run() {
             audio::retranscription::is_retranscription_in_progress_command,
             audio::enhance_status::list_enhance_statuses,
             audio::library::list_projects_command,
+            audio::wiki_automation::locate_claude_cli,
+            audio::wiki_automation::select_wiki_directory,
             audio::library::assign_meeting,
             // Import audio commands
             audio::import::select_and_validate_audio_command,

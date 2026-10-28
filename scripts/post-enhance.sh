@@ -1,5 +1,6 @@
 #!/bin/sh
-# spec 4.7: reference post-enhance hook for Meetily. Set the "Run after enhance" preference to this file's path.
+# spec 4.7: reference post-enhance command for Meetily (advanced). Most users should use the "Wiki automation"
+# table in Settings instead; this script does the same by hand. To use it, set "Custom command (advanced)" to this file's path.
 # The app runs it with MEETILY_FOLDER, MEETILY_PROJECT, MEETILY_TITLE and MEETILY_MEETING_ID set,
 # from inside the meeting folder, and appends this script's output to hook.log there.
 # DRY_RUN=1 prints the claude command instead of running it.
@@ -35,9 +36,9 @@ if [ ! -d "$WIKI" ]; then
 fi
 
 if [ -n "$SKILL" ]; then
-  PROMPT="Use the $SKILL skill to process the new meeting recording at $MEETILY_FOLDER (project $MEETILY_PROJECT, meeting id $MEETILY_MEETING_ID, title: $MEETILY_TITLE). Draft only: write the transcript document and a draft log entry; do not score, do not update trackers or the Blueprint. Leave everything uncommitted for review."
+  PROMPT="Use the $SKILL skill to process the new meeting recording at $MEETILY_FOLDER (project $MEETILY_PROJECT, meeting id $MEETILY_MEETING_ID, title: $MEETILY_TITLE). Draft only: write the transcript document and a draft log entry; do not score, do not update trackers or the Blueprint. Leave everything uncommitted for review. This run is unattended: do not ask questions; if the wiki already covers this meeting, stop without changes."
 else
-  PROMPT="Process the new meeting recording at $MEETILY_FOLDER (project $MEETILY_PROJECT, meeting id $MEETILY_MEETING_ID, title: $MEETILY_TITLE). Draft only: write the transcript document and a draft log entry; leave everything uncommitted for review."
+  PROMPT="Process the new meeting recording at $MEETILY_FOLDER (project $MEETILY_PROJECT, meeting id $MEETILY_MEETING_ID, title: $MEETILY_TITLE). Draft only: write the transcript document and a draft log entry; leave everything uncommitted for review. This run is unattended: do not ask questions; if the wiki already covers this meeting, stop without changes."
 fi
 
 cd "$WIKI"

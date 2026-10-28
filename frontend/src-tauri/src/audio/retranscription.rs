@@ -180,9 +180,20 @@ pub async fn start_retranscription<R: Runtime>(
             if res.segments_count > 0 {
                 match super::recording_preferences::load_recording_preferences(&app).await {
                     Ok(prefs) => {
+                        let ctx = super::post_enhance_hook::read_context(&folder, &meeting_id);
+                        // spec 4.8: the built-in run wins when the project has a wiki row
+                        let built_in = prefs.wiki_automation
+                            && match super::wiki_automation::find_target(&prefs.wiki_targets, &ctx.project) {
+                                Some(target) => {
+                                    if let Err(e) = super::wiki_automation::run(target, &ctx, prefs.wiki_budget_usd) {
+                                        warn!("Wiki automation did not start for {}: {}", meeting_id, e);
+                                    }
+                                    true
+                                }
+                                None => false,
+                            };
                         let command = prefs.post_enhance_command.trim();
-                        if !command.is_empty() {
-                            let ctx = super::post_enhance_hook::read_context(&folder, &meeting_id);
+                        if !built_in && !command.is_empty() {
                             if let Err(e) = super::post_enhance_hook::spawn(command, &ctx) {
                                 warn!("Post-enhance hook failed to start for {}: {}", meeting_id, e);
                             }

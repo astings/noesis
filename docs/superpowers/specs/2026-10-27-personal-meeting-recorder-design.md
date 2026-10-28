@@ -175,6 +175,14 @@ The wiki automation itself is a user script outside the app. The reference scrip
 
 Lazier alternative: a `launchd` folder watcher outside the app. Rejected: the in-app hook fires exactly once with the right arguments and is fewer moving parts.
 
+### 4.8 Wiki automation settings
+
+What: the post-enhance hook without a script. A "Wiki automation" card in Recording settings holds a switch, a table of projects, and a cost cap; the app composes and runs the Claude Code call itself.
+
+How: preferences gain `wiki_automation: bool` (default off), `wiki_targets: [{project, directory, skill}]` and `wiki_budget_usd: f64` (default 5). When an enhance job finishes with segments and the switch is on, the app looks up the meeting's project in `wiki_targets`. On a match it runs, from the wiki directory, `claude -p <prompt> --permission-mode acceptEdits --allowedTools mcp__open-knowledge mcp__meetily --disallowedTools mcp__open-knowledge__delete mcp__open-knowledge__move mcp__meetily__assign_meeting --max-budget-usd <cap>`, with the same detached spawn and `hook.log` as 4.7. The prompt names the skill when one is set ("Use the <skill> skill to process the new meeting recording at <folder> ...") and asks for a draft only. A successful run writes `hook.done` in the meeting folder; a later enhance skips the meeting while the marker exists (delete it to reprocess). The app finds `claude` in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, then `PATH`, and the settings card shows where it was found or that it is missing. Projects without a row fall through to the custom command of 4.7 when one is set, so both can coexist.
+
+Why in the app rather than the script: the daily UX is a table, not a shell file in a dev folder, and a repackaged build can ship the behaviour without asking recipients to install a script. The command field of 4.7 stays as the advanced escape hatch.
+
 ## 5. Contracts
 
 ### 5.1 Folder layout
@@ -263,6 +271,7 @@ Each phase is one implementation plan and one branch. Estimates are Claude Code 
 | 4 | Zoom auto-stop and optional auto-start | 4.5 | 1 session |
 | 5 | Me/them speaker labels live and at enhance, segment splitting at turns | 4.4 | 2 sessions |
 | 6 | Post-enhance hook plus a reference wiki script | 4.7 | half a session |
+| 7 | Wiki automation settings: project table, Claude Code detection, app-composed run | 4.8 | 1 session |
 
 Phase 1 first because it removes a daily click with the smallest change. Phase 3 before 4 and 5 because it removes the symlinks, which is the second daily annoyance. Phases 4 to 6 are independent of each other.
 

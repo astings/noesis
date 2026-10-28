@@ -11,6 +11,15 @@ use log::error;
 #[cfg(target_os = "macos")]
 use crate::audio::capture::AudioCaptureBackend;
 
+/// spec 4.8: one wiki per project for the built-in post-enhance run
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WikiTarget {
+    pub project: String,
+    pub directory: String,
+    #[serde(default)]
+    pub skill: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RecordingPreferences {
     pub save_folder: PathBuf,
@@ -48,10 +57,21 @@ pub struct RecordingPreferences {
     // spec 4.7: shell command run when an enhance job finishes; empty means off
     #[serde(default)]
     pub post_enhance_command: String,
+    // spec 4.8: built-in Claude Code run per project
+    #[serde(default)]
+    pub wiki_automation: bool,
+    #[serde(default)]
+    pub wiki_targets: Vec<WikiTarget>,
+    #[serde(default = "default_wiki_budget_usd")]
+    pub wiki_budget_usd: f64,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_wiki_budget_usd() -> f64 {
+    5.0
 }
 
 fn default_owner_name() -> String {
@@ -84,6 +104,9 @@ impl Default for RecordingPreferences {
             auto_start_on_call: true,
             owner_name: default_owner_name(),
             post_enhance_command: String::new(),
+            wiki_automation: false,
+            wiki_targets: Vec::new(),
+            wiki_budget_usd: default_wiki_budget_usd(),
         }
     }
 }
@@ -465,6 +488,19 @@ mod tests {
         let d = RecordingPreferences::default();
         assert!(d.auto_stop_on_call_end);
         assert!(d.auto_start_on_call);
+    }
+
+    #[test]
+    fn wiki_automation_defaults_off_with_empty_targets_and_five_dollars() {
+        let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
+        let p: RecordingPreferences = serde_json::from_str(old).unwrap();
+        assert!(!p.wiki_automation);
+        assert!(p.wiki_targets.is_empty());
+        assert_eq!(p.wiki_budget_usd, 5.0);
+        let with: RecordingPreferences = serde_json::from_str(
+            r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4","wiki_targets":[{"project":"dex","directory":"/w/dex"}]}"#,
+        ).unwrap();
+        assert_eq!(with.wiki_targets[0].skill, "", "skill is optional in the file");
     }
 
     #[test]

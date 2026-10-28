@@ -59,6 +59,8 @@ pub mod transcript_md;
 pub mod speaker_energy;
 // spec 4.7: post-enhance hook
 pub mod post_enhance_hook;
+// spec 4.8: built-in wiki automation
+pub mod wiki_automation;
 
 // Import module (import external audio files as new meetings)
 pub mod import;

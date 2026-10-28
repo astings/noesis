@@ -10,6 +10,9 @@ import { useRecordingState } from '@/contexts/RecordingStateContext';
 import { useConfig } from '@/contexts/ConfigContext';
 import type { RawModelInfo } from '@/hooks/useTranscriptionModels';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { WikiAutomationSettings } from '@/components/WikiAutomationSettings'; // spec 4.8
+
+export interface WikiTarget { project: string; directory: string; skill: string } // spec 4.8
 
 export interface RecordingPreferences {
   save_folder: string;
@@ -27,6 +30,9 @@ export interface RecordingPreferences {
   auto_start_on_call: boolean;
   owner_name: string; // spec 4.4
   post_enhance_command: string; // spec 4.7
+  wiki_automation: boolean; // spec 4.8
+  wiki_targets: WikiTarget[];
+  wiki_budget_usd: number;
 }
 
 interface RecordingSettingsProps {
@@ -48,6 +54,9 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     auto_start_on_call: true,
     owner_name: 'Me',
     post_enhance_command: '',
+    wiki_automation: false,
+    wiki_targets: [],
+    wiki_budget_usd: 5,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -96,6 +105,12 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
 
   // spec 4.7
   const [hookDraft, setHookDraft] = useState<string | null>(null);
+  // spec 4.8
+  const applyPreferences = async (next: RecordingPreferences) => {
+    setPreferences(next);
+    await savePreferences(next);
+  };
+
   const commitHookCommand = async () => {
     const command = (hookDraft ?? preferences.post_enhance_command).trim();
     setHookDraft(null);
@@ -299,14 +314,17 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
         )}
       </div>
 
+      {/* spec 4.8: wiki automation */}
+      <WikiAutomationSettings preferences={preferences} onChange={applyPreferences} disabled={saving} />
+
       {/* spec 4.7: post-enhance hook */}
       <div className="p-4 border rounded-lg">
-        <div className="font-medium">Run after enhance</div>
+        <div className="font-medium">Custom command (advanced)</div>
         <div className="text-sm text-gray-600 mb-2">
-          Shell command started when a transcript is enhanced. It gets MEETILY_FOLDER, MEETILY_PROJECT, MEETILY_TITLE and MEETILY_MEETING_ID; output goes to hook.log in the meeting folder. Empty means off.
+          Shell command started after an enhance when wiki automation is off or the project has no row above. It gets MEETILY_FOLDER, MEETILY_PROJECT, MEETILY_TITLE and MEETILY_MEETING_ID; output goes to hook.log in the meeting folder. Empty means off.
         </div>
         <Input
-          aria-label="Run after enhance"
+          aria-label="Custom command (advanced)"
           className="font-mono text-sm"
           placeholder="~/Code/Perso/ok-meetily/scripts/post-enhance.sh"
           value={hookDraft ?? preferences.post_enhance_command}
