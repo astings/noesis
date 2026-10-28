@@ -85,7 +85,6 @@
             "app",
             "dmg"
         ],
-        "createUpdaterArtifacts": true,
         "icon": [
             "icons/icon.png",
             "icons/app_icon.icns",

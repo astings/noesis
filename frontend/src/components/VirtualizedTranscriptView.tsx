@@ -53,8 +53,8 @@ function formatRecordingTime(seconds: number | undefined): string {
 const SPEAKER_LABEL: Record<string, { label: string; className: string }> = {
     me: { label: 'Me', className: 'text-primary' },
     mic: { label: 'Me', className: 'text-primary' },
-    them: { label: 'Them', className: 'text-muted-foreground' },
-    system: { label: 'Them', className: 'text-muted-foreground' },
+    them: { label: 'Others', className: 'text-muted-foreground' },
+    system: { label: 'Others', className: 'text-muted-foreground' },
 };
 
 // Helper function to remove filler words and repetitions

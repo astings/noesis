@@ -7,11 +7,7 @@ import {
   SetupOverviewStep,
 } from './steps';
 
-interface OnboardingFlowProps {
-  onComplete: () => void;
-}
-
-export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
+export function OnboardingFlow() {
   const { currentStep } = useOnboarding();
   const [isMac, setIsMac] = React.useState(false);
 
