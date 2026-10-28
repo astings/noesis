@@ -94,20 +94,21 @@ fn status_for(meeting_id: &str, folder: Option<&Path>) -> Option<&'static str> {
 
 pub(crate) const CANCELLED_MSG: &str = "Cancelled";
 
-/// Runs `fut` unless the job is cancelled first; polls every 250 ms. Only the wait for the
-/// model goes through here, never the writes after it, so a cancel cannot split a rename.
-async fn unless_cancelled<T>(job: Option<&str>, fut: impl std::future::Future<Output = Result<T, String>>) -> Result<T, String> {
-    let Some(job) = job else { return fut.await };
-    let job = job.to_string();
-    let cancelled = async move {
+/// Bridges a job's cancel flag to a token the provider call understands: HTTP providers race
+/// it and the built-in sidecar is shut down, so no stale reply is left for the next request.
+/// The caller aborts the poll task once the call returns. Only the model wait takes the token,
+/// never the writes after it, so a cancel cannot split a rename.
+fn cancel_token_for(job: Option<&str>) -> Option<(tokio_util::sync::CancellationToken, tokio::task::JoinHandle<()>)> {
+    let job = job?.to_string();
+    let token = tokio_util::sync::CancellationToken::new();
+    let t = token.clone();
+    let poll = tokio::spawn(async move {
         while !crate::jobs::is_cancel_requested(&job) {
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         }
-    };
-    tokio::select! {
-        r = fut => r,
-        _ = cancelled => Err(CANCELLED_MSG.to_string()),
-    }
+        t.cancel();
+    });
+    Some((token, poll))
 }
 
 async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title: bool, job: Option<&str>) -> Result<String, String> {
@@ -142,7 +143,8 @@ async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title
     let system_prompt = if custom_prompt.is_empty() { SYSTEM_PROMPT } else { custom_prompt.as_str() };
     let cfg = crate::summary::llm_config::load(pool).await?;
     let app_data_dir = app.path().app_data_dir().ok();
-    let completion = unless_cancelled(job, crate::summary::llm_client::generate_summary(
+    let cancel = cancel_token_for(job);
+    let result = crate::summary::llm_client::generate_summary(
         &reqwest::Client::new(),
         &cfg.provider,
         &cfg.model,
@@ -155,9 +157,18 @@ async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title
         cfg.temperature,
         cfg.top_p,
         app_data_dir.as_ref(),
-        None,
-    ))
-    .await?;
+        cancel.as_ref().map(|(t, _)| t),
+    )
+    .await;
+    let was_cancelled = cancel.as_ref().is_some_and(|(t, _)| t.is_cancelled()) || job.is_some_and(crate::jobs::is_cancel_requested);
+    if let Some((_, poll)) = &cancel {
+        poll.abort();
+    }
+    let completion = match result {
+        Ok(c) => c,
+        Err(_) if was_cancelled => return Err(CANCELLED_MSG.to_string()),
+        Err(e) => return Err(e.to_string()),
+    };
     let (new_title, tags) = parse_reply(&completion.content)?;
 
     write_tags(&folder, &tags)?;
@@ -305,16 +316,15 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn unless_cancelled_returns_cancelled_when_the_job_is_cancelled() {
+    async fn cancel_token_for_cancels_the_token_when_the_job_is_cancelled() {
+        assert!(cancel_token_for(None).is_none());
         crate::jobs::add("tag-c", crate::jobs::JobKind::Tagging, Some("m"), "", crate::jobs::Control::Tagging, true);
-        let slow = async { tokio::time::sleep(std::time::Duration::from_secs(30)).await; Ok::<_, String>(1) };
-        let canceller = async {
-            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-            crate::jobs::request_cancel("tag-c");
-        };
-        let (res, _) = tokio::join!(unless_cancelled(Some("tag-c"), slow), canceller);
-        assert_eq!(res.unwrap_err(), CANCELLED_MSG);
-        assert_eq!(unless_cancelled(None, async { Ok::<_, String>(2) }).await.unwrap(), 2);
+        let (token, poll) = cancel_token_for(Some("tag-c")).unwrap();
+        assert!(!token.is_cancelled());
+        crate::jobs::request_cancel("tag-c");
+        tokio::time::timeout(std::time::Duration::from_secs(1), token.cancelled()).await.unwrap();
+        poll.abort();
+        crate::jobs::finish("tag-c", crate::jobs::Outcome::Cancelled);
     }
 
     #[test]

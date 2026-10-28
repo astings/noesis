@@ -244,6 +244,10 @@ pub async fn start_retranscription<R: Runtime>(
                         info!("Title and tags for {}: {}", meeting_id, msg);
                         jobs::step(&job_id, STEP_TITLE, JobState::Done, None);
                     }
+                    Err(e) if e == super::meeting_tagging::CANCELLED_MSG => {
+                        info!("Title and tags cancelled for {}", meeting_id);
+                        jobs::step(&job_id, STEP_TITLE, JobState::Cancelled, None);
+                    }
                     Err(e) => {
                         warn!("Title and tags skipped for {}: {}", meeting_id, e);
                         jobs::step(&job_id, STEP_TITLE, JobState::Failed, Some(e.to_string()));
