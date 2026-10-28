@@ -198,8 +198,8 @@ const Sidebar: React.FC = () => {
     try {
       await invoke<string>('assign_meeting', { meetingId, project });
       await refetchMeetings();
-      // The open details page caches folder_path/transcript (meeting-details/page.tsx:89); it refetches on this event (page.tsx:40).
-      await emit('retranscription-complete', { meeting_id: meetingId });
+      // The open details page caches folder_path; it refetches on this event.
+      await emit('meeting-moved', { meeting_id: meetingId });
       toast.success(`Moved to ${project === INBOX ? 'Inbox' : project}`);
     } catch (error) {
       toast.error('Could not move the meeting', { description: error instanceof Error ? error.message : String(error) });

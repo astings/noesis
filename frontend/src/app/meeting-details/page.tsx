@@ -40,22 +40,24 @@ function MeetingDetailsContent() {
     error: transcriptError,
   } = usePaginatedTranscripts({ meetingId: meetingId || '' });
 
-  // spec 4.1: an automatic enhance has no dialog to refetch for us.
+  // spec 4.1: an automatic enhance has no dialog to refetch for us; a sidebar move changes folder_path.
   useEffect(() => {
     if (!meetingId) return;
-    let unlisten: (() => void) | undefined;
+    const unlisteners: (() => void)[] = [];
     let cancelled = false;
-    listen<{ meeting_id: string }>('retranscription-complete', (event) => {
-      if (event.payload.meeting_id === meetingId) {
-        void refetch();
-      }
-    }).then((fn) => {
-      if (cancelled) fn();
-      else unlisten = fn;
-    });
+    for (const name of ['retranscription-complete', 'meeting-moved']) {
+      listen<{ meeting_id: string }>(name, (event) => {
+        if (event.payload.meeting_id === meetingId) {
+          void refetch();
+        }
+      }).then((fn) => {
+        if (cancelled) fn();
+        else unlisteners.push(fn);
+      });
+    }
     return () => {
       cancelled = true;
-      unlisten?.();
+      unlisteners.forEach((fn) => fn());
     };
   }, [meetingId, refetch]);
 
