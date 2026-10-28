@@ -607,6 +607,14 @@ pub fn run() {
                     Ok(n) => log::info!("Library reconcile at startup: {} rows updated", n),
                     Err(e) => log::warn!("Library reconcile at startup failed: {}", e),
                 }
+                // spec phase 9 section 2: rebuild the search index in the background
+                let pool = pool.clone();
+                tauri::async_runtime::spawn(async move {
+                    match audio::search_index::rebuild(&pool).await {
+                        Ok(n) => log::info!("Search index rebuilt: {} meetings", n),
+                        Err(e) => log::warn!("Search index rebuild failed: {}", e),
+                    }
+                });
             }
 
             // spec 4.5: stop (and optionally start) recordings with the Zoom meeting

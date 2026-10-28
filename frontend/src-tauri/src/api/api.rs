@@ -46,6 +46,8 @@ pub struct TranscriptSearchResult {
     #[serde(rename = "matchContext")]
     pub match_context: String,
     pub timestamp: String,
+    pub tags: Vec<String>,
+    pub start_seconds: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1032,6 +1034,9 @@ pub async fn api_save_transcript<R: Runtime>(
                 "Successfully saved transcript and created meeting with id: {}",
                 meeting_id
             );
+            if let Err(e) = crate::audio::search_index::reindex_meeting(pool, &meeting_id).await {
+                log_warn!("search index: reindex failed for {}: {}", meeting_id, e);
+            }
             // Noesis spec 2: the project was changed while recording. Move now that the row
             // exists and before the frontend starts auto-enhance (which gets `folder_path`).
             let mut moved_folder: Option<String> = None;

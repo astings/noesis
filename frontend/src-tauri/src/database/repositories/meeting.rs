@@ -33,6 +33,9 @@ impl MeetingsRepository {
                         "Successfully deleted meeting {} and all associated data",
                         meeting_id
                     );
+                    if let Err(e) = crate::audio::search_index::remove_meeting(pool, meeting_id).await {
+                        error!("search index: remove failed for {}: {}", meeting_id, e);
+                    }
                     Ok(true)
                 } else {
                     transaction.rollback().await?;

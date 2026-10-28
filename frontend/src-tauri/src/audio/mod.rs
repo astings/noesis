@@ -53,6 +53,8 @@ pub mod enhance_status;
 
 // spec 4.2: meeting library on disk (folders, projects, scan, reconcile)
 pub mod library;
+// spec phase 9 section 2: ranked full-text index
+pub mod search_index;
 // spec 4.3: transcript.md contract
 pub mod transcript_md;
 // spec 4.4: speaker labels from per-stream energy

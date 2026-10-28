@@ -176,6 +176,11 @@ pub async fn start_retranscription<R: Runtime>(
     match &result {
         Ok(res) => {
             set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_DONE, None);
+            if let Some(state) = app.try_state::<crate::state::AppState>() {
+                if let Err(e) = super::search_index::reindex_meeting(state.db_manager.pool(), &meeting_id).await {
+                    warn!("search index: reindex failed for {}: {}", meeting_id, e);
+                }
+            }
             // spec 4.7: hand the finished transcript to the user's hook, if configured
             if res.segments_count > 0 {
                 match super::recording_preferences::load_recording_preferences(&app).await {

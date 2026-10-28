@@ -311,6 +311,21 @@ pub async fn assign(
     project: Option<&str>,
     title: Option<&str>,
 ) -> std::result::Result<PathBuf, String> {
+    let result = assign_inner(pool, root, meeting_id, project, title).await;
+    // title and tags live in the search index; refresh even after a title-only update
+    if let Err(e) = crate::audio::search_index::reindex_meeting(pool, meeting_id).await {
+        log::warn!("search index: reindex after assign failed for {}: {}", meeting_id, e);
+    }
+    result
+}
+
+async fn assign_inner(
+    pool: &sqlx::SqlitePool,
+    root: &Path,
+    meeting_id: &str,
+    project: Option<&str>,
+    title: Option<&str>,
+) -> std::result::Result<PathBuf, String> {
     let row: Option<(Option<String>, String)> = sqlx::query_as("SELECT folder_path, title FROM meetings WHERE id = ?")
         .bind(meeting_id)
         .fetch_optional(pool)
