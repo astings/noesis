@@ -200,7 +200,9 @@ pub async fn start_retranscription<R: Runtime>(
         RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
         set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_RUNNING, None);
 
+        let crash_guard = jobs::FailOnDrop::new(&job_id);
         let result = run_retranscription(app.clone(), meeting_id.clone(), meeting_folder_path, language, model, provider).await;
+        crash_guard.disarm();
         // Terminal status before the guard drops: a project move cannot slip in and leave
         // the moved metadata at `running`.
         match &result {

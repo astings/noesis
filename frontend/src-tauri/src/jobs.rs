@@ -505,6 +505,27 @@ pub async fn retry_job(app: AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Fails the job if dropped while armed: a panic unwinding through the work ends the
+/// row instead of leaving it Running. `finish` is idempotent, so an ended job is untouched.
+pub struct FailOnDrop(Option<String>);
+
+impl FailOnDrop {
+    pub fn new(id: &str) -> Self {
+        Self(Some(id.to_string()))
+    }
+    pub fn disarm(mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for FailOnDrop {
+    fn drop(&mut self) {
+        if let Some(id) = self.0.take() {
+            finish(&id, Outcome::Failed("Enhance stopped unexpectedly. See the app log.".to_string()));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -701,5 +722,21 @@ mod tests {
         let a = &r.snapshot()[0];
         assert_eq!(a.steps.len(), 1);
         assert_eq!(a.hook_pid, None);
+    }
+
+    #[test]
+    fn fail_on_drop_fails_the_job_unless_disarmed() {
+        add("fod-a", JobKind::Download, None, "m", Control::WhisperDownload, true);
+        add("fod-b", JobKind::Download, None, "m", Control::WhisperDownload, true);
+        let a = FailOnDrop::new("fod-a");
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _guard = a;
+            panic!("engine blew up");
+        }));
+        FailOnDrop::new("fod-b").disarm();
+        let state = |id: &str| list().into_iter().find(|j| j.id == id).unwrap().state;
+        assert_eq!(state("fod-a"), JobState::Failed);
+        assert_eq!(state("fod-b"), JobState::Running);
+        finish("fod-b", Outcome::Done);
     }
 }
