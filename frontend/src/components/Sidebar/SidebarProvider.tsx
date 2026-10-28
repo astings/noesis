@@ -18,6 +18,7 @@ interface SidebarItem {
   enhanceStatus?: string;
   hookStatus?: string;
   taggingStatus?: string;
+  startedAt?: string;
 }
 
 export const PROJECT_FOLDER_PREFIX = 'project:';
@@ -74,6 +75,8 @@ export interface CurrentMeeting {
   taggingStatus?: string;
   // spec 4.2: project folder name, `_inbox` for legacy meetings
   project?: string;
+  // Sidebar dates: meeting start, RFC 3339
+  startedAt?: string;
 }
 
 // Search result type for transcript search
@@ -163,6 +166,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
           id: meeting.id,
           title: meeting.title,
           project: meeting.project || INBOX,
+          startedAt: meeting.started_at,
           enhanceStatus: statusById.get(meeting.id),
           hookStatus: hookById.get(meeting.id),
           taggingStatus: taggingById.get(meeting.id),
@@ -265,6 +269,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
           id: meeting.id,
           title: meeting.title,
           type: 'file' as const,
+          startedAt: meeting.startedAt,
           enhanceStatus: meeting.enhanceStatus,
           hookStatus: meeting.hookStatus,
           taggingStatus: meeting.taggingStatus,

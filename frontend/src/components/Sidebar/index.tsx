@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, Settings, Trash2, Pencil, Check, FolderPlus, NotebookPen, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ChevronDown, ChevronRight, Settings, Trash2, Pencil, Check, FolderPlus, NotebookPen, PanelLeftClose, PanelLeftOpen, ArrowDown, ArrowUp } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSidebar } from './SidebarProvider';
 import type { CurrentMeeting } from '@/components/Sidebar/SidebarProvider';
@@ -27,6 +27,7 @@ import {
 import { INBOX, normalizeProjectName } from '@/lib/projects';
 import { PROJECT_FOLDER_PREFIX, runMeetingHook, runMeetingTagging, deleteMeetingAudio } from '@/components/Sidebar/SidebarProvider';
 import { RetranscribeDialog } from '@/components/MeetingDetails/RetranscribeDialog';
+import { groupByDate, parseDate, rowLabel, bucketOf, type SortOrder } from '@/lib/dateBuckets';
 
 interface SidebarItem {
   id: string;
@@ -36,7 +37,11 @@ interface SidebarItem {
   enhanceStatus?: string;
   hookStatus?: string;
   taggingStatus?: string;
+  startedAt?: string;
 }
+
+const SORT_ORDER_KEY = 'noesis.sidebar.sortOrder';
+const fullDateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' });
 
 const Sidebar: React.FC = () => {
   const router = useRouter();
@@ -65,6 +70,19 @@ const Sidebar: React.FC = () => {
       return new Set<string>();
     }
   });
+  // Sidebar dates: one newest/oldest order for every project, kept per device
+  const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
+    try {
+      return localStorage.getItem(SORT_ORDER_KEY) === 'oldest' ? 'oldest' : 'newest';
+    } catch {
+      return 'newest';
+    }
+  });
+  const toggleSortOrder = () => {
+    const next: SortOrder = sortOrder === 'newest' ? 'oldest' : 'newest';
+    setSortOrder(next);
+    try { localStorage.setItem(SORT_ORDER_KEY, next); } catch { /* per-device convenience only */ }
+  };
 
   // State for edit modal
   const [editModalState, setEditModalState] = useState<{ isOpen: boolean; meetingId: string | null; currentTitle: string }>({
@@ -360,6 +378,8 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
 
     const isProject = item.type === 'folder';
     const currentProject = meetings.find((m: CurrentMeeting) => m.id === item.id)?.project || INBOX;
+    const started = isProject ? null : parseDate(item.startedAt);
+    const dateLabel = rowLabel(started, bucketOf(started, new Date()));
 
     const row = (
         <div
@@ -399,7 +419,10 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
           ) : (
             <div className="flex flex-col w-full min-w-0">
               <div className="flex items-center w-full min-w-0">
-                <span className="flex-1 truncate" title={item.title}>{item.title}</span>
+                {dateLabel && (
+                  <span className="mr-1.5 flex-none text-[11px] tabular-nums text-muted-foreground/70">{dateLabel}</span>
+                )}
+                <span className="flex-1 truncate" title={started ? `${item.title}\n${fullDateFmt.format(started)}` : item.title}>{item.title}</span>
                 {isMeetingItem && (
                   <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                     <button
@@ -489,7 +512,14 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
         ) : row}
         {item.type === 'folder' && isExpanded && item.children && (
           <div className="space-y-px">
-            {item.children.map(child => renderItem(child, depth + 1))}
+            {groupByDate(item.children, (c) => parseDate(c.startedAt), sortOrder, new Date()).map(({ bucket, items }) => (
+              <React.Fragment key={bucket.key}>
+                <div className="pb-0.5 pt-1.5 pr-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70" style={{ paddingLeft: '22px' }}>
+                  {bucket.label}
+                </div>
+                {items.map(child => renderItem(child, depth + 1))}
+              </React.Fragment>
+            ))}
           </div>
         )}
       </div>
@@ -519,6 +549,14 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
             <div className="flex h-8 items-center gap-2 px-2 text-[11px] uppercase tracking-wide text-muted-foreground">
               <NotebookPen className="w-4 h-4" />
               <span className={hideOnCollapse}>Projects</span>
+              <button
+                onClick={toggleSortOrder}
+                aria-label={sortOrder === 'newest' ? 'Sorted newest first, switch to oldest first' : 'Sorted oldest first, switch to newest first'}
+                className={`ml-auto flex items-center gap-1 rounded px-1 py-0.5 normal-case tracking-normal hover:bg-accent/60 hover:text-foreground ${hideOnCollapse}`}
+              >
+                {sortOrder === 'newest' ? <ArrowDown className="w-3 h-3" /> : <ArrowUp className="w-3 h-3" />}
+                {sortOrder === 'newest' ? 'Newest' : 'Oldest'}
+              </button>
             </div>
 
             {/* Scrollable project tree */}

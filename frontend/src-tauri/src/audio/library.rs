@@ -50,6 +50,19 @@ pub fn stamp_of_folder(folder_name: &str) -> Option<&str> {
     STAMP_PREFIX.find(folder_name).map(|m| m.as_str())
 }
 
+/// Sidebar dates: the folder stamp is the meeting start; `created_at` is the save time, so it is only
+/// the fallback for legacy flat folders. RFC 3339 with the local offset.
+pub fn started_at_of(folder_path: Option<&str>, created_at: chrono::DateTime<chrono::Utc>) -> String {
+    use chrono::TimeZone;
+    folder_path
+        .and_then(|f| Path::new(f).file_name())
+        .and_then(|n| stamp_of_folder(&n.to_string_lossy()).map(str::to_string))
+        .and_then(|s| chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d_%H-%M").ok())
+        .and_then(|n| chrono::Local.from_local_datetime(&n).earliest())
+        .map(|d| d.to_rfc3339())
+        .unwrap_or_else(|| created_at.with_timezone(&chrono::Local).to_rfc3339())
+}
+
 /// `<stamp>` or `<stamp> <slug>` (spec 5.1).
 pub fn meeting_folder_name(stamp: &str, title: Option<&str>) -> String {
     match title.filter(|t| !is_auto_title(t)).map(slug).filter(|s| !s.is_empty()) {
@@ -491,6 +504,18 @@ pub fn trash_meeting_folder(root: &Path, folder: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn started_at_prefers_folder_stamp_then_created_at() {
+        use chrono::TimeZone;
+        let created = chrono::Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 0).unwrap();
+        let from_stamp = started_at_of(Some("/r/acme/2026-10-28_09-30 kickoff"), created);
+        let parsed = chrono::DateTime::parse_from_rfc3339(&from_stamp).unwrap().with_timezone(&chrono::Local);
+        assert_eq!(parsed.format("%Y-%m-%d %H:%M").to_string(), "2026-10-28 09:30");
+        let legacy = started_at_of(Some("/r/Meeting_2026"), created);
+        assert_eq!(chrono::DateTime::parse_from_rfc3339(&legacy).unwrap(), created);
+        assert_eq!(chrono::DateTime::parse_from_rfc3339(&started_at_of(None, created)).unwrap(), created);
+    }
 
     #[test]
     fn pending_move_none_when_nothing_pending() {

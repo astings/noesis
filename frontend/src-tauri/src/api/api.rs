@@ -32,6 +32,8 @@ pub struct Meeting {
     pub title: String,
     /// spec 4.2: project folder derived from folder_path, `_inbox` when unknown or legacy
     pub project: String,
+    /// Sidebar dates: meeting start, RFC 3339 (folder stamp, else created_at)
+    pub started_at: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -360,6 +362,7 @@ pub async fn api_get_meetings<R: Runtime>(
                 .map(|m| Meeting {
                     id: m.id,
                     title: m.title,
+                    started_at: crate::audio::library::started_at_of(m.folder_path.as_deref(), m.created_at.0),
                     project: m
                         .folder_path
                         .as_deref()
