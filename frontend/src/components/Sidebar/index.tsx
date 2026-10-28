@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, Settings, Trash2, Search, Pencil, Check, NotebookPen, SearchIcon, X, PanelLeftClose, PanelLeftOpen, Home } from 'lucide-react';
+import { ChevronDown, ChevronRight, Settings, Trash2, Search, Pencil, Check, FolderPlus, NotebookPen, SearchIcon, X, PanelLeftClose, PanelLeftOpen, Home } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSidebar } from './SidebarProvider';
 import type { CurrentMeeting } from '@/components/Sidebar/SidebarProvider';
@@ -24,7 +24,7 @@ import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
   ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger,
 } from '@/components/ui/context-menu';
-import { INBOX } from '@/lib/projects';
+import { INBOX, normalizeProjectName } from '@/lib/projects';
 import { PROJECT_FOLDER_PREFIX, runMeetingHook } from '@/components/Sidebar/SidebarProvider';
 import { MeetingStatusTags } from '@/components/MeetingStatusTags';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '../ui/input-group';
@@ -174,6 +174,16 @@ const Sidebar: React.FC = () => {
     invoke<string[]>('list_projects_command')
       .then((list) => setProjects(Array.from(new Set([INBOX, ...list])).sort((a, b) => (a === INBOX ? -1 : b === INBOX ? 1 : a.localeCompare(b)))))
       .catch((error) => console.warn('list_projects_command failed:', error));
+  };
+
+  // "New project...": the dialog normalizes the name like ProjectSelect; assign_meeting creates the folder.
+  const [newProject, setNewProject] = useState<{ meetingId: string; draft: string } | null>(null);
+  const confirmNewProject = () => {
+    if (!newProject) return;
+    const name = normalizeProjectName(newProject.draft);
+    if (!name) return;
+    setNewProject(null);
+    moveMeeting(newProject.meetingId, name);
   };
 
   const moveMeeting = async (meetingId: string, project: string) => {
@@ -511,6 +521,11 @@ const Sidebar: React.FC = () => {
                       {p === INBOX ? 'Inbox' : p}
                     </ContextMenuItem>
                   ))}
+                  <ContextMenuSeparator />
+                  <ContextMenuItem onSelect={() => setNewProject({ meetingId: item.id, draft: '' })}>
+                    <FolderPlus className="w-3.5 h-3.5" />
+                    New project...
+                  </ContextMenuItem>
                 </ContextMenuSubContent>
               </ContextMenuSub>
               <ContextMenuItem disabled={item.hookStatus === 'running'} onSelect={() => runMeetingHook(item.id)}>Run hook</ContextMenuItem>
@@ -670,6 +685,45 @@ const Sidebar: React.FC = () => {
               className="px-4 py-2 text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90 rounded-md transition-colors"
             >
               Save
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!newProject} onOpenChange={(open) => { if (!open) setNewProject(null); }}>
+        <DialogContent className="sm:max-w-[425px]">
+          <VisuallyHidden>
+            <DialogTitle>New project</DialogTitle>
+          </VisuallyHidden>
+          <div className="py-4">
+            <h3 className="text-lg font-semibold mb-4">New project</h3>
+            <label htmlFor="new-project-name" className="block text-sm font-medium text-foreground mb-2">
+              Project name
+            </label>
+            <input
+              id="new-project-name"
+              type="text"
+              value={newProject?.draft ?? ''}
+              onChange={(e) => setNewProject((n) => (n ? { ...n, draft: e.target.value } : n))}
+              onKeyDown={(e) => { if (e.key === 'Enter') confirmNewProject(); }}
+              className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent"
+              placeholder="project name"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <button
+              onClick={() => setNewProject(null)}
+              className="px-4 py-2 text-sm font-medium text-foreground bg-muted hover:bg-accent rounded-md transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmNewProject}
+              disabled={!normalizeProjectName(newProject?.draft ?? '')}
+              className="px-4 py-2 text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90 rounded-md transition-colors disabled:opacity-50"
+            >
+              Move
             </button>
           </DialogFooter>
         </DialogContent>

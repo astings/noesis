@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { ChevronRight } from "lucide-react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
@@ -50,12 +51,15 @@ ContextMenuItem.displayName = "ContextMenuItem"
 const ContextMenuSubTrigger = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.SubTrigger>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.SubTrigger>
->(({ className, ...props }, ref) => (
+>(({ className, children, ...props }, ref) => (
   <ContextMenuPrimitive.SubTrigger
     ref={ref}
     className={cn(itemClass, "data-[state=open]:bg-accent", className)}
     {...props}
-  />
+  >
+    {children}
+    <ChevronRight className="ml-auto h-4 w-4" />
+  </ContextMenuPrimitive.SubTrigger>
 ))
 ContextMenuSubTrigger.displayName = "ContextMenuSubTrigger"
 
