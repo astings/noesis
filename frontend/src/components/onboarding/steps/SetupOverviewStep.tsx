@@ -40,7 +40,7 @@ export function SetupOverviewStep() {
     >
       <div className="flex flex-col items-center space-y-10">
         {/* Steps Card */}
-        <div className="w-full max-w-md bg-white rounded-lg border border-gray-200 p-4">
+        <div className="w-full max-w-md bg-background rounded-lg border border-border p-4">
           <div className="space-y-4">
             {steps.map((step) => {
               return (
@@ -49,7 +49,7 @@ export function SetupOverviewStep() {
                   className={`flex items-start gap-4 p-1`}
                 >
                   <div className="flex-1 ml-1">
-                    <h3 className="font-medium text-gray-900 flex items-center gap-2">
+                    <h3 className="font-medium text-foreground flex items-center gap-2">
                         Step {step.number} :  {step.title}
                         </h3>
                   </div>
@@ -64,7 +64,7 @@ export function SetupOverviewStep() {
         <div className="w-full max-w-xs space-y-4">
           <Button
             onClick={handleContinue}
-            className="w-full h-11 bg-gray-900 hover:bg-gray-800 text-white"
+            className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground"
           >
             Let's Go
           </Button>
@@ -73,7 +73,7 @@ export function SetupOverviewStep() {
               href="https://github.com/Zackriya-Solutions/meeting-minutes"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-gray-600 hover:underline"
+              className="text-xs text-muted-foreground hover:underline"
             >
               Report issues on GitHub
             </a>

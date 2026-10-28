@@ -37,7 +37,7 @@ interface SidebarItem {
 const ENHANCE_BADGE: Record<string, { label: string; className: string }> = {
   queued: { label: 'Enhance queued', className: 'bg-muted-foreground/40' },
   running: { label: 'Enhancing transcript', className: 'bg-primary animate-pulse' },
-  failed: { label: 'Enhance failed', className: 'bg-recording' },
+  failed: { label: 'Enhance failed', className: 'bg-destructive' },
 };
 
 function EnhanceBadge({ status }: { status?: string }) {

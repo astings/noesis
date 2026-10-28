@@ -18,7 +18,7 @@ const Logo = ({ isCollapsed }: LogoProps) =>
       />
     </div>
   ) : (
-    <div className="w-full text-lg text-center border rounded-full bg-blue-50 border-white font-semibold text-gray-700 mb-2">
+    <div className="w-full text-lg text-center border rounded-full bg-primary/10 border-border font-semibold text-foreground mb-2">
       <span>Meetily</span>
     </div>
   );

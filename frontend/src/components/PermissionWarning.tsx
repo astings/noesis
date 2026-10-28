@@ -69,7 +69,7 @@ export function PermissionWarning({
             {isMacOS && !hasMicrophone && (
               <button
                 onClick={openMicrophoneSettings}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-warning hover:bg-warning/90 rounded-md transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-black bg-warning hover:bg-warning/90 rounded-md transition-colors"
               >
                 <Mic className="h-4 w-4" />
                 Open Microphone Settings
@@ -87,7 +87,7 @@ export function PermissionWarning({
             <button
               onClick={onRecheck}
               disabled={isRechecking}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-warning bg-warning/10 hover:bg-warning/10 rounded-md transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-warning bg-warning/10 hover:bg-warning/20 rounded-md transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`h-4 w-4 ${isRechecking ? 'animate-spin' : ''}`} />
               Recheck

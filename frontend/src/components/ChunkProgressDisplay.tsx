@@ -106,7 +106,7 @@ export function ChunkProgressDisplay({
           {!isPaused ? (
             <button
               onClick={onPause}
-              className="bg-warning hover:bg-warning/90 text-white px-3 py-1 rounded text-sm transition-colors"
+              className="bg-warning hover:bg-warning/90 text-black px-3 py-1 rounded text-sm transition-colors"
               disabled={progress.processing_chunks === 0 && progress.completed_chunks === progress.total_chunks}
             >
               Pause
