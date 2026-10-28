@@ -55,7 +55,7 @@ Wiki hook kill: `post_enhance_hook` keeps the spawned child's handle (or pid) re
 
 ### 3.2 ETA
 
-Computed in Rust when progress updates: rate = Δpercent / Δtime, smoothed with an exponential moving average (α = 0.3). `eta_secs` is `None` until 15 s elapsed or 10 % reached, and always `None` when `progress` is `None`. The UI rounds: `<1 min`, `~N min`.
+Computed in Rust when progress updates: rate = Δpercent / Δtime, smoothed with an exponential moving average (α = 0.3). `eta_secs` is `None` until both 15 s have elapsed and 10 % is reached (enhance jumps to 25 % within seconds while decoding, so percent alone misleads), and always `None` when `progress` is `None`. The UI rounds: `<1 min`, `~N min`.
 
 ## 4. UI
 
@@ -92,7 +92,8 @@ Recent                                  Clear
 - Determinate bar when `progress` is set; otherwise indeterminate bar plus elapsed time. ETA shows "Estimating…" while `eta_secs` is `None` on a determinate job.
 - Clicking the meeting title opens the meeting and closes the panel. Download rows have no link and show size in `detail`.
 - Cancel: one click, no confirmation; the row moves to Recent as Cancelled.
-- Retry on failed rows calls the same command that started the job; enhance reuses the provider and model recorded in `metadata.json`.
+- Retry on failed rows (`retry_job`) restarts the job with the arguments it first ran with (enhance: folder, language, model, provider; downloads: model). Summary has no Retry: it needs the meeting page's transcript, template and model, so its row links to the meeting.
+- Enhance steps appear as they are reached (Transcribe, then Title/tags if on, then Wiki if a hook runs); no pending placeholders.
 - Empty: "Nothing running", plus Recent if any.
 - Accessibility: popover is `role="dialog"` with focus moved in and returned to the button on close, rows are a list, status changes go through an `aria-live="polite"` region, every state has a text label.
 
