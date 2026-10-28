@@ -5,6 +5,7 @@ use crate::audio::vad::get_speech_chunks_with_progress;
 use super::common::{create_labelled_transcript_segments, split_segment_at_silence, write_transcripts_json};
 use super::constants::AUDIO_EXTENSIONS;
 use super::enhance_status::{self, STATUS_DONE, STATUS_FAILED, STATUS_QUEUED, STATUS_RUNNING};
+use crate::jobs::{self, Control, JobKind, JobState, Outcome, STEP_TITLE, STEP_TRANSCRIBE};
 use crate::config::{DEFAULT_WHISPER_MODEL, DEFAULT_PARAKEET_MODEL};
 use crate::notifications::commands::NotificationManagerState;
 use crate::parakeet_engine::ParakeetEngine;
@@ -143,11 +144,27 @@ pub async fn start_retranscription<R: Runtime>(
     let provider_name = provider.clone().unwrap_or_else(|| "whisper".to_string());
     let model_name = model.clone().unwrap_or_else(|| "configured".to_string());
 
+    let job_id = uuid::Uuid::new_v4().to_string();
+    let control = Control::Enhance {
+        folder: meeting_folder_path.clone(),
+        language: language.clone(),
+        model: model.clone(),
+        provider: provider.clone(),
+    };
+    jobs::add(&job_id, JobKind::Enhance, Some(&meeting_id), "", control, false);
+
     set_enhance_status(&app, &meeting_id, &queued_folder, &provider_name, &model_name, STATUS_QUEUED, None);
     if ENHANCE_QUEUE.try_lock().is_err() {
         emit_progress(&app, &meeting_id, "queued", 0, "Waiting for the current enhance job to finish...");
     }
     let _queue_slot = ENHANCE_QUEUE.lock().await;
+    // job queue panel: a queued job cancelled while it waited never transcribes
+    if jobs::is_cancel_requested(&job_id) {
+        set_enhance_status(&app, &meeting_id, &queued_folder, &provider_name, &model_name, STATUS_FAILED, Some("Cancelled"));
+        return Err(anyhow!("Retranscription cancelled"));
+    }
+    jobs::start(&job_id);
+    jobs::step(&job_id, STEP_TRANSCRIBE, JobState::Running, None);
 
     // spec 4.2: the meeting may have been moved while this job waited; trust the index
     let meeting_folder_path = match app.try_state::<AppState>() {
@@ -171,7 +188,13 @@ pub async fn start_retranscription<R: Runtime>(
     // folder afterwards; `_queue_slot` keeps post-processing serialized to the end.
     let result = {
         // Acquire guard - ensures the in-progress flag is cleared even on panic/early return
-        let _guard = RetranscriptionGuard::acquire(&meeting_id).map_err(|e| anyhow!(e))?;
+        let _guard = match RetranscriptionGuard::acquire(&meeting_id) {
+            Ok(g) => g,
+            Err(e) => {
+                jobs::finish(&job_id, Outcome::Failed(e.clone()));
+                return Err(anyhow!(e));
+            }
+        };
 
         // Reset cancellation flag
         RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
@@ -192,6 +215,7 @@ pub async fn start_retranscription<R: Runtime>(
 
     match &result {
         Ok(res) => {
+            jobs::step(&job_id, STEP_TRANSCRIBE, JobState::Done, None);
             if let Some(state) = app.try_state::<crate::state::AppState>() {
                 if let Err(e) = super::search_index::reindex_meeting(state.db_manager.pool(), &meeting_id).await {
                     warn!("search index: reindex failed for {}: {}", meeting_id, e);
@@ -212,10 +236,22 @@ pub async fn start_retranscription<R: Runtime>(
             let prefs = super::recording_preferences::load_recording_preferences(&app).await;
             // phase 9: name and tag the meeting; a failure is logged and never changes the enhance result
             if res.segments_count > 0 && matches!(&prefs, Ok(p) if p.auto_title_tags) {
+                jobs::step(&job_id, STEP_TITLE, JobState::Running, None);
                 match super::meeting_tagging::run_after_enhance(&app, &meeting_id).await {
-                    Ok(msg) => info!("Title and tags for {}: {}", meeting_id, msg),
-                    Err(e) => warn!("Title and tags skipped for {}: {}", meeting_id, e),
+                    Ok(msg) => {
+                        info!("Title and tags for {}: {}", meeting_id, msg);
+                        jobs::step(&job_id, STEP_TITLE, JobState::Done, None);
+                    }
+                    Err(e) => {
+                        warn!("Title and tags skipped for {}: {}", meeting_id, e);
+                        jobs::step(&job_id, STEP_TITLE, JobState::Failed, Some(e.to_string()));
+                    }
                 }
+            }
+            // spec 3.1: a cancel during the title step skips the wiki step
+            if jobs::is_cancel_requested(&job_id) {
+                jobs::finish(&job_id, Outcome::Cancelled);
+                return result;
             }
             // the title may have renamed the folder: the hook reads the current one
             let folder = match app.try_state::<AppState>() {
@@ -233,13 +269,20 @@ pub async fn start_retranscription<R: Runtime>(
                 None => folder.clone(),
             };
             // spec 4.7: hand the finished transcript to the user's hook, if configured
+            // the wiki step reports through hook-status-changed (jobs::hook_status), which also
+            // ends the job; every other path ends it here
+            let mut hook_started = false;
             if res.segments_count > 0 {
                 match prefs {
                     // spec 8: auto-run is opt-in; otherwise the "Run hook" action starts it
                     Ok(prefs) if prefs.hook_auto_run => {
                         let ctx = super::post_enhance_hook::read_context(&folder, &meeting_id);
+                        jobs::await_hook(&job_id);
                         match super::post_enhance_hook::dispatch(&app, &prefs, &ctx, false) {
-                            Ok(kind) => info!("Post-enhance hook ({:?}) dispatched for {}", kind, meeting_id),
+                            Ok(kind) => {
+                                hook_started = true;
+                                info!("Post-enhance hook ({:?}) dispatched for {}", kind, meeting_id)
+                            }
                             Err(e) => warn!("Post-enhance hook did not start for {}: {}", meeting_id, e),
                         }
                     }
@@ -247,8 +290,14 @@ pub async fn start_retranscription<R: Runtime>(
                     Err(e) => warn!("Post-enhance hook skipped for {}: could not load preferences: {}", meeting_id, e),
                 }
             }
+            if !hook_started {
+                jobs::finish(&job_id, Outcome::Done);
+            }
         }
         Err(e) => {
+            jobs::step(&job_id, STEP_TRANSCRIBE, JobState::Failed, Some(e.to_string()));
+            let outcome = if RETRANSCRIPTION_CANCELLED.load(Ordering::SeqCst) { Outcome::Cancelled } else { Outcome::Failed(e.to_string()) };
+            jobs::finish(&job_id, outcome);
             let _ = app.emit(
                 "retranscription-error",
                 RetranscriptionError {
@@ -795,6 +844,7 @@ fn emit_progress<R: Runtime>(
             message: message.to_string(),
         },
     );
+    jobs::enhance_progress(meeting_id, progress.min(100) as u8, Some(message.to_string()));
 }
 
 /// Get or initialize the Whisper engine, auto-loading the model if needed

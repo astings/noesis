@@ -46,6 +46,9 @@ pub fn spawn_logged(mut command: Command, header: &str, folder: &Path, meeting_i
         .with_context(|| format!("open {}", log_path.display()))?;
     writeln!(log, "=== {} {}", chrono::Local::now().to_rfc3339(), header)?;
     let stderr = log.try_clone().context("clone hook.log handle")?;
+    // own process group: cancelling from the job panel kills Claude Code and its children together
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
@@ -53,9 +56,16 @@ pub fn spawn_logged(mut command: Command, header: &str, folder: &Path, meeting_i
         .spawn()
         .context("spawn post-enhance hook")?;
     info!("Post-enhance hook started (pid {}) for {} in {}", child.id(), meeting_id, folder.display());
+    crate::jobs::set_hook_pid(meeting_id, Some(child.id()));
+    // a cancel that landed before the pid was registered killed nothing
+    if crate::jobs::hook_cancel_requested(meeting_id) {
+        crate::jobs::kill_group(child.id());
+    }
     let meeting_id = meeting_id.to_string();
     std::thread::spawn(move || {
-        let success = match child.wait() {
+        let waited = child.wait();
+        crate::jobs::set_hook_pid(&meeting_id, None);
+        let success = match waited {
             Ok(status) => {
                 info!("Post-enhance hook for {} exited with {}", meeting_id, status);
                 status.success()
@@ -65,6 +75,8 @@ pub fn spawn_logged(mut command: Command, header: &str, folder: &Path, meeting_i
                 false
             }
         };
+        // a cancelled hook may still exit 0; it must not count as done (no hook.done, status failed)
+        let success = success && !crate::jobs::hook_cancel_requested(&meeting_id);
         if let Some(f) = on_exit {
             f(success);
         }
@@ -130,6 +142,7 @@ pub fn dispatch<R: tauri::Runtime>(
     use tauri::Emitter;
     let app = app.clone();
     let notify: Notify = std::sync::Arc::new(move |id: &str, status: &str| {
+        crate::jobs::hook_status(id, status);
         let _ = app.emit("hook-status-changed", serde_json::json!({ "meeting_id": id, "status": status }));
     });
     dispatch_with(prefs, ctx, force, notify)
@@ -291,6 +304,25 @@ mod tests {
         spawn("exit 1", &read_context(bad.path(), "m-done-bad"), Some(Box::new(move |_| f.store(true, std::sync::atomic::Ordering::SeqCst)))).unwrap();
         assert!(wait_until(|| finished.load(std::sync::atomic::Ordering::SeqCst)));
         assert!(!bad.path().join("hook.done").exists(), "no hook.done after exit 1");
+    }
+
+    #[test]
+    fn killing_the_process_group_stops_the_hook_and_its_children() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = read_context(dir.path(), "m-kill");
+        let (tx, rx) = std::sync::mpsc::channel();
+        // the hook shell runs in the meeting folder; $$ is its pid (the group id once grouped),
+        // the backgrounded sleep is a child that must die with the group
+        spawn("echo $$ > hook.pid; sleep 60 & echo $! > child.pid; wait", &ctx, Some(Box::new(move |ok| tx.send(ok).unwrap()))).unwrap();
+        let read = |f: &str| std::fs::read_to_string(dir.path().join(f)).unwrap_or_default().trim().to_string();
+        assert!(wait_until(|| read("child.pid").parse::<u32>().is_ok()), "hook started a child with a pid");
+        let child_pid = read("child.pid");
+        std::process::Command::new("kill").args(["-TERM", &format!("-{}", read("hook.pid"))]).status().unwrap();
+        // the exit status is not deterministic once the group is signalled; only that the hook settled matters
+        assert!(rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok(), "on_exit runs after the group is killed");
+        // kill -0 also succeeds on a zombie, so poll until the child is reaped
+        let alive = || std::process::Command::new("kill").args(["-0", &child_pid]).status().unwrap().success();
+        assert!(wait_until(|| !alive()), "the backgrounded child is gone too");
     }
 
     type Seen = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;

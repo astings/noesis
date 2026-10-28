@@ -386,11 +386,19 @@ pub async fn parakeet_download_model<R: Runtime>(
     };
 
     if let Some(engine) = engine {
+        let job_id = uuid::Uuid::new_v4().to_string();
+        crate::jobs::add(&job_id, crate::jobs::JobKind::Download, None, &model_name, crate::jobs::Control::ParakeetDownload, true);
+        let job_id_cb = job_id.clone();
         // Create progress callback that emits detailed events
         let app_handle_clone = app_handle.clone();
         let model_name_clone = model_name.clone();
 
         let progress_callback = Box::new(move |progress: DownloadProgress| {
+            crate::jobs::progress(
+                &job_id_cb,
+                progress.percent as u8,
+                Some(format!("{:.0} / {:.0} MB", progress.downloaded_mb, progress.total_mb)),
+            );
             log::info!(
                 "Parakeet download progress for {}: {:.1} MB / {:.1} MB ({:.1} MB/s) - {}%",
                 model_name_clone, progress.downloaded_mb, progress.total_mb,
@@ -428,6 +436,7 @@ pub async fn parakeet_download_model<R: Runtime>(
 
         match result {
             Ok(()) => {
+                crate::jobs::finish(&job_id, crate::jobs::Outcome::Done);
                 // Emit completion event
                 if let Err(e) = app_handle.emit(
                     "parakeet-model-download-complete",
@@ -445,6 +454,7 @@ pub async fn parakeet_download_model<R: Runtime>(
                 Ok(())
             }
             Err(error) if is_download_cancelled(&error) => {
+                crate::jobs::finish(&job_id, crate::jobs::Outcome::Cancelled);
                 if let Err(emit_error) = app_handle.emit(
                     "parakeet-model-download-progress",
                     serde_json::json!({
@@ -462,6 +472,7 @@ pub async fn parakeet_download_model<R: Runtime>(
                 Ok(())
             }
             Err(error) => {
+                crate::jobs::finish(&job_id, crate::jobs::Outcome::Failed(error.to_string()));
                 if let Err(emit_error) = app_handle.emit(
                     "parakeet-model-download-error",
                     serde_json::json!({

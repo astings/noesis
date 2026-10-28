@@ -206,12 +206,34 @@ pub async fn run_after_enhance<R: Runtime>(app: &AppHandle<R>, meeting_id: &str)
 
 #[tauri::command]
 pub async fn run_meeting_tagging<R: Runtime>(app: AppHandle<R>, meeting_id: String) -> Result<String, String> {
-    run_step(&app, &meeting_id, true).await
+    use crate::jobs::{self, Control, JobKind, Outcome};
+    let job_id = uuid::Uuid::new_v4().to_string();
+    jobs::add(&job_id, JobKind::Tagging, Some(&meeting_id), "", Control::Tagging, true);
+    let result = run_step(&app, &meeting_id, true).await;
+    jobs::finish(&job_id, match &result {
+        Ok(_) => Outcome::Done,
+        Err(e) => Outcome::Failed(e.clone()),
+    });
+    result
 }
 
 /// Tag every meeting that has a transcript but no tags yet, one after the other.
 #[tauri::command]
 pub async fn tag_untagged_meetings<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
+    use crate::jobs::{self, Control, JobKind, Outcome};
+    let job_id = uuid::Uuid::new_v4().to_string();
+    jobs::add(&job_id, JobKind::Tagging, None, "Untagged meetings", Control::Tagging, true);
+    let result = tag_untagged(&app, &job_id).await;
+    jobs::finish(&job_id, match &result {
+        Ok(_) if jobs::is_cancel_requested(&job_id) => Outcome::Cancelled,
+        Ok(_) => Outcome::Done,
+        Err(e) => Outcome::Failed(e.clone()),
+    });
+    result
+}
+
+/// The batch behind `tag_untagged_meetings`; stops between meetings when the job is cancelled.
+async fn tag_untagged<R: Runtime>(app: &AppHandle<R>, job_id: &str) -> Result<String, String> {
     let state = app.state::<crate::state::AppState>();
     let rows: Vec<(String, Option<String>)> = sqlx::query_as(
         "SELECT m.id, m.folder_path FROM meetings m WHERE m.folder_path IS NOT NULL \
@@ -226,8 +248,12 @@ pub async fn tag_untagged_meetings<R: Runtime>(app: AppHandle<R>) -> Result<Stri
         .map(|(id, _)| id)
         .collect();
     let mut ok = 0;
-    for id in &todo {
-        if run_step(&app, id, false).await.is_ok() {
+    for (i, id) in todo.iter().enumerate() {
+        if crate::jobs::is_cancel_requested(job_id) {
+            break;
+        }
+        crate::jobs::progress(job_id, (i * 100 / todo.len()) as u8, Some(format!("{} / {}", i, todo.len())));
+        if run_step(app, id, false).await.is_ok() {
             ok += 1;
         }
     }
