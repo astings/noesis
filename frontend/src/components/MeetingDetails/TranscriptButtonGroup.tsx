@@ -5,9 +5,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { ProjectSelect } from '@/components/ProjectSelect';
 import { INBOX, projectOfFolder } from '@/lib/projects';
-import { useSidebar, runMeetingHook } from '@/components/Sidebar/SidebarProvider';
+import { useSidebar, runMeetingHook, runMeetingTagging, deleteMeetingAudio } from '@/components/Sidebar/SidebarProvider';
 import { Button } from '@/components/ui/button';
-import { Copy, FolderOpen, RefreshCw, Webhook } from 'lucide-react';
+import { Copy, FolderOpen, RefreshCw, Tags, Trash2, Webhook } from 'lucide-react';
+import { ConfirmationModal } from '@/components/ConfirmationModel/confirmation-modal';
 import { RetranscribeDialog } from './RetranscribeDialog';
 
 interface TranscriptButtonGroupProps {
@@ -17,6 +18,7 @@ interface TranscriptButtonGroupProps {
   meetingId?: string;
   meetingFolderPath?: string | null;
   onRefetchTranscripts?: () => Promise<void>;
+  audioDeleted?: boolean;
 }
 
 export function TranscriptButtonGroup({
@@ -26,12 +28,16 @@ export function TranscriptButtonGroup({
   meetingId,
   meetingFolderPath,
   onRefetchTranscripts,
+  audioDeleted,
 }: TranscriptButtonGroupProps) {
   const [showRetranscribeDialog, setShowRetranscribeDialog] = useState(false);
+  const [showDeleteAudio, setShowDeleteAudio] = useState(false);
+  const audioGone = audioDeleted ? 'Audio removed after enhance' : undefined;
 
   // spec 4.2: move the meeting to another project folder
   const { refetchMeetings, meetings } = useSidebar();
   const hookRunning = meetings.find((m) => m.id === meetingId)?.hookStatus === 'running';
+  const taggingRunning = meetings.find((m) => m.id === meetingId)?.taggingStatus === 'running';
   const [root, setRoot] = useState<string>('');
   const [moving, setMoving] = useState(false);
   useEffect(() => {
@@ -99,7 +105,8 @@ export function TranscriptButtonGroup({
             size="sm"
             className="px-2.5 text-[13px] shadow-none"
             onClick={() => setShowRetranscribeDialog(true)}
-            title="Retranscribe to enhance your recorded audio"
+            disabled={audioDeleted}
+            title={audioGone ?? 'Retranscribe to enhance your recorded audio'}
           >
             <RefreshCw />
             Enhance
@@ -114,6 +121,33 @@ export function TranscriptButtonGroup({
             <Webhook />
             Run hook
           </Button>
+          <Button
+            size="sm"
+            className="px-2.5 text-[13px] shadow-none"
+            onClick={() => runMeetingTagging(meetingId)}
+            disabled={taggingRunning}
+            title="Name and tag this meeting with the summary model"
+          >
+            <Tags />
+            Title &amp; tags
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="px-2.5 text-[13px] text-destructive shadow-none"
+            onClick={() => setShowDeleteAudio(true)}
+            disabled={audioDeleted}
+            title={audioGone ?? 'Delete the audio of this meeting'}
+          >
+            <Trash2 />
+            Delete audio
+          </Button>
+          <ConfirmationModal
+            isOpen={showDeleteAudio}
+            text="Delete the audio of this meeting? The transcript stays. Enhance and playback will no longer be possible."
+            onConfirm={() => { setShowDeleteAudio(false); deleteMeetingAudio(meetingId); }}
+            onCancel={() => setShowDeleteAudio(false)}
+          />
           <RetranscribeDialog
             open={showRetranscribeDialog}
             onOpenChange={setShowRetranscribeDialog}

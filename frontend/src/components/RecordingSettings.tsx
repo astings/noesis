@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
-import { FolderOpen } from 'lucide-react';
+import { FolderOpen, Loader2 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { DeviceSelection, SelectedDevices } from '@/components/DeviceSelection';
 import { toast } from 'sonner';
@@ -33,6 +33,9 @@ export interface RecordingPreferences {
   post_enhance_command: string; // spec 4.7
   wiki_automation: boolean; // spec 4.8
   hook_auto_run: boolean;
+  auto_title_tags: boolean;
+  delete_audio_after_enhance: boolean;
+  audio_retention_hours: number;
   wiki_targets: WikiTarget[];
   wiki_budget_usd: number;
 }
@@ -58,6 +61,9 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     post_enhance_command: '',
     wiki_automation: false,
     hook_auto_run: false,
+    auto_title_tags: true,
+    delete_audio_after_enhance: true,
+    audio_retention_hours: 24,
     wiki_targets: [],
     wiki_budget_usd: 5,
   });
@@ -112,6 +118,26 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
   const applyPreferences = async (next: RecordingPreferences) => {
     setPreferences(next);
     await savePreferences(next);
+  };
+
+  const [retentionDraft, setRetentionDraft] = useState<string | null>(null);
+  const commitRetention = async () => {
+    const hours = Math.max(1, Math.round(Number(retentionDraft ?? preferences.audio_retention_hours)) || 1);
+    setRetentionDraft(null);
+    if (hours === preferences.audio_retention_hours) return;
+    await applyPreferences({ ...preferences, audio_retention_hours: hours });
+  };
+
+  const [taggingAll, setTaggingAll] = useState(false);
+  const tagUntagged = async () => {
+    setTaggingAll(true);
+    try {
+      toast.success(await invoke<string>('tag_untagged_meetings'));
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setTaggingAll(false);
+    }
   };
 
   const commitHookCommand = async () => {
@@ -338,6 +364,45 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
 
       {/* spec 4.8: wiki automation */}
       <WikiAutomationSettings preferences={preferences} onChange={applyPreferences} disabled={saving} />
+
+      <SettingsGroup title="Titles, tags and audio">
+        <SettingRow
+          label="Name and tag meetings after enhance"
+          hint="Uses your summary model. Off: run it from the meeting page or the right-click menu."
+          control={<Switch aria-label="Name and tag meetings after enhance" checked={preferences.auto_title_tags} onCheckedChange={(on) => applyPreferences({ ...preferences, auto_title_tags: on })} disabled={saving} />}
+        />
+        <SettingRow
+          label="Tag meetings without tags"
+          control={
+            <Button size="sm" variant="outline" onClick={tagUntagged} disabled={taggingAll}>
+              {taggingAll && <Loader2 className="animate-spin" />}
+              Tag meetings without tags
+            </Button>
+          }
+        />
+        <SettingRow
+          label="Delete audio after enhance"
+          hint="The transcript stays. Enhance and playback stop working for that meeting."
+          control={<Switch aria-label="Delete audio after enhance" checked={preferences.delete_audio_after_enhance} onCheckedChange={(on) => applyPreferences({ ...preferences, delete_audio_after_enhance: on })} disabled={saving} />}
+        />
+        <SettingRow
+          label="Keep audio for (hours)"
+          control={
+            <Input
+              type="number"
+              min={1}
+              step={1}
+              aria-label="Keep audio for (hours)"
+              className="h-8 w-24"
+              value={retentionDraft ?? preferences.audio_retention_hours}
+              onChange={(e) => setRetentionDraft(e.target.value)}
+              onBlur={commitRetention}
+              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+              disabled={saving}
+            />
+          }
+        />
+      </SettingsGroup>
 
       {/* spec 4.7: post-enhance hook */}
       <SettingsGroup title="Advanced">

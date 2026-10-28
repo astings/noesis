@@ -17,6 +17,7 @@ interface SidebarItem {
   children?: SidebarItem[];
   enhanceStatus?: string;
   hookStatus?: string;
+  taggingStatus?: string;
 }
 
 export const PROJECT_FOLDER_PREFIX = 'project:';
@@ -41,6 +42,27 @@ export async function runMeetingHook(meetingId: string) {
   }
 }
 
+// Title and tags run: the status events drive the badge, the Err is toasted here.
+export async function runMeetingTagging(meetingId: string) {
+  try {
+    toast.success(await invoke<string>('run_meeting_tagging', { meetingId }));
+  } catch (error) {
+    toast.error(String(error));
+  }
+}
+
+// Fired after the audio is gone so any open meeting page reloads its extras.
+export const MEETING_EXTRAS_CHANGED = 'meeting-extras-changed';
+
+export async function deleteMeetingAudio(meetingId: string) {
+  try {
+    toast.success(await invoke<string>('delete_meeting_audio', { meetingId }));
+    window.dispatchEvent(new Event(MEETING_EXTRAS_CHANGED));
+  } catch (error) {
+    toast.error(String(error));
+  }
+}
+
 export interface CurrentMeeting {
   id: string;
   title: string;
@@ -48,6 +70,7 @@ export interface CurrentMeeting {
   enhanceStatus?: string;
   // "running" | "done" | "failed", absent when the hook never ran
   hookStatus?: string;
+  taggingStatus?: string;
   // spec 4.2: project folder name, `_inbox` for legacy meetings
   project?: string;
 }
@@ -58,6 +81,8 @@ interface TranscriptSearchResult {
   title: string;
   matchContext: string;
   timestamp: string;
+  tags: string[];
+  start_seconds: number;
 }
 
 interface SidebarContextType {
@@ -122,12 +147,16 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
         const hookStatuses = await invoke<Array<{ meeting_id: string; status: string }>>('list_hook_statuses')
           .catch((error) => { console.warn('list_hook_statuses failed:', error); return []; });
         const hookById = new Map(hookStatuses.map((s) => [s.meeting_id, s.status]));
+        const taggingStatuses = await invoke<Array<{ meeting_id: string; status: string }>>('list_tagging_statuses')
+          .catch((error) => { console.warn('list_tagging_statuses failed:', error); return []; });
+        const taggingById = new Map(taggingStatuses.map((s) => [s.meeting_id, s.status]));
         const transformedMeetings = meetings.map((meeting: any) => ({
           id: meeting.id,
           title: meeting.title,
           project: meeting.project || INBOX,
           enhanceStatus: statusById.get(meeting.id),
           hookStatus: hookById.get(meeting.id),
+          taggingStatus: taggingById.get(meeting.id),
         }));
         setMeetings(transformedMeetings);
       } catch (error) {
@@ -154,6 +183,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     let unlisten: (() => void) | undefined;
     let unlistenError: (() => void) | undefined;
     let unlistenHook: (() => void) | undefined;
+    let unlistenTagging: (() => void) | undefined;
     let cancelled = false;
     listen<{ meeting_id: string; status: string }>('enhance-status-changed', (event) => {
       setMeetings((prev) =>
@@ -175,6 +205,17 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       if (cancelled) fn();
       else unlistenHook = fn;
     });
+    listen<{ meeting_id: string; status: string }>('tagging-status-changed', (event) => {
+      setMeetings((prev) =>
+        prev.map((m) => (m.id === event.payload.meeting_id ? { ...m, taggingStatus: event.payload.status } : m)),
+      );
+      // the title may have changed
+      if (event.payload.status === 'done') fetchMeetings();
+      else if (event.payload.status === 'failed') toast.error('Title and tags failed');
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlistenTagging = fn;
+    });
     // spec 4.1: an unattended job has no open dialog, so surface its error here
     listen<{ meeting_id: string; error: string }>('retranscription-error', (event) => {
       toast.error('Enhance failed', { description: event.payload.error });
@@ -187,8 +228,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       unlisten?.();
       unlistenError?.();
       unlistenHook?.();
+      unlistenTagging?.();
     };
-  }, []);
+  }, [fetchMeetings]);
 
   // spec 4.2: one collapsible section per project, Inbox first
   const meetingsByProject = new Map<string, CurrentMeeting[]>();
@@ -215,6 +257,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
           type: 'file' as const,
           enhanceStatus: meeting.enhanceStatus,
           hookStatus: meeting.hookStatus,
+          taggingStatus: meeting.taggingStatus,
         })),
       })),
     },

@@ -25,7 +25,7 @@ import {
   ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { INBOX, normalizeProjectName } from '@/lib/projects';
-import { PROJECT_FOLDER_PREFIX, runMeetingHook } from '@/components/Sidebar/SidebarProvider';
+import { PROJECT_FOLDER_PREFIX, runMeetingHook, runMeetingTagging, deleteMeetingAudio } from '@/components/Sidebar/SidebarProvider';
 import { MeetingStatusTags } from '@/components/MeetingStatusTags';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '../ui/input-group';
 
@@ -36,6 +36,7 @@ interface SidebarItem {
   children?: SidebarItem[];
   enhanceStatus?: string;
   hookStatus?: string;
+  taggingStatus?: string;
 }
 
 const Sidebar: React.FC = () => {
@@ -87,7 +88,8 @@ const Sidebar: React.FC = () => {
     }
   }, [expandedFolders]);
 
-  const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; itemId: string | null }>({ isOpen: false, itemId: null });
+  const [audioDeleteId, setAudioDeleteId] = useState<string | null>(null);
+const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; itemId: string | null }>({ isOpen: false, itemId: null });
 
   // Handle search input changes
   const handleSearchChange = useCallback(async (value: string) => {
@@ -442,7 +444,7 @@ const Sidebar: React.FC = () => {
             <div className="flex flex-col w-full min-w-0">
               <div className="flex items-center w-full min-w-0">
                 <span className="flex-1 truncate" title={item.title}>{item.title}</span>
-                {isMeetingItem && <MeetingStatusTags enhanceStatus={item.enhanceStatus} hookStatus={item.hookStatus} />}
+                {isMeetingItem && <MeetingStatusTags enhanceStatus={item.enhanceStatus} hookStatus={item.hookStatus} taggingStatus={item.taggingStatus} />}
                 {isMeetingItem && (
                   <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                     <button
@@ -529,6 +531,8 @@ const Sidebar: React.FC = () => {
                 </ContextMenuSubContent>
               </ContextMenuSub>
               <ContextMenuItem disabled={item.hookStatus === 'running'} onSelect={() => runMeetingHook(item.id)}>Run hook</ContextMenuItem>
+              <ContextMenuItem disabled={item.taggingStatus === 'running'} onSelect={() => runMeetingTagging(item.id)}>Regenerate title &amp; tags</ContextMenuItem>
+              <ContextMenuItem onSelect={() => setAudioDeleteId(item.id)}>Delete audio</ContextMenuItem>
               <ContextMenuSeparator />
               <ContextMenuItem destructive onSelect={() => setDeleteModalState({ isOpen: true, itemId: item.id })}>Delete</ContextMenuItem>
             </ContextMenuContent>
@@ -637,6 +641,13 @@ const Sidebar: React.FC = () => {
         text="Delete this meeting? Its folder will be moved to the Trash."
         onConfirm={handleDeleteConfirm}
         onCancel={() => setDeleteModalState({ isOpen: false, itemId: null })}
+      />
+
+      <ConfirmationModal
+        isOpen={audioDeleteId !== null}
+        text="Delete the audio of this meeting? The transcript stays. Enhance and playback will no longer be possible."
+        onConfirm={() => { if (audioDeleteId) deleteMeetingAudio(audioDeleteId); setAudioDeleteId(null); }}
+        onCancel={() => setAudioDeleteId(null)}
       />
 
       {/* Edit Meeting Title Modal */}
