@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, SearchIcon, Tag, X } from 'lucide-react';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
+import { JobsButton } from '@/components/Jobs/JobsButton';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
 
 const formatTime = (s: number) => {
@@ -150,6 +151,10 @@ export function TitleBar() {
             </div>
           )}
         </div>
+      </div>
+
+      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+        <JobsButton />
       </div>
     </div>
   );
