@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, Settings, Trash2, Search, Pencil, Check, FolderPlus, NotebookPen, SearchIcon, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ChevronDown, ChevronRight, Settings, Trash2, Pencil, Check, FolderPlus, NotebookPen, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSidebar } from './SidebarProvider';
 import type { CurrentMeeting } from '@/components/Sidebar/SidebarProvider';
@@ -26,9 +26,7 @@ import {
 } from '@/components/ui/context-menu';
 import { INBOX, normalizeProjectName } from '@/lib/projects';
 import { PROJECT_FOLDER_PREFIX, runMeetingHook, runMeetingTagging, deleteMeetingAudio } from '@/components/Sidebar/SidebarProvider';
-import { MeetingStatusTags } from '@/components/MeetingStatusTags';
 import { RetranscribeDialog } from '@/components/MeetingDetails/RetranscribeDialog';
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '../ui/input-group';
 
 interface SidebarItem {
   id: string;
@@ -53,6 +51,7 @@ const Sidebar: React.FC = () => {
     searchTranscripts,
     searchResults,
     isSearching,
+    searchQuery,
     meetings,
     setMeetings,
     refetchMeetings
@@ -70,7 +69,6 @@ const Sidebar: React.FC = () => {
       return new Set<string>();
     }
   });
-  const [searchQuery, setSearchQuery] = useState<string>('');
 
   // State for edit modal
   const [editModalState, setEditModalState] = useState<{ isOpen: boolean; meetingId: string | null; currentTitle: string }>({
@@ -92,23 +90,11 @@ const Sidebar: React.FC = () => {
   const [audioDeleteId, setAudioDeleteId] = useState<string | null>(null);
 const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; itemId: string | null }>({ isOpen: false, itemId: null });
 
-  // Handle search input changes
-  const handleSearchChange = useCallback(async (value: string) => {
-    setSearchQuery(value);
-
-    // If search query is empty, just return to normal view
-    if (!value.trim()) return;
-
-    // Search through transcripts
-    await searchTranscripts(value);
-
-    // Make sure the meetings folder is expanded when searching
-    if (!expandedFolders.has('meetings')) {
-      const newExpanded = new Set(expandedFolders);
-      newExpanded.add('meetings');
-      setExpandedFolders(newExpanded);
-    }
-  }, [expandedFolders, searchTranscripts]);
+  // Search through transcripts as the title bar query changes
+  useEffect(() => {
+    if (searchQuery.trim()) searchTranscripts(searchQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
 
   // spec 4.2: filter meetings inside project sections; drop empty sections, keep the top folder
   const filterTree = (items: SidebarItem[], keep: (item: SidebarItem) => boolean): SidebarItem[] => {
@@ -328,23 +314,12 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
 
     return (
       <TooltipProvider>
-        {/* Fixed w-16 so content never reflows while the container animates; icon column sits at x=24 in both states */}
-        <div className="flex w-16 flex-1 flex-col items-center gap-1 py-2.5">
+        {/* Fixed w-12 so content never reflows while the container animates; icon column sits at x=16 in both states */}
+        <div className="flex w-12 flex-1 flex-col items-center gap-1 py-2.5">
           <button onClick={() => router.push('/')} aria-label="Home" className="grid h-10 w-10 place-items-center rounded-md">
 
             <img src="/logo.png" alt="" className="w-7 h-7" />
           </button>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button onClick={toggleCollapse} aria-label="Search transcripts" className={railButton}>
-                <Search className="w-4 h-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Search transcripts</p>
-            </TooltipContent>
-          </Tooltip>
 
           <Tooltip>
             <TooltipTrigger asChild>
@@ -472,7 +447,6 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
             <div className="flex flex-col w-full min-w-0">
               <div className="flex items-center w-full min-w-0">
                 <span className="flex-1 truncate" title={item.title}>{item.title}</span>
-                {isMeetingItem && <MeetingStatusTags enhanceStatus={item.enhanceStatus} hookStatus={item.hookStatus} taggingStatus={item.taggingStatus} />}
                 {isMeetingItem && (
                   <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                     <button
@@ -577,16 +551,16 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
   };
 
   return (
-    <div className="fixed top-0 left-0 h-screen z-40">
+    <div className="fixed top-10 left-0 bottom-0 z-40">
       <div
-        className={`h-screen overflow-hidden bg-card border-r border-border flex flex-col transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-[220px]'
+        className={`h-full overflow-hidden bg-card flex flex-col transition-all duration-300 ${isCollapsed ? 'w-12' : 'w-[260px]'
           }`}
       >
         {renderCollapsedIcons()}
 
         {!showRail && (
-          // Fixed width and px-4 keep every icon on the rail's x=24 column, so toggling only slides the edge
-          <div className="flex w-[220px] flex-1 min-h-0 flex-col px-4 py-2.5">
+          // Fixed width and px-2 keep every icon on the rail's x=16 column, so toggling only slides the edge
+          <div className="flex w-[260px] flex-1 min-h-0 flex-col px-2 py-2.5">
             {/* Logo routes home; the separate Home entry is gone */}
             <div className="mb-1 flex h-10 items-center">
               <button onClick={() => router.push('/')} className="flex items-center gap-2 rounded-md pl-0.5 text-sm font-semibold text-foreground">
@@ -595,29 +569,7 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
               </button>
             </div>
 
-            <div className="pb-1">
-              <InputGroup className={`h-8 shadow-none ${isCollapsed ? 'border-transparent bg-transparent' : 'bg-background'}`}>
-                <InputGroupInput
-                  placeholder="Search transcripts"
-                  className={`text-[13px] ${hideOnCollapse}`}
-                  value={searchQuery}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                />
-                {/* pl-[7px] + 1px border lands the icon on x=24 */}
-                <InputGroupAddon className="pl-[7px]">
-                  <SearchIcon />
-                </InputGroupAddon>
-                {searchQuery &&
-                  <InputGroupAddon align={'inline-end'} className={hideOnCollapse}>
-                    <InputGroupButton onClick={() => handleSearchChange('')} aria-label="Clear search">
-                      <X />
-                    </InputGroupButton>
-                  </InputGroupAddon>
-                }
-              </InputGroup>
-            </div>
-
-            {/* h-8 right under the search keeps NotebookPen level with the rail's */}
+            {/* h-8 keeps NotebookPen level with the rail's */}
             <div className="flex h-8 items-center gap-2 px-2 text-[11px] uppercase tracking-wide text-muted-foreground">
               <NotebookPen className="w-4 h-4" />
               <span className={hideOnCollapse}>Projects</span>

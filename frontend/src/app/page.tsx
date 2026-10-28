@@ -172,7 +172,7 @@ export default function Home() {
   const isProcessingStop = status === RecordingStatus.PROCESSING_TRANSCRIPTS || isProcessing;
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-full bg-background">
       {/* All Modals supported*/}
       <SettingsModals
         modals={modals}
@@ -189,7 +189,7 @@ export default function Home() {
         onDelete={deleteRecoverableMeeting}
         onLoadPreview={loadMeetingTranscripts}
       />
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border">
+      <div data-tauri-drag-region className="flex items-center gap-2 px-4 py-2.5 border-b border-border">
         <h1 className="mr-auto min-w-0 truncate text-sm font-semibold">
           {meetingTitle === '+ New Call' ? 'New recording' : meetingTitle}
         </h1>
