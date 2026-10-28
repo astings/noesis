@@ -447,7 +447,16 @@ pub fn trash_meeting_folder(root: &Path, folder: &Path) -> Result<()> {
     if !trashable_folder(root, folder) {
         anyhow::bail!("refusing to trash {}: not a meeting folder under the recordings root", folder.display());
     }
-    trash::delete(folder).map_err(|e| anyhow::anyhow!("{}", e))
+    // NsFileManager, not the default Finder/osascript method: that one needs an Apple Events
+    // entitlement the hardened-runtime app does not have.
+    #[allow(unused_mut)]
+    let mut ctx = trash::TrashContext::default();
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        ctx.set_delete_method(DeleteMethod::NsFileManager);
+    }
+    ctx.delete(folder).map_err(|e| anyhow::anyhow!("{}", e))
 }
 
 #[cfg(test)]

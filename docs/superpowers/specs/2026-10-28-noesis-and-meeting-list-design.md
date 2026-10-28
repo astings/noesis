@@ -53,7 +53,7 @@ macOS ties microphone and screen-recording permissions to the bundle identifier,
 
 ## 6. Contracts
 
-Section 5 of the personal-recorder spec changes only in names: the folder layout under the new root, metadata.json v2 and transcript.md are unchanged, MCP tool names and schemas are unchanged, the server is registered as `noesis`. The owner re-registers it with `claude mcp add --scope user noesis -- node <repo>/mcp/dist/index.js` and removes `meetily`.
+Section 5 of the personal-recorder spec changes only in names: the folder layout under the new root, metadata.json v2 and transcript.md are unchanged, MCP tool names and schemas are unchanged, the server is registered as `noesis`. The owner re-registers it with `claude mcp add --scope user noesis -- node <repo>/mcp/src/index.ts` and removes `meetily`.
 
 ## 7. Testing
 

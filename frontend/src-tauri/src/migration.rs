@@ -194,6 +194,12 @@ pub fn migrate_dirs() -> MigrationOutcome {
     migrate(app_data_pair(), &config_pairs(), recordings_pair(), |p| p.symlink_metadata().is_ok())
 }
 
+/// Rewrite paths when the root moved this run, or an earlier run moved it but died before
+/// the rewrite (old gone, new present). Both rewrites are idempotent.
+fn needs_rewrite(moved_this_run: bool, old_exists: bool, new_exists: bool) -> bool {
+    moved_this_run || (!old_exists && new_exists)
+}
+
 /// Startup step 2, after the database opens: if the recordings root moved, rewrite the
 /// absolute paths that point into it, then log the one-line summary.
 pub async fn finish<R: tauri::Runtime>(
@@ -203,7 +209,7 @@ pub async fn finish<R: tauri::Runtime>(
 ) {
     let rec = recordings_pair();
     let mut rewrote = 0;
-    if outcome.moved.contains(&rec) {
+    if needs_rewrite(outcome.moved.contains(&rec), rec.from.exists(), rec.to.exists()) {
         match pool {
             Some(pool) => match rewrite_folder_paths(pool, &rec.from, &rec.to).await {
                 Ok(n) => rewrote = n,
@@ -245,6 +251,14 @@ mod tests {
 
     fn mv(from: &str, to: &str) -> Move {
         Move { from: PathBuf::from(from), to: PathBuf::from(to) }
+    }
+
+    #[test]
+    fn needs_rewrite_decision() {
+        assert!(needs_rewrite(true, false, true));
+        assert!(needs_rewrite(false, false, true));
+        assert!(!needs_rewrite(false, true, true));
+        assert!(!needs_rewrite(false, true, false));
     }
 
     #[test]
