@@ -4,15 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## This fork: personal meeting recorder
 
-This repository is a personal fork. The direction is a dumb, accurate recorder that drops transcripts in per-project folders for Claude to consume from OpenKnowledge wikis. In-app summaries and LLM providers are out of scope and left untouched.
+This repository is a personal fork, renamed Noesis (bundle id `com.noesis.app`, app data `~/Library/Application Support/com.noesis.app`, MCP server `noesis`, tool allow/deny names `mcp__noesis`). The MCP root is read from `NOESIS_RECORDINGS`, then `MEETILY_RECORDINGS`, then the default folders. A one-time migration at first launch (`frontend/src-tauri/src/migration.rs`) renames the old Meetily app data dir, `Application Support/Meetily` and the recordings root when the old one exists and the new one does not; it never deletes, moves the recordings root only together with the app data dir, and rewrites `meetings.folder_path` and `save_folder`. Quit Meetily before the first Noesis launch; macOS asks for mic and screen-recording permission again. The direction is a dumb, accurate recorder that drops transcripts in per-project folders for Claude to consume from OpenKnowledge wikis. In-app summaries and LLM providers are out of scope and left untouched.
 
 - Design: [docs/superpowers/specs/2026-10-27-personal-meeting-recorder-design.md](docs/superpowers/specs/2026-10-27-personal-meeting-recorder-design.md) holds the phases, the contracts and the decisions. Read it before any feature work.
 - Contracts every change must respect (spec section 5): folder layout `<root>/<project>/<YYYY-MM-DD_HH-MM title>/`, `metadata.json` v2, `transcript.md`, and the MCP tool schemas.
-- The filesystem under `~/Movies/meetily-recordings` is the source of truth. SQLite is an index that a reconcile scan repairs. Keep `transcripts.json` and the v1 `metadata.json` keys readable.
+- The filesystem under `~/Movies/noesis-recordings` is the source of truth. SQLite is an index that a reconcile scan repairs. Keep `transcripts.json` and the v1 `metadata.json` keys readable.
 - Live code is `audio/`. `audio_v2/`, `lib_old_complex.rs`, `audio/stt.rs` and `whisper_engine/parallel_processor.rs` are dead and must not be built upon.
 - Changes are additive and go in new modules where possible so upstream merges stay feasible. Do not delete upstream features for taste.
 - Implementation plans live in `docs/superpowers/plans/`, one per phase.
-- Post-enhance automation (spec 4.7 and 4.8): with "Wiki automation" on, the app runs Claude Code in the wiki directory configured for the meeting's project after a successful enhance (draft only, deny list, cost cap), logging to `hook.log` and marking `hook.done`. Projects without a row fall through to the `post_enhance_command` preference, run through `sh -c` with `MEETILY_FOLDER`, `MEETILY_PROJECT`, `MEETILY_TITLE` and `MEETILY_MEETING_ID`. `scripts/post-enhance.sh` is the advanced example of such a command.
+- Post-enhance automation (spec 4.7 and 4.8): with "Wiki automation" on, the app runs Claude Code in the wiki directory configured for the meeting's project after a successful enhance (draft only, deny list, cost cap), logging to `hook.log` and marking `hook.done`. Projects without a row fall through to the `post_enhance_command` preference, run through `sh -c` with `NOESIS_FOLDER`, `NOESIS_PROJECT`, `NOESIS_TITLE` and `NOESIS_MEETING_ID` (`MEETILY_*` equivalents still set for compatibility). `scripts/post-enhance.sh` is the advanced example of such a command.
 
 ## Project Overview
 

@@ -1,5 +1,7 @@
 # Personal meeting recorder: design
 
+Renamed to Noesis on 2026-10-28, see 2026-10-28-noesis-and-meeting-list-design.md.
+
 Date: 2026-10-27. Status: draft for review. Fork of Meetily v0.4.1.
 
 ## 1. Goal
@@ -10,7 +12,7 @@ The owner's flow today:
 
 1. Zoom call starts. Owner clicks record in Meetily. Live transcript runs on Parakeet (fast, rough).
 2. Call ends. Owner clicks stop, then opens the meeting and clicks "Enhance" with Whisper large-v3. Waits.
-3. Owner renames the folder under `~/Movies/meetily-recordings` with a case or candidate slug.
+3. Owner renames the folder under `~/Movies/noesis-recordings` with a case or candidate slug.
 4. In a wiki repo (DEX, Flowers, recruiting), each of which symlinks the recordings folder, the owner asks Claude to process the recording. The wiki skill reads `transcripts.json`, reflows it, and writes the wiki documents.
 
 Pain points, with evidence from the wikis:
@@ -33,7 +35,7 @@ Non-goals:
 All Rust paths are under `frontend/src-tauri/src/`, UI paths under `frontend/src/`.
 
 - `audio/` is the live audio system. `audio_v2/` and `lib_old_complex.rs` are dead code.
-- Recording writes `~/Movies/meetily-recordings/<title>_<UTC stamp>/` with `audio.mp4` (mono AAC 48 kHz), `transcripts.json` (rewritten on every segment) and `metadata.json`. Path logic: `audio/recording_saver.rs:224-229`, `audio/audio_processing.rs:35-58`. The `save_folder` preference is stored but never read.
+- Recording writes `~/Movies/noesis-recordings/<title>_<UTC stamp>/` with `audio.mp4` (mono AAC 48 kHz), `transcripts.json` (rewritten on every segment) and `metadata.json`. Path logic: `audio/recording_saver.rs:224-229`, `audio/audio_processing.rs:35-58`. The `save_folder` preference is stored but never read.
 - Mic and system audio are separate until `audio/pipeline.rs:849-851`, then mixed. Only the mix is recorded and transcribed. The `transcripts.speaker` column exists (migration `20251110000001`) and is never written.
 - The SQLite meeting row is created by the frontend after stop (`hooks/useRecordingStop.ts:236-260` to `api_save_transcript`). That is why `metadata.json` has `meeting_id: null`.
 - "Enhance" is `audio/retranscription.rs`: decode `audio.mp4`, VAD over the whole file, transcribe segments sequentially with the picked model, `DELETE` then `INSERT` the transcript rows, rewrite `transcripts.json`, stamp `retranscribed_at`. Manual only, one job at a time via a global flag. Events: `retranscription-progress`, `retranscription-complete`, `retranscription-error`.
@@ -61,7 +63,7 @@ Enhance: Whisper large-v3 on audio.mp4, segments split at speaker turns, labels 
         |
 Write transcript.md (quality: enhanced), update metadata.json, notify, run post-enhance hook if set
         |
-Any wiki: Claude calls the meetily MCP tools  ->  list_meetings(project), get_transcript, assign_meeting
+Any wiki: Claude calls the noesis MCP tools  ->  list_meetings(project), get_transcript, assign_meeting
 ```
 
 ## 4. Design, one capability at a time
@@ -90,7 +92,7 @@ What: every meeting lives under a project folder. A project is a wiki: `dex`, `f
 Layout:
 
 ```
-~/Movies/meetily-recordings/
+~/Movies/noesis-recordings/
   _inbox/
     2026-10-27_09-05/                 title not set yet
   dex/
@@ -154,11 +156,11 @@ What: a small Model Context Protocol server that exposes the recordings root so 
 
 How:
 
-- Standalone stdio server, TypeScript, one file, in a new top-level `mcp/` directory using `@modelcontextprotocol/sdk`. It reads the filesystem only. It does not need the app to be running. Root comes from `MEETILY_RECORDINGS` or defaults to `~/Movies/meetily-recordings`.
+- Standalone stdio server, TypeScript, one file, in a new top-level `mcp/` directory using `@modelcontextprotocol/sdk`. It reads the filesystem only. It does not need the app to be running. Root comes from `NOESIS_RECORDINGS`, then `MEETILY_RECORDINGS`, else `~/Movies/noesis-recordings` (or the old `~/Movies/meetily-recordings` if only that exists).
 - Tools (section 5.4 has the schemas): `list_projects`, `list_meetings`, `get_transcript`, `assign_meeting`.
 - `get_transcript` returns `transcript.md` when present, and renders the same format from `transcripts.json` for legacy folders, so the 33 existing meetings are readable on day one.
 - `assign_meeting` moves or renames the folder and rewrites `metadata.json`. The app picks the change up through the reconcile scan (4.2).
-- Registration: `claude mcp add --scope user meetily -- node <repo>/mcp/dist/index.js`. Codex and Cursor get the equivalent entry in their user-level config. Wiki `.mcp.json` files do not change.
+- Registration: `claude mcp add --scope user noesis -- node <repo>/mcp/src/index.ts`. Codex and Cursor get the equivalent entry in their user-level config. Wiki `.mcp.json` files do not change.
 - Wiki side, one change per wiki: the skills replace "glob the symlink" with "call `list_meetings` and `get_transcript`", and `scripts/match_recordings.py` is either kept pointing at the root path or replaced by `list_meetings(since)`. The symlinks can be deleted once the skills are updated.
 
 Why not inside the Tauri app: the app may be closed, and a stdio server has a per-client lifecycle. Why not Rust: more code, slower iteration, and nothing here needs Rust. If shipping inside the `.app` bundle ever matters, port the four tools to a Rust binary in the same workspace.
@@ -169,9 +171,9 @@ Lazier alternative: no server, just `transcript.md` plus the root path written i
 
 What: let the app kick off a wiki workflow when a transcript is ready.
 
-How: one preference `post_enhance_command: String` (empty means off). When an enhance job finishes, run it through `sh -c` detached, with `MEETILY_FOLDER`, `MEETILY_PROJECT`, `MEETILY_TITLE` and `MEETILY_MEETING_ID` in the environment, output appended to `hook.log` in the meeting folder. About 15 lines in `retranscription.rs`. The log is the only record of the hook; `metadata.json` does not track it.
+How: one preference `post_enhance_command: String` (empty means off). When an enhance job finishes, run it through `sh -c` detached, with `NOESIS_FOLDER`, `NOESIS_PROJECT`, `NOESIS_TITLE` and `NOESIS_MEETING_ID` in the environment (the `MEETILY_*` equivalents are still set), output appended to `hook.log` in the meeting folder. About 15 lines in `retranscription.rs`. The log is the only record of the hook; `metadata.json` does not track it.
 
-The wiki automation itself is a user script outside the app. The reference script maps project to wiki directory and runs `claude -p "Process the new recording at $MEETILY_FOLDER"` in that directory. Recommendation: the wiki skills should only draft (transcript doc plus a draft log entry) when invoked this way, and leave scoring, tracker and Blueprint writes for a reviewed session. That is a wiki skill decision, not an app decision.
+The wiki automation itself is a user script outside the app. The reference script maps project to wiki directory and runs `claude -p "Process the new recording at $NOESIS_FOLDER"` in that directory. Recommendation: the wiki skills should only draft (transcript doc plus a draft log entry) when invoked this way, and leave scoring, tracker and Blueprint writes for a reviewed session. That is a wiki skill decision, not an app decision.
 
 Lazier alternative: a `launchd` folder watcher outside the app. Rejected: the in-app hook fires exactly once with the right arguments and is fewer moving parts.
 
@@ -179,7 +181,7 @@ Lazier alternative: a `launchd` folder watcher outside the app. Rejected: the in
 
 What: the post-enhance hook without a script. A "Wiki automation" card in Recording settings holds a switch, a table of projects, and a cost cap; the app composes and runs the Claude Code call itself.
 
-How: preferences gain `wiki_automation: bool` (default off), `wiki_targets: [{project, directory, skill}]` and `wiki_budget_usd: f64` (default 5). When an enhance job finishes with segments and the switch is on, the app looks up the meeting's project in `wiki_targets`. On a match it runs, from the wiki directory, `claude -p <prompt> --permission-mode acceptEdits --allowedTools mcp__open-knowledge mcp__meetily --disallowedTools mcp__open-knowledge__delete mcp__open-knowledge__move mcp__meetily__assign_meeting --max-budget-usd <cap>`, with the same detached spawn and `hook.log` as 4.7. The prompt names the skill when one is set ("Use the <skill> skill to process the new meeting recording at <folder> ...") and asks for a draft only. A successful run writes `hook.done` in the meeting folder; a later enhance skips the meeting while the marker exists (delete it to reprocess). The app finds `claude` in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, then `PATH`, and the settings card shows where it was found or that it is missing. Projects without a row fall through to the custom command of 4.7 when one is set, so both can coexist.
+How: preferences gain `wiki_automation: bool` (default off), `wiki_targets: [{project, directory, skill}]` and `wiki_budget_usd: f64` (default 5). When an enhance job finishes with segments and the switch is on, the app looks up the meeting's project in `wiki_targets`. On a match it runs, from the wiki directory, `claude -p <prompt> --permission-mode acceptEdits --allowedTools mcp__open-knowledge mcp__noesis --disallowedTools mcp__open-knowledge__delete mcp__open-knowledge__move mcp__noesis__assign_meeting --max-budget-usd <cap>`, with the same detached spawn and `hook.log` as 4.7. The prompt names the skill when one is set ("Use the <skill> skill to process the new meeting recording at <folder> ...") and asks for a draft only. A successful run writes `hook.done` in the meeting folder; a later enhance skips the meeting while the marker exists (delete it to reprocess). The app finds `claude` in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, then `PATH`, and the settings card shows where it was found or that it is missing. Projects without a row fall through to the custom command of 4.7 when one is set, so both can coexist.
 
 Why in the app rather than the script: the daily UX is a table, not a shell file in a dev folder, and a repackaged build can ship the behaviour without asking recipients to install a script. The command field of 4.7 stays as the advanced escape hatch.
 
@@ -285,7 +287,7 @@ Phase 1 first because it removes a daily click with the smallest change. Phase 3
 
 Defaults chosen in this document. Changing any of them changes the plans.
 
-1. Recordings root stays `~/Movies/meetily-recordings`, with one subfolder per project. Legacy flat folders are left in place and read as `_inbox`.
+1. Recordings root stays `~/Movies/noesis-recordings`, with one subfolder per project. Legacy flat folders are left in place and read as `_inbox`.
 2. Speaker labels come from a live mic-vs-system energy timeline saved as `speakers.json`. `audio.mp4` stays mono. Stereo recording is the named upgrade path, not the default.
 3. Zoom detection uses the `CptHost` helper process. Auto-stop and auto-start both default on.
 4. The MCP server is a standalone Node script registered at user scope, not part of the Tauri app.
