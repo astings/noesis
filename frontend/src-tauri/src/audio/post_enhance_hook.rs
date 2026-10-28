@@ -46,6 +46,9 @@ pub fn spawn_logged(mut command: Command, header: &str, folder: &Path, meeting_i
         .with_context(|| format!("open {}", log_path.display()))?;
     writeln!(log, "=== {} {}", chrono::Local::now().to_rfc3339(), header)?;
     let stderr = log.try_clone().context("clone hook.log handle")?;
+    // own process group: cancelling from the job panel kills Claude Code and its children together
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
@@ -53,6 +56,7 @@ pub fn spawn_logged(mut command: Command, header: &str, folder: &Path, meeting_i
         .spawn()
         .context("spawn post-enhance hook")?;
     info!("Post-enhance hook started (pid {}) for {} in {}", child.id(), meeting_id, folder.display());
+    crate::jobs::set_hook_pid(meeting_id, Some(child.id()));
     let meeting_id = meeting_id.to_string();
     std::thread::spawn(move || {
         let success = match child.wait() {
@@ -130,6 +134,7 @@ pub fn dispatch<R: tauri::Runtime>(
     use tauri::Emitter;
     let app = app.clone();
     let notify: Notify = std::sync::Arc::new(move |id: &str, status: &str| {
+        crate::jobs::hook_status(id, status);
         let _ = app.emit("hook-status-changed", serde_json::json!({ "meeting_id": id, "status": status }));
     });
     dispatch_with(prefs, ctx, force, notify)
@@ -291,6 +296,23 @@ mod tests {
         spawn("exit 1", &read_context(bad.path(), "m-done-bad"), Some(Box::new(move |_| f.store(true, std::sync::atomic::Ordering::SeqCst)))).unwrap();
         assert!(wait_until(|| finished.load(std::sync::atomic::Ordering::SeqCst)));
         assert!(!bad.path().join("hook.done").exists(), "no hook.done after exit 1");
+    }
+
+    #[test]
+    fn killing_the_process_group_stops_the_hook_and_its_children() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = read_context(dir.path(), "m-kill");
+        let (tx, rx) = std::sync::mpsc::channel();
+        // the hook shell runs in the meeting folder; $$ is its pid (the group id once grouped),
+        // the backgrounded sleep is a child that must die with the group
+        spawn("echo $$ > hook.pid; sleep 60 & echo $! > child.pid; wait", &ctx, Some(Box::new(move |ok| tx.send(ok).unwrap()))).unwrap();
+        let child_file = dir.path().join("child.pid");
+        assert!(wait_until(|| child_file.exists()), "hook started");
+        let read = |f: &str| std::fs::read_to_string(dir.path().join(f)).unwrap().trim().to_string();
+        std::process::Command::new("kill").args(["-TERM", &format!("-{}", read("hook.pid"))]).status().unwrap();
+        assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(5)), Ok(false), "hook exits non-zero");
+        let alive = std::process::Command::new("kill").args(["-0", &read("child.pid")]).status().unwrap().success();
+        assert!(!alive, "the backgrounded child is gone too");
     }
 
     type Seen = std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>;
