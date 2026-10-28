@@ -522,6 +522,10 @@ impl RecordingManager {
         self.recording_saver.set_project(project);
     }
 
+    pub fn get_project(&self) -> Option<String> {
+        self.recording_saver.get_project()
+    }
+
     // spec 4.4
     pub fn set_owner_name(&mut self, name: String) {
         self.recording_saver.set_owner_name(name);

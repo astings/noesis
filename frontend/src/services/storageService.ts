@@ -16,6 +16,10 @@ export interface SaveMeetingRequest {
 
 export interface SaveMeetingResponse {
   meeting_id: string;
+  /** Set when the project was changed while recording and the meeting moved (spec 2). */
+  folder_path?: string | null;
+  /** Set when that move failed; the meeting stays in its original project. */
+  move_error?: string | null;
 }
 
 export interface Meeting {

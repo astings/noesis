@@ -1287,6 +1287,37 @@ pub async fn get_recording_state() -> serde_json::Value {
     }
 }
 
+/// Live project change (Noesis spec 2): `(meeting_id, project)` to move the meeting to once its
+/// row is saved. Keyed by meeting id rather than held on the manager, because `stop_recording`
+/// drops the manager before the frontend saves the row. A new recording's id never matches.
+static PENDING_PROJECT: Mutex<Option<(String, String)>> = Mutex::new(None);
+
+/// Change the project of the live recording. The folder is not moved now (the saver and
+/// checkpoints hold its path); `take_pending_project` hands the move to the row save.
+/// Returns the normalized project name.
+#[tauri::command]
+pub async fn set_recording_project(project: String) -> Result<String, String> {
+    let guard = RECORDING_MANAGER.lock().unwrap();
+    let Some(manager) = guard.as_ref() else { return Err("No recording in progress.".to_string()) };
+    let Some(meeting_id) = manager.get_meeting_id() else { return Err("No recording in progress.".to_string()) };
+    let started = manager.get_project().unwrap_or_else(|| super::library::INBOX.to_string());
+    let normalized = super::library::normalize_project(&project);
+    let pending = super::library::pending_move(&started, Some(&project));
+    info!("Recording {} project change: {:?} -> pending {:?}", meeting_id, started, pending);
+    *PENDING_PROJECT.lock().unwrap() = pending.map(|p| (meeting_id, p));
+    Ok(normalized)
+}
+
+/// The pending project for `meeting_id`, consumed. None for any other meeting.
+pub fn take_pending_project(meeting_id: &str) -> Option<String> {
+    let mut guard = PENDING_PROJECT.lock().unwrap();
+    if guard.as_ref().map_or(false, |(id, _)| id == meeting_id) {
+        guard.take().map(|(_, p)| p)
+    } else {
+        None
+    }
+}
+
 /// Get the meeting folder path for the current recording
 /// Returns the path if a meeting name was set and folder structure initialized
 #[tauri::command]

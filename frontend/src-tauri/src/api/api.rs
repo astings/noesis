@@ -971,7 +971,7 @@ pub async fn api_save_meeting_title<R: Runtime>(
 
 #[tauri::command]
 pub async fn api_save_transcript<R: Runtime>(
-    _app: AppHandle<R>,
+    app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     meeting_title: String,
     transcripts: Vec<serde_json::Value>,
@@ -1032,10 +1032,31 @@ pub async fn api_save_transcript<R: Runtime>(
                 "Successfully saved transcript and created meeting with id: {}",
                 meeting_id
             );
+            // Noesis spec 2: the project was changed while recording. Move now that the row
+            // exists and before the frontend starts auto-enhance (which gets `folder_path`).
+            let mut moved_folder: Option<String> = None;
+            let mut move_error: Option<String> = None;
+            if let Some(project) = crate::audio::recording_commands::take_pending_project(&meeting_id) {
+                let root = crate::audio::recording_preferences::get_default_recordings_folder();
+                match crate::audio::library::assign(pool, &root, &meeting_id, Some(&project), None).await {
+                    Ok(path) => {
+                        log_info!("Moved meeting {} to project {} after recording", meeting_id, project);
+                        moved_folder = Some(path.to_string_lossy().to_string());
+                        use tauri::Emitter;
+                        let _ = app.emit("meeting-moved", serde_json::json!({ "meeting_id": meeting_id }));
+                    }
+                    Err(e) => {
+                        log_warn!("Could not move meeting {} to project {}: {}", meeting_id, project, e);
+                        move_error = Some(format!("Could not move the meeting to {}: {}", project, e));
+                    }
+                }
+            }
             Ok(serde_json::json!({
                 "status": "success",
                 "message": "Transcript saved successfully",
-                "meeting_id": meeting_id
+                "meeting_id": meeting_id,
+                "folder_path": moved_folder,
+                "move_error": move_error
             }))
         }
         Err(e) => {

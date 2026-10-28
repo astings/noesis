@@ -150,6 +150,10 @@ impl RecordingSaver {
         });
     }
 
+    pub fn get_project(&self) -> Option<String> {
+        self.project.clone()
+    }
+
     /// spec 4.2: the meeting id is minted at record start so metadata.json carries it from the first write
     pub fn set_meeting_id(&mut self, id: Option<String>) {
         self.meeting_id = id;

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { RecordingControls } from '@/components/RecordingControls';
 import { ProjectSelect } from '@/components/ProjectSelect'; // spec 4.2
 import { INBOX, getLastProject, setLastProject } from '@/lib/projects'; // spec 4.2
@@ -207,8 +208,18 @@ export default function Home() {
         {/* spec 4.2 */}
         <ProjectSelect
           value={project}
-          onChange={(p) => { setProject(p); setLastProject(p); }}
-          disabled={isRecordingDisabled || recordingState.isRecording}
+          onChange={async (p) => {
+            if (!recordingState.isRecording) { setProject(p); setLastProject(p); return; }
+            // spec 2: the meeting moves to this project after stop, before auto-enhance
+            try {
+              const applied = await invoke<string>('set_recording_project', { project: p });
+              setProject(applied);
+              setLastProject(applied);
+            } catch (error) {
+              toast.error('Could not change the project', { description: String(error) });
+            }
+          }}
+          disabled={isRecordingDisabled}
           compact
           className="w-auto min-w-28 gap-1.5 rounded-full text-muted-foreground shadow-none"
         />

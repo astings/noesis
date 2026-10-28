@@ -106,6 +106,18 @@ pub fn is_valid_project_name(name: &str) -> bool {
         && !n.contains('\0')
 }
 
+/// Project name as `RecordingSaver::set_project` applies it: invalid names become `_inbox`.
+pub fn normalize_project(name: &str) -> String {
+    if is_valid_project_name(name) { name.to_string() } else { INBOX.to_string() }
+}
+
+/// Live project change: the project to move the meeting to after stop, or None when
+/// nothing is pending or the pending project is the one the recording started in.
+pub fn pending_move(started_project: &str, pending: Option<&str>) -> Option<String> {
+    let target = normalize_project(pending?);
+    (target != normalize_project(started_project)).then_some(target)
+}
+
 /// Create `<root>/<project>/<stamp>[ <slug>]/` (and `.checkpoints/` when asked),
 /// adding `-2`, `-3`, ... when a folder with that name already exists.
 pub fn create_meeting_folder(
@@ -441,6 +453,26 @@ pub fn trash_meeting_folder(root: &Path, folder: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pending_move_none_when_nothing_pending() {
+        assert_eq!(pending_move("acme", None), None);
+    }
+
+    #[test]
+    fn pending_move_none_when_back_to_started_project() {
+        assert_eq!(pending_move("acme", Some("acme")), None);
+        assert_eq!(pending_move(INBOX, Some("../bad")), None);
+        assert_eq!(pending_move("", Some(INBOX)), None);
+    }
+
+    #[test]
+    fn pending_move_some_normalized_otherwise() {
+        assert_eq!(pending_move("acme", Some("globex")), Some("globex".to_string()));
+        assert_eq!(pending_move("acme", Some("../bad")), Some(INBOX.to_string()));
+        assert_eq!(pending_move("acme", Some("")), Some(INBOX.to_string()));
+        assert_eq!(pending_move(INBOX, Some("acme")), Some("acme".to_string()));
+    }
 
     fn write_meta(dir: &Path, json: &str) {
         std::fs::create_dir_all(dir).unwrap();

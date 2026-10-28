@@ -274,7 +274,11 @@ export function useRecordingStop(
           // Mark meeting as saved in IndexedDB (for recovery system)
           await markMeetingAsSaved();
           // spec 4.1: enhance in the background. Never blocks navigation.
-          void startAutoEnhanceIfEnabled(meetingId, folderPath);
+          // spec 2: a project change during the recording moved the folder inside the save
+          if (responseData.move_error) {
+            toast.error('Meeting kept in its original project', { description: responseData.move_error });
+          }
+          void startAutoEnhanceIfEnabled(meetingId, responseData.folder_path ?? folderPath);
 
           // Clean up session storage
           sessionStorage.removeItem('last_recording_folder_path');
