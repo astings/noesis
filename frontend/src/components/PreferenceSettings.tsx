@@ -2,13 +2,11 @@
 
 import { useEffect, useState } from "react"
 import { Switch } from "./ui/switch"
-import { FolderOpen } from "lucide-react"
-import { Button } from "./ui/button"
-import { SettingsGroup, SettingRow } from "./SettingsGroup"
-import { invoke } from "@tauri-apps/api/core"
+import { SettingRow } from "./SettingsGroup"
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext"
 
-export function PreferenceSettings() {
+/** OS notification when a recording starts and stops. A row for a SettingsGroup. */
+export function NotificationsRow() {
   const {
     notificationSettings,
     storageLocations,
@@ -80,64 +78,24 @@ export function PreferenceSettings() {
     handleUpdateNotificationSettings();
   }, [notificationsEnabled, notificationSettings, isInitialLoad, previousNotificationsEnabled, updateNotificationSettings])
 
-  const handleOpenFolder = async (folderType: 'database' | 'models' | 'recordings') => {
-    try {
-      switch (folderType) {
-        case 'database':
-          await invoke('open_database_folder');
-          break;
-        case 'models':
-          await invoke('open_models_folder');
-          break;
-        case 'recordings':
-          await invoke('open_recordings_folder');
-          break;
-      }
-
-    } catch (error) {
-      console.error(`Failed to open ${folderType} folder:`, error);
-    }
-  };
-
   // Show loading only if we're actually loading and don't have cached data
   if (isLoadingPreferences && !notificationSettings && !storageLocations) {
-    return <div className="text-sm text-muted-foreground">Loading preferences...</div>
+    return <div className="px-3.5 py-3 text-sm text-muted-foreground">Loading preferences...</div>
   }
 
   // Show loading if notificationsEnabled hasn't been determined yet
   if (notificationsEnabled === null && !isLoadingPreferences) {
-    return <div className="text-sm text-muted-foreground">Loading preferences...</div>
+    return <div className="px-3.5 py-3 text-sm text-muted-foreground">Loading preferences...</div>
   }
 
   // Ensure we have a boolean value for the Switch component
   const notificationsEnabledValue = notificationsEnabled ?? false;
 
   return (
-    <div className="space-y-6">
-      <SettingsGroup>
-        <SettingRow
-          label="Notifications"
-          hint="Notify when a meeting recording starts and ends"
-          control={<Switch checked={notificationsEnabledValue} onCheckedChange={setNotificationsEnabled} />}
-        />
-      </SettingsGroup>
-
-      <SettingsGroup title="Data storage">
-        <SettingRow
-          label="Meeting recordings"
-          hint={<span className="font-mono break-all">{storageLocations?.recordings || 'Loading...'}</span>}
-          control={
-            <Button variant="outline" size="sm" onClick={() => handleOpenFolder('recordings')}>
-              <FolderOpen />
-              Open folder
-            </Button>
-          }
-        />
-        <SettingRow
-          label="Database and models"
-          hint="Stored together in the application data directory"
-        />
-      </SettingsGroup>
-    </div>
+    <SettingRow
+      label="Recording started and stopped"
+      hint="Show a system notification when a recording starts and ends"
+      control={<Switch checked={notificationsEnabledValue} onCheckedChange={setNotificationsEnabled} />}
+    />
   )
 }

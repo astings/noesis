@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { TitleBar } from '@/components/TitleBar'
 import { RecordingStateProvider } from '@/contexts/RecordingStateContext'
 import { TranscriptProvider } from '@/contexts/TranscriptContext'
 import { ConfigProvider } from '@/contexts/ConfigContext'
@@ -82,17 +83,18 @@ export default function RootLayout({
 
   return (
     <html lang="en">
-      <body className="font-sans">
+      <body className="font-sans bg-card">
           <RecordingStateProvider>
             <TranscriptProvider>
               <ConfigProvider>
                 <OnboardingProvider>
                     <SidebarProvider>
-                      <TooltipProvider>
+                      <TooltipProvider delayDuration={150}>
                         <RecordingPostProcessingProvider>
                             {/* Download progress toast provider - listens for background downloads */}
                             <DownloadProgressToastProvider />
 
+                            <TitleBar />
                             {/* Show onboarding or main app */}
                             {showOnboarding ? (
                               <OnboardingFlow />

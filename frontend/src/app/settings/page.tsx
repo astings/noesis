@@ -5,24 +5,22 @@ import { ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
-import { TranscriptSettings } from '@/components/TranscriptSettings';
 import { RecordingSettings } from '@/components/RecordingSettings';
-import { PreferenceSettings } from '@/components/PreferenceSettings';
+import { ModelsSettings } from '@/components/ModelsSettings';
 import { useConfig } from '@/contexts/ConfigContext';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 // Tabs configuration (constant)
 const TABS = [
-  { value: 'general', label: 'General' },
   { value: 'recording', label: 'Recordings' },
-  { value: 'Transcriptionmodels', label: 'Transcription' },
+  { value: 'models', label: 'Models' },
 ] as const;
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { transcriptModelConfig, setTranscriptModelConfig } = useConfig();
+  const { setTranscriptModelConfig } = useConfig();
 
-  const [activeTab, setActiveTab] = useState('general');
+  const [activeTab, setActiveTab] = useState('recording');
 
   // Load saved transcript configuration on mount
   useEffect(() => {
@@ -45,8 +43,8 @@ export default function SettingsPage() {
   }, [setTranscriptModelConfig]);
 
   return (
-    <div className="h-screen bg-background flex flex-col">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border">
+    <div className="h-full bg-background flex flex-col">
+      <div data-tauri-drag-region className="flex items-center gap-2 px-4 py-2.5 border-b border-border">
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => router.back()} aria-label="Back">
           <ArrowLeft />
         </Button>
@@ -67,17 +65,11 @@ export default function SettingsPage() {
         </TabsList>
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          <TabsContent value="general" className="mt-0">
-            <PreferenceSettings />
-          </TabsContent>
           <TabsContent value="recording" className="mt-0">
             <RecordingSettings />
           </TabsContent>
-          <TabsContent value="Transcriptionmodels" className="mt-0">
-            <TranscriptSettings
-              transcriptModelConfig={transcriptModelConfig}
-              setTranscriptModelConfig={setTranscriptModelConfig}
-            />
+          <TabsContent value="models" className="mt-0">
+            <ModelsSettings />
           </TabsContent>
         </div>
       </Tabs>

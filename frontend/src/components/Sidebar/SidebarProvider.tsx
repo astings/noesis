@@ -100,6 +100,9 @@ interface SidebarContextType {
   searchTranscripts: (query: string) => Promise<void>;
   searchResults: TranscriptSearchResult[];
   isSearching: boolean;
+  // query typed in the title bar search; the sidebar tree filters on it
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
   setServerAddress: (address: string) => void;
   serverAddress: string;
   transcriptServerAddress: string;
@@ -127,6 +130,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [isMeetingActive, setIsMeetingActive] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [serverAddress, setServerAddress] = useState('');
   const [transcriptServerAddress, setTranscriptServerAddress] = useState('');
 
@@ -338,6 +342,8 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       searchTranscripts,
       searchResults,
       isSearching,
+      searchQuery,
+      setSearchQuery,
       setServerAddress,
       serverAddress,
       transcriptServerAddress,

@@ -1,35 +1,40 @@
-import { Sparkles, Tags, Webhook } from 'lucide-react';
+import { Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-const ENHANCE: Record<string, { label: string; className: string }> = {
-  done: { label: 'Enhanced', className: 'text-muted-foreground' },
-  queued: { label: 'Enhance queued', className: 'text-muted-foreground/50' },
-  running: { label: 'Enhancing transcript', className: 'text-primary animate-pulse' },
-  failed: { label: 'Enhance failed', className: 'text-destructive' },
-};
+const ENHANCE: Record<string, string> = { done: 'Done', queued: 'Queued', running: 'Running', failed: 'Failed' };
+const HOOK: Record<string, string> = { done: 'Ran', running: 'Running', failed: 'Failed' };
+const TAGGING: Record<string, string> = { done: 'Done', running: 'Running', failed: 'Failed' };
 
-const HOOK: Record<string, { label: string; className: string }> = {
-  done: { label: 'Hook ran', className: 'text-muted-foreground' },
-  running: { label: 'Hook running', className: 'text-primary animate-pulse' },
-  failed: { label: 'Hook failed', className: 'text-destructive' },
-};
-
-const TAGGING: Record<string, { label: string; className: string }> = {
-  done: { label: 'Tagged', className: 'text-muted-foreground' },
-  running: { label: 'Tagging', className: 'text-primary animate-pulse' },
-  failed: { label: 'Tagging failed', className: 'text-destructive' },
-};
-
-// Three small status icons: enhance (Sparkles) hook (Webhook) and tagging (Tags). A missing status renders nothing for that icon.
-export function MeetingStatusTags({ enhanceStatus, hookStatus, taggingStatus }: { enhanceStatus?: string; hookStatus?: string; taggingStatus?: string }) {
-  const enhance = enhanceStatus ? ENHANCE[enhanceStatus] : undefined;
-  const hook = hookStatus ? HOOK[hookStatus] : undefined;
-  const tagging = taggingStatus ? TAGGING[taggingStatus] : undefined;
-  if (!enhance && !hook && !tagging) return null;
+/** Info icon on the meeting page; hover shows tags and the enhance, title/tags and hook statuses. */
+export function MeetingInfoButton({ tags, enhanceStatus, hookStatus, taggingStatus }: { tags: string[]; enhanceStatus?: string; hookStatus?: string; taggingStatus?: string }) {
+  const statuses = [enhanceStatus, hookStatus, taggingStatus];
+  // the icon still signals work in progress and failures without opening the hover
+  const tone = statuses.includes('failed') ? 'text-destructive' : statuses.includes('running') ? 'text-primary animate-pulse' : 'text-muted-foreground';
+  const rows: [string, string][] = [
+    ['Enhanced', (enhanceStatus && ENHANCE[enhanceStatus]) || 'Not run'],
+    ['Title and tags', (taggingStatus && TAGGING[taggingStatus]) || 'Not run'],
+    ['Hook', (hookStatus && HOOK[hookStatus]) || 'Not run'],
+  ];
   return (
-    <span className="ml-2 inline-flex flex-shrink-0 items-center gap-1">
-      {enhance && <Sparkles role="img" aria-label={enhance.label} className={`h-3 w-3 ${enhance.className}`}><title>{enhance.label}</title></Sparkles>}
-      {hook && <Webhook role="img" aria-label={hook.label} className={`h-3 w-3 ${hook.className}`}><title>{hook.label}</title></Webhook>}
-      {tagging && <Tags role="img" aria-label={tagging.label} className={`h-3 w-3 ${tagging.className}`}><title>{tagging.label}</title></Tags>}
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" aria-label="Meeting info" className={`flex h-8 w-8 items-center justify-center rounded-md hover:bg-accent/60 ${tone}`}>
+          <Info className="h-4 w-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="end" className="w-56 space-y-2 border border-border bg-popover p-3 text-popover-foreground">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+          {rows.map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className="text-muted-foreground">{k}</dt>
+              <dd className={v === 'Failed' ? 'text-destructive' : ''}>{v}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="flex flex-wrap gap-1 border-t border-border pt-2">
+          {tags.length ? tags.map((tag) => <span key={tag} className="rounded border border-border px-1.5">{tag}</span>) : <span className="text-muted-foreground">No tags</span>}
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }

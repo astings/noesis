@@ -65,6 +65,37 @@ pub enum CancelDownloadOutcome {
 
 const CANCEL_DOWNLOAD_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// The language for an "auto" request: the only allowed one, or the allowed one whisper
+/// rates most likely. None keeps whisper's own detection (empty list, or detection failed).
+fn auto_language(state: &mut whisper_rs::WhisperState, audio: &[f32]) -> Option<String> {
+    let allowed = crate::get_transcription_languages_internal();
+    match allowed.len() {
+        0 => None,
+        1 => Some(allowed[0].clone()),
+        _ => {
+            let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+            match state.pcm_to_mel(audio, threads).and_then(|_| state.lang_detect(0, threads)) {
+                Ok((_, probs)) => best_allowed_language(&allowed, &probs),
+                Err(e) => {
+                    log::warn!("Language detection failed, using whisper auto-detect: {:?}", e);
+                    None
+                }
+            }
+        }
+    }
+}
+
+fn best_allowed_language(allowed: &[String], probs: &[f32]) -> Option<String> {
+    allowed
+        .iter()
+        .filter_map(|code| {
+            let id = whisper_rs::get_lang_id(code)? as usize;
+            probs.get(id).map(|p| (code, *p))
+        })
+        .max_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(code, _)| code.clone())
+}
+
 pub struct WhisperEngine {
     models_dir: PathBuf,
     current_context: Arc<RwLock<Option<WhisperContext>>>,
@@ -567,8 +598,14 @@ impl WhisperEngine {
         // If language is "auto" or None, use automatic language detection (pass None)
         // If language is "auto-translate", enable translation to English
         // Otherwise, use the specified language code
+        // "auto" or None is narrowed to the allowed transcription languages
+        let mut state = ctx.create_state()?;
+        let picked = match language.as_deref() {
+            Some("auto") | None => auto_language(&mut state, &audio_data),
+            _ => None,
+        };
         let (language_code, should_translate) = match language.as_deref() {
-            Some("auto") | None => (None, false),
+            Some("auto") | None => (picked.as_deref(), false),
             Some("auto-translate") => (None, true),
             Some(lang) => (Some(lang), false),
         };
@@ -616,7 +653,6 @@ impl WhisperEngine {
         let (num_segments, state) = {
             // let _suppressor = crate::whisper_engine::StderrSuppressor::new();
 
-            let mut state = ctx.create_state()?;
             state.full(params, &audio_data)?;
             let num_segments = state.full_n_segments();
 
@@ -684,8 +720,14 @@ impl WhisperEngine {
         // If language is "auto" or None, use automatic language detection (pass None)
         // If language is "auto-translate", enable translation to English
         // Otherwise, use the specified language code
+        // "auto" or None is narrowed to the allowed transcription languages
+        let mut state = ctx.create_state()?;
+        let picked = match language.as_deref() {
+            Some("auto") | None => auto_language(&mut state, &audio_data),
+            _ => None,
+        };
         let (language_code, should_translate) = match language.as_deref() {
-            Some("auto") | None => (None, false),
+            Some("auto") | None => (picked.as_deref(), false),
             Some("auto-translate") => (None, true),
             Some(lang) => (Some(lang), false),
         };
@@ -771,7 +813,6 @@ impl WhisperEngine {
             log::info!("Starting transcription #{} of {} samples ({:.1}s duration)",
                       transcription_count, audio_data.len(), duration_seconds);
         }
-        let mut state = ctx.create_state()?;
         state.full(params, &audio_data)?;
 
         // Extract text with improved segment handling
@@ -1275,6 +1316,17 @@ impl WhisperEngine {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn best_allowed_language_picks_the_likeliest_allowed_code() {
+        let mut probs = vec![0.0; whisper_rs::get_lang_max_id() as usize + 1];
+        probs[whisper_rs::get_lang_id("en").unwrap() as usize] = 0.2;
+        probs[whisper_rs::get_lang_id("fr").unwrap() as usize] = 0.7;
+        probs[whisper_rs::get_lang_id("de").unwrap() as usize] = 0.9;
+        let allowed = vec!["en".to_string(), "fr".to_string(), "xx".to_string()];
+        assert_eq!(best_allowed_language(&allowed, &probs).as_deref(), Some("fr"));
+        assert_eq!(best_allowed_language(&["xx".to_string()], &probs), None);
+    }
     use tokio::net::TcpListener;
     use tokio::sync::oneshot;
     use tokio::time::{timeout, Duration};
