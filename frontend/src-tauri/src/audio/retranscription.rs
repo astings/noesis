@@ -1080,7 +1080,16 @@ pub async fn is_retranscription_in_progress_command() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::common::create_transcript_segments;
+    use crate::api::TranscriptSegment;
+    use crate::audio::common::create_labelled_transcript_segments;
+
+    fn create_transcript_segments(transcripts: &[(String, f64, f64)]) -> Vec<TranscriptSegment> {
+        let labelled: Vec<_> = transcripts
+            .iter()
+            .map(|(t, s, e)| (t.clone(), *s, *e, None))
+            .collect();
+        create_labelled_transcript_segments(&labelled)
+    }
 
     // spec 4.4
     #[test]
