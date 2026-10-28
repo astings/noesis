@@ -27,6 +27,7 @@ import {
 import { INBOX, normalizeProjectName } from '@/lib/projects';
 import { PROJECT_FOLDER_PREFIX, runMeetingHook } from '@/components/Sidebar/SidebarProvider';
 import { MeetingStatusTags } from '@/components/MeetingStatusTags';
+import { RetranscribeDialog } from '@/components/MeetingDetails/RetranscribeDialog';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '../ui/input-group';
 
 interface SidebarItem {
@@ -178,6 +179,17 @@ const Sidebar: React.FC = () => {
 
   // "New project...": the dialog normalizes the name like ProjectSelect; assign_meeting creates the folder.
   const [newProject, setNewProject] = useState<{ meetingId: string; draft: string } | null>(null);
+  // The dialog needs the folder path, which the meeting list does not carry
+  const [enhanceTarget, setEnhanceTarget] = useState<{ meetingId: string; folderPath: string } | null>(null);
+  const openEnhance = async (meetingId: string) => {
+    try {
+      const { folder_path } = await invoke<{ folder_path?: string }>('api_get_meeting_metadata', { meetingId });
+      if (!folder_path) throw new Error('This meeting has no recording folder');
+      setEnhanceTarget({ meetingId, folderPath: folder_path });
+    } catch (error) {
+      toast.error('Could not enhance the meeting', { description: error instanceof Error ? error.message : String(error) });
+    }
+  };
   const confirmNewProject = () => {
     if (!newProject) return;
     const name = normalizeProjectName(newProject.draft);
@@ -544,6 +556,7 @@ const Sidebar: React.FC = () => {
                   </ContextMenuItem>
                 </ContextMenuSubContent>
               </ContextMenuSub>
+              <ContextMenuItem onSelect={() => openEnhance(item.id)}>Enhance</ContextMenuItem>
               <ContextMenuItem disabled={item.hookStatus === 'running'} onSelect={() => runMeetingHook(item.id)}>Run hook</ContextMenuItem>
               <ContextMenuSeparator />
               <ContextMenuItem destructive onSelect={() => setDeleteModalState({ isOpen: true, itemId: item.id })}>Delete</ContextMenuItem>
@@ -655,6 +668,15 @@ const Sidebar: React.FC = () => {
       </div>
 
       {/* Confirmation Modal for Delete */}
+      {enhanceTarget && (
+        <RetranscribeDialog
+          open
+          onOpenChange={(open) => { if (!open) setEnhanceTarget(null); }}
+          meetingId={enhanceTarget.meetingId}
+          meetingFolderPath={enhanceTarget.folderPath}
+          onComplete={refetchMeetings}
+        />
+      )}
       <ConfirmationModal
         isOpen={deleteModalState.isOpen}
         text="Delete this meeting? Its folder will be moved to the Trash."

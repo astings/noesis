@@ -7,12 +7,11 @@ import { ProjectSelect } from '@/components/ProjectSelect';
 import { INBOX, projectOfFolder } from '@/lib/projects';
 import { useSidebar, runMeetingHook } from '@/components/Sidebar/SidebarProvider';
 import { Button } from '@/components/ui/button';
-import { Copy, FolderOpen, RefreshCw, Webhook } from 'lucide-react';
+import { ChevronDown, FolderOpen, RefreshCw, Webhook } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { RetranscribeDialog } from './RetranscribeDialog';
 
 interface TranscriptButtonGroupProps {
-  transcriptCount: number;
-  onCopyTranscript: () => void;
   onOpenMeetingFolder: () => Promise<void>;
   meetingId?: string;
   meetingFolderPath?: string | null;
@@ -20,8 +19,6 @@ interface TranscriptButtonGroupProps {
 }
 
 export function TranscriptButtonGroup({
-  transcriptCount,
-  onCopyTranscript,
   onOpenMeetingFolder,
   meetingId,
   meetingFolderPath,
@@ -64,18 +61,6 @@ export function TranscriptButtonGroup({
   return (
     <>
       <Button
-        variant="outline"
-        size="sm"
-        className="px-2.5 text-[13px] shadow-none"
-        onClick={onCopyTranscript}
-        disabled={transcriptCount === 0}
-        title={transcriptCount === 0 ? 'No transcript available' : 'Copy transcript'}
-      >
-        <Copy />
-        Copy
-      </Button>
-
-      <Button
         size="sm"
         variant="outline"
         className="px-2.5 text-[13px] shadow-none"
@@ -95,25 +80,24 @@ export function TranscriptButtonGroup({
             compact
             className="w-auto min-w-28 gap-1.5 px-2.5 text-[13px] shadow-none"
           />
-          <Button
-            size="sm"
-            className="px-2.5 text-[13px] shadow-none"
-            onClick={() => setShowRetranscribeDialog(true)}
-            title="Retranscribe to enhance your recorded audio"
-          >
-            <RefreshCw />
-            Enhance
-          </Button>
-          <Button
-            size="sm"
-            className="px-2.5 text-[13px] shadow-none"
-            onClick={() => runMeetingHook(meetingId)}
-            disabled={hookRunning}
-            title="Run the post-enhance hook for this meeting"
-          >
-            <Webhook />
-            Run hook
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" className="px-2.5 text-[13px] shadow-none">
+                Actions
+                <ChevronDown />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setShowRetranscribeDialog(true)}>
+                <RefreshCw />
+                Enhance
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={hookRunning} onSelect={() => runMeetingHook(meetingId)}>
+                <Webhook />
+                Run hook
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <RetranscribeDialog
             open={showRetranscribeDialog}
             onOpenChange={setShowRetranscribeDialog}

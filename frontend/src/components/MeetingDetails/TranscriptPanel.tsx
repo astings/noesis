@@ -12,7 +12,6 @@ interface TranscriptPanelProps {
   title: string;
   createdAt?: string;
   transcripts: Transcript[];
-  onCopyTranscript: () => void;
   onOpenMeetingFolder: () => Promise<void>;
   isRecording: boolean;
   disableAutoScroll?: boolean;
@@ -36,7 +35,6 @@ export function TranscriptPanel({
   title,
   createdAt,
   transcripts,
-  onCopyTranscript,
   onOpenMeetingFolder,
   isRecording,
   disableAutoScroll = false,
@@ -83,8 +81,6 @@ export function TranscriptPanel({
         </h1>
         <MeetingStatusTags enhanceStatus={status?.enhanceStatus} hookStatus={status?.hookStatus} />
         <TranscriptButtonGroup
-          transcriptCount={usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length || 0)}
-          onCopyTranscript={onCopyTranscript}
           onOpenMeetingFolder={onOpenMeetingFolder}
           meetingId={meetingId}
           meetingFolderPath={meetingFolderPath}

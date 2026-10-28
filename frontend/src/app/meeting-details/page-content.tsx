@@ -5,7 +5,6 @@ import { MeetingDetailsSplitView } from '@/components/MeetingDetails/MeetingDeta
 
 // Custom hooks
 import { useMeetingData } from '@/hooks/meeting-details/useMeetingData';
-import { useCopyOperations } from '@/hooks/meeting-details/useCopyOperations';
 import { useMeetingOperations } from '@/hooks/meeting-details/useMeetingOperations';
 
 export default function PageContent({
@@ -34,12 +33,6 @@ export default function PageContent({
   // Custom hooks
   const meetingData = useMeetingData({ meeting });
 
-  const copyOperations = useCopyOperations({
-    meeting,
-    transcripts: meetingData.transcripts,
-    meetingTitle: meetingData.meetingTitle,
-  });
-
   const meetingOperations = useMeetingOperations({
     meeting,
   });
@@ -58,7 +51,6 @@ export default function PageContent({
               title={meetingData.meetingTitle}
               createdAt={meeting.created_at}
               transcripts={meetingData.transcripts}
-              onCopyTranscript={copyOperations.handleCopyTranscript}
               onOpenMeetingFolder={meetingOperations.handleOpenMeetingFolder}
               isRecording={isRecording}
               disableAutoScroll={true}
