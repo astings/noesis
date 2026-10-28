@@ -244,11 +244,8 @@ impl Registry {
         let cancelled = j.cancel_requested;
         match status {
             "running" => self.step(&id, STEP_WIKI, JobState::Running, None),
-            "done" => {
-                self.step(&id, STEP_WIKI, JobState::Done, None);
-                self.finish(&id, Outcome::Done);
-            }
-            "failed" if cancelled => {
+            // a killed hook can still exit 0, so a cancel request wins over either exit status
+            "done" | "failed" if cancelled => {
                 self.step(&id, STEP_WIKI, JobState::Cancelled, None);
                 self.finish(&id, Outcome::Cancelled);
             }
@@ -579,6 +576,16 @@ mod tests {
         r.hook_status("m", "running");
         r.request_cancel("a");
         r.hook_status("m", "failed");
+        assert_eq!(r.snapshot()[0].state, JobState::Cancelled);
+    }
+
+    #[test]
+    fn hook_done_after_cancel_is_cancelled() {
+        let mut r = Registry::default();
+        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
+        r.hook_status("m", "running");
+        r.request_cancel("a");
+        r.hook_status("m", "done");
         assert_eq!(r.snapshot()[0].state, JobState::Cancelled);
     }
 
