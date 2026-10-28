@@ -28,6 +28,7 @@ export interface RecordingPreferences {
   // spec 4.5
   auto_stop_on_call_end: boolean;
   auto_start_on_call: boolean;
+  calendar_meeting_name: boolean;
   owner_name: string; // spec 4.4
   post_enhance_command: string; // spec 4.7
   wiki_automation: boolean; // spec 4.8
@@ -58,6 +59,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     enhance_language: null,
     auto_stop_on_call_end: true,
     auto_start_on_call: true,
+    calendar_meeting_name: false,
     owner_name: 'Me',
     post_enhance_command: '',
     wiki_automation: false,
@@ -86,6 +88,19 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
   // spec 4.5
   const handleAutoStartToggle = async (enabled: boolean) => {
     const next = { ...preferences, auto_start_on_call: enabled };
+    setPreferences(next);
+    await savePreferences(next);
+  };
+
+  // turning it on asks macOS for calendar access; a refusal leaves it off
+  const handleCalendarNameToggle = async (enabled: boolean) => {
+    if (enabled && !(await invoke<boolean>('calendar_request_access'))) {
+      toast.error('Calendar access denied', {
+        description: 'Allow Noesis in System Settings > Privacy & Security > Calendars, then try again.',
+      });
+      return;
+    }
+    const next = { ...preferences, calendar_meeting_name: enabled };
     setPreferences(next);
     await savePreferences(next);
   };
@@ -283,6 +298,11 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
           label="Start recording when a Zoom call begins"
           hint="Records into the project selected on the home screen"
           control={<Switch checked={preferences.auto_start_on_call} onCheckedChange={handleAutoStartToggle} disabled={saving} />}
+        />
+        <SettingRow
+          label="Name the recording after the calendar event"
+          hint="Uses the event in progress in macOS Calendar (Outlook/Exchange included) when a call auto-starts a recording"
+          control={<Switch checked={preferences.calendar_meeting_name} onCheckedChange={handleCalendarNameToggle} disabled={saving || !preferences.auto_start_on_call} />}
         />
         <SettingRow
           label="Stop recording when the Zoom call ends"

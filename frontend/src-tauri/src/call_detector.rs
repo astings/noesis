@@ -94,8 +94,18 @@ pub async fn run<R: Runtime>(app: AppHandle<R>) {
             }
             CallEvent::Started if !recording && prefs.auto_start_on_call => {
                 info!("Zoom meeting started; asking the frontend to start a recording");
+                let title = if prefs.calendar_meeting_name {
+                    tokio::task::spawn_blocking(crate::calendar_lookup::current_meeting_title).await.ok().flatten()
+                } else {
+                    None
+                };
                 match app.get_webview_window("main") {
                     Some(window) => {
+                        if let Some(title) = title {
+                            info!("Calendar event in progress: {}", title);
+                            let js = serde_json::to_string(&title).unwrap_or_default();
+                            let _ = window.eval(&format!("sessionStorage.setItem('autoStartTitle', {})", js));
+                        }
                         let _ = window.eval("sessionStorage.setItem('autoStartRecording', 'true')");
                         let _ = window.eval("window.location.assign('/')");
                     }

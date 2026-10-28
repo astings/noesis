@@ -39,6 +39,7 @@ pub mod analytics;
 pub mod api;
 pub mod app_names;
 pub mod audio;
+pub mod calendar_lookup;
 pub mod call_detector; // spec 4.5
 pub mod config;
 pub mod console_utils;
@@ -674,6 +675,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            calendar_lookup::calendar_request_access,
             start_recording,
             stop_recording,
             is_recording,
