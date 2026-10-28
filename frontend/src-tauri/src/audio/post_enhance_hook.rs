@@ -162,7 +162,7 @@ pub fn dispatch_with(
         return Err(NO_HOOK.to_string());
     }
     // one hook run per meeting: an overlapping run would share its job row and pid slot
-    if super::hook_status::memory_status(&ctx.meeting_id) == Some(RUNNING) {
+    if !super::hook_status::try_start(&ctx.meeting_id) {
         return Err(HOOK_BUSY.to_string());
     }
     let id = ctx.meeting_id.clone();

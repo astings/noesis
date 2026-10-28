@@ -1,8 +1,8 @@
 import { Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-const ENHANCE: Record<string, string> = { done: 'Done', queued: 'Queued', running: 'Running', failed: 'Failed', cancelled: 'Cancelled' };
-const HOOK: Record<string, string> = { done: 'Ran', running: 'Running', failed: 'Failed' };
+const ENHANCE: Record<string, string> = { done: 'Done', queued: 'Queued', running: 'Running', failed: 'Failed' };
+const HOOK: Record<string, string> = { done: 'Ran', running: 'Running', failed: 'Failed', cancelled: 'Cancelled' };
 const TAGGING: Record<string, string> = { done: 'Done', running: 'Running', failed: 'Failed' };
 
 /** Info icon on the meeting page; hover shows tags and the enhance, title/tags and hook statuses. */
