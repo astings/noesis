@@ -458,16 +458,9 @@ const Sidebar: React.FC = () => {
         {!isCollapsed && (
           <div className="flex flex-1 min-h-0 flex-col px-2 py-2.5">
             {/* Wordmark routes home; the separate Home entry is gone */}
-            <div className="flex items-center justify-between px-1 pb-2">
+            <div className="flex items-center px-1 pb-2">
               <button onClick={() => router.push('/')} className="rounded-md px-1 text-sm font-semibold text-foreground">
                 Meetily
-              </button>
-              <button
-                onClick={toggleCollapse}
-                aria-label="Collapse sidebar"
-                className="p-1 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-              >
-                <PanelLeftClose className="w-4 h-4" />
               </button>
             </div>
 
@@ -526,6 +519,16 @@ const Sidebar: React.FC = () => {
               >
                 <Settings className="w-3.5 h-3.5" />
                 Settings
+              </button>
+
+              {/* h-8 matches the rail's p-2 + 16px icon, so the toggle keeps its vertical spot */}
+              <button
+                onClick={toggleCollapse}
+                aria-label="Collapse sidebar"
+                className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+              >
+                <PanelLeftClose className="w-3.5 h-3.5" />
+                Collapse
               </button>
             </div>
           </div>
