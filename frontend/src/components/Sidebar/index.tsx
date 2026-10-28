@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, Settings, Trash2, Search, Pencil, NotebookPen, SearchIcon, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ChevronDown, ChevronRight, Settings, Trash2, Search, Pencil, NotebookPen, SearchIcon, X, PanelLeftClose, PanelLeftOpen, Home } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSidebar } from './SidebarProvider';
 import type { CurrentMeeting } from '@/components/Sidebar/SidebarProvider';
@@ -20,7 +20,6 @@ import {
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 
 import { PROJECT_FOLDER_PREFIX } from '@/components/Sidebar/SidebarProvider';
-import Logo from '../Logo';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '../ui/input-group';
 
 interface SidebarItem {
@@ -269,8 +268,8 @@ const Sidebar: React.FC = () => {
     return (
       <TooltipProvider>
         <div className="flex flex-1 flex-col items-center gap-1 py-2.5">
-          <button onClick={() => router.push('/')} aria-label="Home" className="mb-2">
-            <Logo isCollapsed={isCollapsed} />
+          <button onClick={() => router.push('/')} aria-label="Home" className={`${railButton} mb-2`}>
+            <Home className="w-4 h-4" />
           </button>
 
           <Tooltip>
@@ -461,7 +460,7 @@ const Sidebar: React.FC = () => {
             {/* Wordmark routes home; the separate Home entry is gone */}
             <div className="flex items-center justify-between px-1 pb-2">
               <button onClick={() => router.push('/')} className="rounded-md px-1 text-sm font-semibold text-foreground">
-                <Logo isCollapsed={isCollapsed} />
+                Meetily
               </button>
               <button
                 onClick={toggleCollapse}
