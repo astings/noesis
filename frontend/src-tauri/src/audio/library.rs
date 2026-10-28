@@ -292,10 +292,6 @@ async fn update_title_in_place(
     Ok(())
 }
 
-/// Move and/or rename a meeting folder, update metadata.json and the SQLite row.
-/// Rules (spec 4.2): the folder keeps its stamp; the title decides the slug; the project
-/// decides the parent; a legacy folder gets its meeting_id written; the database is
-/// updated even when the folder is gone (title only).
 /// True when `folder` is the folder of the recording in progress.
 pub async fn is_live_folder(folder: Option<&str>) -> bool {
     if !crate::audio::recording_commands::is_recording().await {
@@ -304,6 +300,10 @@ pub async fn is_live_folder(folder: Option<&str>) -> bool {
     matches!(crate::audio::recording_commands::get_meeting_folder_path().await, Ok(Some(active)) if folder == Some(active.as_str()))
 }
 
+/// Move and/or rename a meeting folder, update metadata.json and the SQLite row.
+/// Rules (spec 4.2): the folder keeps its stamp; the title decides the slug; the project
+/// decides the parent; a legacy folder gets its meeting_id written; the database is
+/// updated even when the folder is gone (title only).
 pub async fn assign(
     pool: &sqlx::SqlitePool,
     root: &Path,
