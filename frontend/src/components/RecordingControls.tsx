@@ -14,7 +14,6 @@ import type { TranscriptionErrorPayload } from '@/services/transcriptService';
 
 interface RecordingControlsProps {
   isRecording: boolean;
-  barHeights: string[];
   onRecordingStop: (callApi?: boolean) => void;
   onRecordingStart: () => void;
   onTranscriptReceived: (summary: SummaryResponse) => void;
@@ -31,7 +30,6 @@ interface RecordingControlsProps {
 
 export const RecordingControls: React.FC<RecordingControlsProps> = ({
   isRecording,
-  barHeights,
   onRecordingStop,
   onRecordingStart,
   onTranscriptReceived,
@@ -47,7 +45,6 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   const isPaused = recordingState.isPaused;
   const isStartingRecording = recordingState.isStartingRecording;
 
-  const [showPlayback, setShowPlayback] = useState(false);
   const [recordingPath, setRecordingPath] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -60,17 +57,6 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   const [isValidatingModel, setIsValidatingModel] = useState(false);
   const [speechDetected, setSpeechDetected] = useState(false);
   const [deviceError, setDeviceError] = useState<{ title: string, message: string } | null>(null);
-
-  const currentTime = 0;
-  const duration = 0;
-  const isPlaying = false;
-  const progress = 0;
-
-  const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
 
   useEffect(() => {
     const checkTauri = async () => {
@@ -92,7 +78,6 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     console.log('Meeting name:', meetingName);
     console.log('Current isRecording state:', isRecording);
 
-    setShowPlayback(false);
     setTranscript(''); // Clear any previous transcript
     setSpeechDetected(false); // Reset speech detection on new recording
 
@@ -342,43 +327,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
             </div>
           ) : (
             <>
-              {showPlayback ? (
-                <>
-                  <button
-                    onClick={handleStartRecording}
-                    className="w-10 h-10 flex items-center justify-center bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"
-                  >
-                    <Mic size={16} />
-                  </button>
-
-                  <div className="w-px h-6 bg-gray-200 mx-1" />
-
-                  <div className="flex items-center space-x-1 mx-2">
-                    <div className="text-sm text-gray-600 min-w-[40px]">
-                      {formatTime(currentTime)}
-                    </div>
-                    <div
-                      className="relative w-24 h-1 bg-gray-200 rounded-full"
-                    >
-                      <div
-                        className="absolute h-full bg-blue-500 rounded-full"
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
-                    <div className="text-sm text-gray-600 min-w-[40px]">
-                      {formatTime(duration)}
-                    </div>
-                  </div>
-
-                  <button
-                    className="w-10 h-10 flex items-center justify-center bg-gray-300 rounded-full text-white cursor-not-allowed"
-                    disabled
-                  >
-                    <Play size={16} />
-                  </button>
-                </>
-              ) : (
-                <>
+              <>
                   {!isRecording ? (
                     // Start recording button
                     <Tooltip>
@@ -462,22 +411,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                       </Tooltip>
                     </>
                   )}
-
-                  <div className="flex items-center space-x-1 mx-4">
-                    {barHeights.map((height, index) => (
-                      <div
-                        key={index}
-                        className={`w-1 rounded-full transition-all duration-200 ${isPaused ? 'bg-orange-500' : 'bg-red-500'
-                          }`}
-                        style={{
-                          height: isRecording && !isPaused ? height : '4px',
-                          opacity: isPaused ? 0.6 : 1,
-                        }}
-                      />
-                    ))}
-                  </div>
                 </>
-              )}
             </>
           )}
         </div>
@@ -512,12 +446,6 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
             </AlertDescription>
           </Alert>
         )}
-
-        {/* {showPlayback && recordingPath && (
-        <div className="text-sm text-gray-600 px-4">
-          Recording saved to: {recordingPath}
-        </div>
-      )} */}
       </div>
     </TooltipProvider>
   );
