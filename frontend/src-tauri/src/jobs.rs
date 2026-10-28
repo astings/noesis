@@ -155,14 +155,20 @@ impl Registry {
         let pct = pct.min(100);
         let changed = j.progress != Some(pct) || (detail.is_some() && j.detail != detail);
         let started = *j.started.get_or_insert(now);
-        if let Some((t, p)) = j.last {
-            let dt = now.duration_since(t).as_secs_f64();
-            if pct > p && dt > 0.0 {
-                let inst = (pct - p) as f64 / dt;
-                j.rate = Some(j.rate.map_or(inst, |r| ETA_ALPHA * inst + (1.0 - ETA_ALPHA) * r));
+        // the rate is measured between percent changes, not between calls: repeats at the same
+        // percent keep the anchor, so sub-percent callbacks do not shorten the ETA
+        match j.last {
+            Some((t, p)) if pct > p => {
+                let dt = now.duration_since(t).as_secs_f64();
+                if dt > 0.0 {
+                    let inst = (pct - p) as f64 / dt;
+                    j.rate = Some(j.rate.map_or(inst, |r| ETA_ALPHA * inst + (1.0 - ETA_ALPHA) * r));
+                }
+                j.last = Some((now, pct));
             }
+            Some((_, p)) if pct == p => {}
+            _ => j.last = Some((now, pct)),
         }
-        j.last = Some((now, pct));
         let warm = now.duration_since(started) >= ETA_MIN_ELAPSED && pct >= ETA_MIN_PERCENT;
         j.eta_secs = match j.rate {
             Some(r) if warm && r > 0.0 && pct < 100 => Some(((100 - pct) as f64 / r).round() as u32),
@@ -435,6 +441,23 @@ mod tests {
         r.progress("a", 50, None, t0 + Duration::from_secs(25));
         // inst 2 %/s, ema 0.3*2 + 0.7*1 = 1.3 %/s, 50 % left -> 38 s
         assert_eq!(r.snapshot()[0].eta_secs, Some(38));
+    }
+
+    #[test]
+    fn eta_ignores_repeated_same_percent_calls() {
+        let mut r = Registry::default();
+        let t0 = Instant::now();
+        r.add("a", JobKind::Download, None, "m", Control::WhisperDownload, true, t0);
+        r.progress("a", 0, None, t0);
+        // 1 %/s, with four extra callbacks at the same percent inside every second
+        for s in 1..=30u64 {
+            let at = |ms: u64| t0 + Duration::from_millis(s * 1000 + ms);
+            r.progress("a", s as u8, None, at(0));
+            for ms in [200, 400, 600, 800] {
+                r.progress("a", s as u8, None, at(ms));
+            }
+        }
+        assert_eq!(r.snapshot()[0].eta_secs, Some(70), "rate stays 1 %/s");
     }
 
     #[test]
