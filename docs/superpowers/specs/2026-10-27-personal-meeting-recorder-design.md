@@ -24,7 +24,7 @@ Pain points, with evidence from the wikis:
 Non-goals:
 
 - Live transcript quality. Live stays fast and rough.
-- In-app summaries, notes, LLM providers, licensing, analytics. Left as they are, not removed (see section 9).
+- In-app summaries, notes, LLM providers, licensing, analytics. Left as they are, not removed (see section 9). Superseded for the UI by [the lean UI reskin](2026-10-27-lean-ui-reskin-design.md).
 - Teams or Google Meet detection. Zoom is 95% of calls.
 - Multi-speaker diarization beyond "me" and "them". Named as a later upgrade in section 4.5.
 
