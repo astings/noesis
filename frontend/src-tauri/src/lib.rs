@@ -617,6 +617,12 @@ pub fn run() {
                 tauri::async_runtime::block_on(migration::finish(handle, pool.as_ref(), &migration_outcome));
             }
 
+            // no enhance job survives a restart: a queued/running status on disk is stale
+            let interrupted = audio::enhance_status::mark_interrupted(&audio::get_default_recordings_folder());
+            if interrupted > 0 {
+                log::info!("Marked {} interrupted enhance job(s) failed", interrupted);
+            }
+
             // spec 4.2: repair the meeting index from disk once at startup
             if let Some(state) = _app.handle().try_state::<state::AppState>() {
                 let pool = state.db_manager.pool();
