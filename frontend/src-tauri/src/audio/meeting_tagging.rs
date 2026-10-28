@@ -116,6 +116,11 @@ async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title
         return Err("No transcript yet.".to_string());
     }
 
+    let custom_prompt = super::recording_preferences::load_recording_preferences(app)
+        .await
+        .map(|p| p.title_tags_prompt.trim().to_string())
+        .unwrap_or_default();
+    let system_prompt = if custom_prompt.is_empty() { SYSTEM_PROMPT } else { custom_prompt.as_str() };
     let cfg = crate::summary::llm_config::load(pool).await?;
     let app_data_dir = app.path().app_data_dir().ok();
     let completion = crate::summary::llm_client::generate_summary(
@@ -123,7 +128,7 @@ async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title
         &cfg.provider,
         &cfg.model,
         &cfg.api_key,
-        SYSTEM_PROMPT,
+        system_prompt,
         &prompt_text(&text),
         cfg.ollama_endpoint.as_deref(),
         cfg.custom_openai_endpoint.as_deref(),
@@ -227,6 +232,12 @@ pub async fn tag_untagged_meetings<R: Runtime>(app: AppHandle<R>) -> Result<Stri
         }
     }
     Ok(format!("Tagged {} of {} meetings", ok, todo.len()))
+}
+
+/// The built-in system prompt, shown when `title_tags_prompt` is empty.
+#[tauri::command]
+pub fn get_default_title_tags_prompt() -> String {
+    SYSTEM_PROMPT.to_string()
 }
 
 #[tauri::command]

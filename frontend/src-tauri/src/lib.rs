@@ -450,6 +450,20 @@ pub fn get_language_preference_internal() -> Option<String> {
     LANGUAGE_PREFERENCE.lock().ok().map(|lang| lang.clone())
 }
 
+// Languages an "auto" whisper request may resolve to; kept in sync with recording preferences
+static TRANSCRIPTION_LANGUAGES: std::sync::LazyLock<StdMutex<Vec<String>>> =
+    std::sync::LazyLock::new(|| StdMutex::new(vec!["en".to_string(), "fr".to_string()]));
+
+pub fn set_transcription_languages(languages: Vec<String>) {
+    if let Ok(mut l) = TRANSCRIPTION_LANGUAGES.lock() {
+        *l = languages;
+    }
+}
+
+pub fn get_transcription_languages_internal() -> Vec<String> {
+    TRANSCRIPTION_LANGUAGES.lock().map(|l| l.clone()).unwrap_or_default()
+}
+
 pub fn run() {
     log::set_max_level(log::LevelFilter::Info);
 
@@ -614,6 +628,14 @@ pub fn run() {
                         Ok(n) => log::info!("Search index rebuilt: {} meetings", n),
                         Err(e) => log::warn!("Search index rebuild failed: {}", e),
                     }
+                });
+            }
+
+            // load recording preferences once so whisper sees the allowed transcription languages
+            {
+                let handle = _app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = audio::recording_preferences::load_recording_preferences(&handle).await;
                 });
             }
 
@@ -873,6 +895,7 @@ pub fn run() {
             audio::meeting_tagging::run_meeting_tagging,
             audio::meeting_tagging::tag_untagged_meetings,
             audio::meeting_tagging::list_tagging_statuses,
+            audio::meeting_tagging::get_default_title_tags_prompt,
             audio::audio_cleanup::delete_meeting_audio,
             audio::audio_cleanup::get_meeting_extras,
             audio::library::list_projects_command,

@@ -75,6 +75,16 @@ pub struct RecordingPreferences {
     pub delete_audio_after_enhance: bool,
     #[serde(default = "default_audio_retention_hours")]
     pub audio_retention_hours: u32,
+    // whisper "auto" picks among these; empty means unrestricted auto-detect
+    #[serde(default = "default_transcription_languages")]
+    pub transcription_languages: Vec<String>,
+    // system prompt for titles and tags; empty means the built-in one
+    #[serde(default)]
+    pub title_tags_prompt: String,
+}
+
+fn default_transcription_languages() -> Vec<String> {
+    vec!["en".to_string(), "fr".to_string()]
 }
 
 fn default_true() -> bool {
@@ -126,6 +136,8 @@ impl Default for RecordingPreferences {
             auto_title_tags: default_true(),
             delete_audio_after_enhance: default_true(),
             audio_retention_hours: default_audio_retention_hours(),
+            transcription_languages: default_transcription_languages(),
+            title_tags_prompt: String::new(),
         }
     }
 }
@@ -202,6 +214,7 @@ pub async fn load_recording_preferences<R: Runtime>(
         RecordingPreferences::default()
     };
 
+    crate::set_transcription_languages(prefs.transcription_languages.clone());
     info!("Loaded recording preferences: save_folder={:?}, auto_save={}, format={}, mic={:?}, system={:?}",
           prefs.save_folder, prefs.auto_save, prefs.file_format,
           prefs.preferred_mic_device, prefs.preferred_system_device);
@@ -235,6 +248,7 @@ pub async fn save_recording_preferences<R: Runtime>(
         .map_err(|e| anyhow::anyhow!("Failed to save store to disk: {}", e))?;
 
     info!("Successfully persisted recording preferences to disk");
+    crate::set_transcription_languages(preferences.transcription_languages.clone());
 
     // Save backend preference to global config
     #[cfg(target_os = "macos")]
@@ -470,6 +484,15 @@ mod tests {
         let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4","post_enhance_command":"echo hi"}"#;
         let p: RecordingPreferences = serde_json::from_str(old).unwrap();
         assert!(!p.hook_auto_run);
+    }
+
+    #[test]
+    fn old_preferences_get_transcription_languages_and_builtin_prompt() {
+        let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
+        let p: RecordingPreferences = serde_json::from_str(old).unwrap();
+        assert_eq!(p.transcription_languages, vec!["en", "fr"]);
+        assert_eq!(p.title_tags_prompt, "");
+        assert_eq!(RecordingPreferences::default().transcription_languages, vec!["en", "fr"]);
     }
 
     #[test]

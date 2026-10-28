@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
-import { FolderOpen, Loader2 } from 'lucide-react';
+import { FolderOpen } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { DeviceSelection, SelectedDevices } from '@/components/DeviceSelection';
 import { toast } from 'sonner';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
 import { useConfig } from '@/contexts/ConfigContext';
-import type { RawModelInfo } from '@/hooks/useTranscriptionModels';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { WikiAutomationSettings } from '@/components/WikiAutomationSettings'; // spec 4.8
 import { Button } from '@/components/ui/button';
 import { SettingsGroup, SettingRow } from '@/components/SettingsGroup';
+import { NotificationsRow } from '@/components/PreferenceSettings';
 
 export interface WikiTarget { project: string; directory: string; skill: string } // spec 4.8
 
@@ -38,100 +37,12 @@ export interface RecordingPreferences {
   audio_retention_hours: number;
   wiki_targets: WikiTarget[];
   wiki_budget_usd: number;
+  transcription_languages: string[];
+  title_tags_prompt: string;
 }
 
 interface RecordingSettingsProps {
   onSave?: (preferences: RecordingPreferences) => void;
-}
-
-const SUMMARY_PROVIDERS: { value: string; label: string; placeholder: string }[] = [
-  { value: 'builtin-ai', label: 'Built-in', placeholder: 'gemma3:1b' },
-  { value: 'ollama', label: 'Ollama', placeholder: 'llama3.2' },
-  { value: 'claude', label: 'Claude', placeholder: 'claude-haiku-4-5' },
-  { value: 'openai', label: 'OpenAI', placeholder: 'gpt-4o-mini' },
-  { value: 'groq', label: 'Groq', placeholder: 'llama-3.1-8b-instant' },
-  { value: 'openrouter', label: 'OpenRouter', placeholder: 'openai/gpt-4o-mini' },
-];
-const KEYED_PROVIDERS = ['claude', 'openai', 'groq', 'openrouter'];
-
-/** Picks the LLM used for automatic titles and tags (reads and writes the same settings row as summaries). */
-function SummaryModelSettings() {
-  const [provider, setProvider] = useState('builtin-ai');
-  const [model, setModel] = useState('');
-  const [endpoint, setEndpoint] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [hasKey, setHasKey] = useState(false);
-  const [whisperModel, setWhisperModel] = useState('large-v3');
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    invoke<{ provider: string; model: string; whisperModel: string; apiKey: string | null; ollamaEndpoint: string | null } | null>('api_get_model_config')
-      .then((c) => {
-        if (!c) return;
-        setProvider(c.provider);
-        setModel(c.model);
-        setEndpoint(c.ollamaEndpoint ?? '');
-        setHasKey(!!c.apiKey);
-        if (c.whisperModel) setWhisperModel(c.whisperModel);
-      })
-      .catch((e) => console.error('Failed to load summary model', e));
-  }, []);
-
-  const known = SUMMARY_PROVIDERS.find((p) => p.value === provider);
-  const custom = !known;
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      await invoke('api_save_model_config', {
-        provider,
-        model: model.trim(),
-        whisperModel,
-        apiKey: apiKey.trim() || null,
-        ollamaEndpoint: provider === 'ollama' ? endpoint.trim() || null : null,
-      });
-      if (apiKey.trim()) setHasKey(true);
-      setApiKey('');
-      toast.success('Summary model saved');
-    } catch (e) {
-      toast.error(String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <SettingsGroup title="Summary model">
-      <SettingRow label="Provider" hint="Used to name and tag meetings. Built-in and Ollama stay on this Mac.">
-        <Select value={provider} onValueChange={(v) => { setProvider(v); setHasKey(false); }} disabled={saving}>
-          <SelectTrigger aria-label="Provider" className="h-8 text-[13px]"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {SUMMARY_PROVIDERS.map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
-            {custom && <SelectItem value={provider} disabled>Custom (configured elsewhere)</SelectItem>}
-          </SelectContent>
-        </Select>
-      </SettingRow>
-      <SettingRow label="Model">
-        <Input aria-label="Model" className="h-8 text-[13px]" value={model} placeholder={known?.placeholder} onChange={(e) => setModel(e.target.value)} disabled={saving} />
-      </SettingRow>
-      {provider === 'ollama' && (
-        <SettingRow label="Ollama endpoint">
-          <Input aria-label="Ollama endpoint" className="h-8 text-[13px]" value={endpoint} placeholder="http://localhost:11434" onChange={(e) => setEndpoint(e.target.value)} disabled={saving} />
-        </SettingRow>
-      )}
-      {KEYED_PROVIDERS.includes(provider) && (
-        <SettingRow label="API key">
-          <Input aria-label="API key" type="password" autoComplete="off" className="h-8 text-[13px]" value={apiKey} placeholder={hasKey ? 'Saved' : 'Paste a key'} onChange={(e) => setApiKey(e.target.value)} disabled={saving} />
-        </SettingRow>
-      )}
-      <SettingRow label="Save summary model" control={
-        <Button size="sm" variant="outline" onClick={save} disabled={saving || !model.trim()}>
-          {saving && <Loader2 className="animate-spin" />}
-          Save
-        </Button>
-      } />
-    </SettingsGroup>
-  );
 }
 
 export function RecordingSettings({ onSave }: RecordingSettingsProps) {
@@ -156,26 +67,14 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     audio_retention_hours: 24,
     wiki_targets: [],
     wiki_budget_usd: 5,
+    transcription_languages: ['en', 'fr'],
+    title_tags_prompt: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showRecordingNotification, setShowRecordingNotification] = useState(true);
   const { isRecording } = useRecordingState();
   const { setSelectedDevices } = useConfig();
-
-  // spec 4.1: only downloaded Whisper models can be picked for the enhance job
-  const [enhanceModels, setEnhanceModels] = useState<string[]>([]);
-  useEffect(() => {
-    invoke<RawModelInfo[]>('whisper_get_available_models')
-      .then((models) => setEnhanceModels(models.filter((m) => m.status === 'Available').map((m) => m.name)))
-      .catch((error) => console.error('Failed to load Whisper models:', error));
-  }, []);
-
-  const handleAutoEnhanceToggle = async (enabled: boolean) => {
-    const next = { ...preferences, auto_enhance: enabled };
-    setPreferences(next);
-    await savePreferences(next);
-  };
 
   // spec 4.5
   const handleAutoStopToggle = async (enabled: boolean) => {
@@ -218,29 +117,11 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     await applyPreferences({ ...preferences, audio_retention_hours: hours });
   };
 
-  const [taggingAll, setTaggingAll] = useState(false);
-  const tagUntagged = async () => {
-    setTaggingAll(true);
-    try {
-      toast.success(await invoke<string>('tag_untagged_meetings'));
-    } catch (error) {
-      toast.error(String(error));
-    } finally {
-      setTaggingAll(false);
-    }
-  };
-
   const commitHookCommand = async () => {
     const command = (hookDraft ?? preferences.post_enhance_command).trim();
     setHookDraft(null);
     if (command === preferences.post_enhance_command) return;
     const next = { ...preferences, post_enhance_command: command };
-    setPreferences(next);
-    await savePreferences(next);
-  };
-
-  const handleEnhanceModelChange = async (model: string) => {
-    const next = { ...preferences, enhance_provider: 'whisper' as const, enhance_model: model };
     setPreferences(next);
     await savePreferences(next);
   };
@@ -385,36 +266,13 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
             Audio recording is off. Turn on "Save audio recordings" to keep the meeting audio.
           </div>
         )}
-        {/* spec 4.1: enhance after recording */}
+      </SettingsGroup>
+
+      <SettingsGroup title="Notifications">
+        <NotificationsRow />
         <SettingRow
-          label="Enhance transcript after recording"
-          hint="Re-transcribe the full recording with a slower, more accurate model as soon as it stops"
-          control={<Switch checked={preferences.auto_enhance} onCheckedChange={handleAutoEnhanceToggle} disabled={saving} />}
-        >
-          {preferences.auto_enhance && (
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-[13px] text-foreground">Model</span>
-              <Select value={preferences.enhance_model} onValueChange={handleEnhanceModelChange} disabled={saving}>
-                <SelectTrigger className="h-8 w-64 text-[13px]">
-                  <SelectValue placeholder="Pick a downloaded Whisper model" />
-                </SelectTrigger>
-                <SelectContent>
-                  {enhanceModels.map((name) => (
-                    <SelectItem key={name} value={name}>{name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {enhanceModels.length === 0 && (
-                <span className="text-xs text-warning">
-                  No Whisper model downloaded yet. Download one in Transcription settings.
-                </span>
-              )}
-            </div>
-          )}
-        </SettingRow>
-        <SettingRow
-          label="Recording start notification"
-          hint="Remind you to tell participants that the meeting is recorded"
+          label="Recording reminder"
+          hint="When a recording starts, remind you to tell participants they are recorded"
           control={<Switch checked={showRecordingNotification} onCheckedChange={handleNotificationToggle} />}
         />
       </SettingsGroup>
@@ -455,23 +313,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
       {/* spec 4.8: wiki automation */}
       <WikiAutomationSettings preferences={preferences} onChange={applyPreferences} disabled={saving} />
 
-      <SummaryModelSettings />
-
-      <SettingsGroup title="Titles, tags and audio">
-        <SettingRow
-          label="Name and tag meetings after enhance"
-          hint="Uses your summary model. Off: run it from the meeting page or the right-click menu."
-          control={<Switch aria-label="Name and tag meetings after enhance" checked={preferences.auto_title_tags} onCheckedChange={(on) => applyPreferences({ ...preferences, auto_title_tags: on })} disabled={saving} />}
-        />
-        <SettingRow
-          label="Tag meetings without tags"
-          control={
-            <Button size="sm" variant="outline" onClick={tagUntagged} disabled={taggingAll}>
-              {taggingAll && <Loader2 className="animate-spin" />}
-              Tag meetings without tags
-            </Button>
-          }
-        />
+      <SettingsGroup title="Audio files">
         <SettingRow
           label="Delete audio after enhance"
           hint="The transcript stays. Enhance and playback stop working for that meeting."
@@ -510,7 +352,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
           <Input
             aria-label="Custom command (advanced)"
             className="h-8 font-mono text-xs"
-            placeholder="~/Code/Perso/ok-meetily/scripts/post-enhance.sh"
+            placeholder="~/Code/Perso/noesis/scripts/post-enhance.sh"
             value={hookDraft ?? preferences.post_enhance_command}
             onChange={(e) => setHookDraft(e.target.value)}
             onBlur={commitHookCommand}

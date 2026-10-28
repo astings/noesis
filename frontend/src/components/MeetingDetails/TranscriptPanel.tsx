@@ -7,7 +7,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useSidebar, MEETING_EXTRAS_CHANGED } from '@/components/Sidebar/SidebarProvider';
-import { MeetingStatusTags } from '@/components/MeetingStatusTags';
+import { MeetingInfoButton } from '@/components/MeetingStatusTags';
+import { toast } from 'sonner';
 import { format, isValid, parseISO } from 'date-fns';
 
 interface TranscriptPanelProps {
@@ -67,7 +68,7 @@ export function TranscriptPanel({
     }));
   }, [transcripts, usePagination, segments]);
 
-  const { meetings } = useSidebar();
+  const { meetings, refetchMeetings } = useSidebar();
   const status = meetings.find((m) => m.id === meetingId);
   const [extras, setExtras] = useState<{ tags: string[]; audio_deleted_at: string | null; has_audio: boolean } | null>(null);
   useEffect(() => {
@@ -83,26 +84,64 @@ export function TranscriptPanel({
   }, [meetingId]);
   const created = createdAt ? parseISO(createdAt) : null;
 
+  // Click the title to rename in place; Enter or blur saves, Escape cancels.
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const saveTitle = async () => {
+    const next = titleDraft?.trim();
+    setTitleDraft(null);
+    if (!meetingId || !next || next === title) return;
+    try {
+      await invoke('api_save_meeting_title', { meetingId, title: next });
+      // the rename also moves the folder, so reload metadata and the sidebar
+      await Promise.all([onRefetchTranscripts?.(), refetchMeetings()]);
+    } catch (error) {
+      toast.error('Failed to rename meeting', { description: String(error) });
+    }
+  };
+
   return (
     <div className="flex h-full min-w-0 w-full bg-background flex-col relative">
       {/* Top bar: title, date, actions */}
-      <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-border">
+      <div data-tauri-drag-region className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-border">
         <div className="mr-auto min-w-0">
-          <h1 className="truncate text-sm font-semibold">
-            {title}
+          <h1 className="flex min-w-0 items-center text-sm font-semibold">
+            {titleDraft !== null ? (
+              <input
+                autoFocus
+                aria-label="Meeting title"
+                className="min-w-0 flex-1 rounded border border-input bg-transparent px-1 font-semibold outline-none focus:ring-1 focus:ring-ring"
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={saveTitle}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur();
+                  if (e.key === 'Escape') setTitleDraft(null);
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                title={meetingId ? 'Click to rename' : undefined}
+                disabled={!meetingId}
+                className="truncate rounded px-1 -mx-1 text-left hover:bg-accent/60 disabled:hover:bg-transparent"
+                onClick={() => setTitleDraft(title)}
+              >
+                {title}
+              </button>
+            )}
             {created && isValid(created) && (
-              <span className="font-normal text-muted-foreground"> · {format(created, 'd MMM, HH:mm')}</span>
+              <span className="ml-1 flex-none font-normal text-muted-foreground">· {format(created, 'd MMM, HH:mm')}</span>
             )}
           </h1>
-          {extras && extras.tags.length > 0 && (
-            <div className="mt-1 flex flex-wrap gap-1">
-              {extras.tags.map((tag) => (
-                <span key={tag} className="text-xs text-muted-foreground border border-border rounded px-1.5">{tag}</span>
-              ))}
-            </div>
-          )}
         </div>
-        <MeetingStatusTags enhanceStatus={status?.enhanceStatus} hookStatus={status?.hookStatus} taggingStatus={status?.taggingStatus} />
+        {meetingId && (
+          <MeetingInfoButton
+            tags={extras?.tags ?? []}
+            enhanceStatus={status?.enhanceStatus}
+            hookStatus={status?.hookStatus}
+            taggingStatus={status?.taggingStatus}
+          />
+        )}
         <TranscriptButtonGroup
           onOpenMeetingFolder={onOpenMeetingFolder}
           meetingId={meetingId}

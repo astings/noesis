@@ -4,7 +4,7 @@ MCP server over the Noesis recordings folder. Filesystem only; works with the ap
 
 Run: `node src/index.ts` (Node 22.18 or newer; no build step). Root, first match wins: `NOESIS_RECORDINGS`, `MEETILY_RECORDINGS`, `~/Movies/noesis-recordings` if it exists, `~/Movies/meetily-recordings` if it exists, else `~/Movies/noesis-recordings`.
 
-Register for Claude Code (all projects): `claude mcp add --scope user noesis -- node /ABSOLUTE/PATH/ok-meetily/mcp/src/index.ts`
+Register for Claude Code (all projects): `claude mcp add --scope user noesis -- node /ABSOLUTE/PATH/noesis/mcp/src/index.ts`
 
 Remove the old entry: `claude mcp remove --scope user meetily`.
 
