@@ -1,7 +1,6 @@
 "use client";
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
-import Analytics from '@/lib/analytics';
 import { TranscriptPanel } from '@/components/MeetingDetails/TranscriptPanel';
 import { MeetingDetailsSplitView } from '@/components/MeetingDetails/MeetingDetailsSplitView';
 
@@ -45,11 +44,6 @@ export default function PageContent({
   const meetingOperations = useMeetingOperations({
     meeting,
   });
-
-  // Track page view
-  useEffect(() => {
-    Analytics.trackPageView('meeting_details');
-  }, []);
 
   return (
     <motion.div
