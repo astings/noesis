@@ -372,6 +372,94 @@ pub fn clear_recent() {
     update(|r| (r.clear_recent(), true))
 }
 
+#[tauri::command]
+pub fn list_jobs() -> Vec<Job> {
+    list()
+}
+
+#[tauri::command]
+pub fn clear_recent_jobs() {
+    clear_recent()
+}
+
+/// spec 3.1. Unknown or finished jobs: nothing to stop, so Ok.
+#[tauri::command]
+pub async fn cancel_job(app: AppHandle, id: String) -> Result<(), String> {
+    use tauri::Manager;
+    let Some(job) = request_cancel(&id) else { return Ok(()) };
+    if job.state == JobState::Queued {
+        return Ok(()); // already ended by request_cancel; start_retranscription checks the flag
+    }
+    match &job.control {
+        Control::Enhance { .. } => {
+            let running = |name: &str| job.steps.iter().any(|s| s.name == name && s.state == JobState::Running);
+            if let Some(pid) = job.hook_pid {
+                kill_group(pid);
+            } else if running(STEP_TRANSCRIBE) {
+                crate::audio::retranscription::cancel_retranscription(job.meeting_id.as_deref())?;
+            }
+            // title step: not interruptible; start_retranscription skips the wiki step after it
+        }
+        Control::Summary { started_at } => {
+            let process_id = started_at.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+            let meeting_id = job.meeting_id.clone().unwrap_or_default();
+            crate::summary::commands::api_cancel_summary(app.clone(), app.state(), meeting_id, process_id).await?;
+        }
+        Control::WhisperDownload => {
+            crate::whisper_engine::commands::whisper_cancel_download(job.title.clone()).await?;
+        }
+        Control::ParakeetDownload => {
+            crate::parakeet_engine::commands::parakeet_cancel_download(job.title.clone()).await?;
+        }
+        Control::BuiltinDownload => {
+            crate::summary::summary_engine::commands::builtin_ai_cancel_download(app.clone(), app.state(), job.title.clone()).await?;
+            finish(&id, Outcome::Cancelled); // its download error path is silent on cancel
+        }
+    }
+    Ok(())
+}
+
+/// Kills the hook's whole process group (Claude Code and its children). The hook is
+/// spawned with `process_group(0)`, so its pid is the group id.
+fn kill_group(pid: u32) {
+    let _ = std::process::Command::new("kill").args(["-TERM", &format!("-{}", pid)]).status();
+}
+
+/// Starts the job again with the arguments it first ran with. Summary needs the meeting
+/// page (transcript, template, model), so it is not retried from here.
+#[tauri::command]
+pub async fn retry_job(app: AppHandle, id: String) -> Result<(), String> {
+    use tauri::Manager;
+    let job = list().into_iter().find(|j| j.id == id && j.state.is_terminal()).ok_or("Job not found")?;
+    if matches!(job.control, Control::Summary { .. }) {
+        return Err("Open the meeting to generate the summary again.".to_string());
+    }
+    take(&id);
+    let model = job.title.clone();
+    tauri::async_runtime::spawn(async move {
+        let result = match job.control {
+            Control::Enhance { folder, language, model, provider } => {
+                let meeting_id = job.meeting_id.unwrap_or_default();
+                crate::audio::retranscription::start_retranscription(app, meeting_id, folder, language, model, provider)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            }
+            Control::WhisperDownload => crate::whisper_engine::commands::whisper_download_model(app, model).await,
+            Control::ParakeetDownload => crate::parakeet_engine::commands::parakeet_download_model(app, model).await,
+            Control::BuiltinDownload => {
+                let state = app.state::<crate::summary::summary_engine::commands::ModelManagerState>();
+                crate::summary::summary_engine::commands::builtin_ai_download_model(app.clone(), state, model).await
+            }
+            Control::Summary { .. } => Ok(()),
+        };
+        if let Err(e) = result {
+            log::warn!("jobs: retry failed: {}", e);
+        }
+    });
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

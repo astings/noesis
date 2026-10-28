@@ -494,6 +494,7 @@ pub fn run() {
         .manage(audio::init_system_audio_state())
         .manage(summary::summary_engine::ModelManagerState(Arc::new(tokio::sync::Mutex::new(None))))
         .setup(|_app| {
+            jobs::init(_app.handle().clone());
             // spec 5.1: move the Meetily dirs before anything resolves app_data_dir(),
             // opens a store file, sets the model dirs or opens the database
             let migration_outcome = migration::migrate_dirs();
@@ -815,6 +816,10 @@ pub fn run() {
             summary::commands::api_save_meeting_detected_summary_language,
             summary::commands::api_detect_transcript_summary_language,
             summary::commands::api_cancel_summary,
+            jobs::list_jobs,
+            jobs::cancel_job,
+            jobs::retry_job,
+            jobs::clear_recent_jobs,
             // Template commands
             summary::template_commands::api_list_templates,
             summary::template_commands::api_get_template_details,
