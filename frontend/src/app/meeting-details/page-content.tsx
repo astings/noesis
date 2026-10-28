@@ -1,5 +1,4 @@
 "use client";
-import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { TranscriptPanel } from '@/components/MeetingDetails/TranscriptPanel';
 import { MeetingDetailsSplitView } from '@/components/MeetingDetails/MeetingDetailsSplitView';
