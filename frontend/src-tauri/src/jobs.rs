@@ -285,6 +285,10 @@ impl Registry {
                 self.step(&id, STEP_WIKI, JobState::Failed, Some("see hook.log".to_string()));
                 self.finish(&id, Outcome::Done);
             }
+            "cancelled" => {
+                self.step(&id, STEP_WIKI, JobState::Cancelled, None);
+                self.finish(&id, Outcome::Cancelled);
+            }
             _ => {}
         }
     }
@@ -637,6 +641,16 @@ mod tests {
         assert_eq!(a.state, JobState::Done, "a failed wiki step does not fail the enhance");
         assert_eq!(a.steps[0], Step { name: STEP_WIKI.into(), state: JobState::Failed, error: Some("see hook.log".into()) });
         assert_eq!(r.snapshot()[1].state, JobState::Queued, "the re-queued job is untouched");
+    }
+
+    #[test]
+    fn hook_cancelled_status_ends_the_job_cancelled() {
+        let mut r = Registry::default();
+        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
+        r.await_hook("a");
+        r.hook_status("m", "running");
+        r.hook_status("m", "cancelled");
+        assert_eq!(r.snapshot()[0].state, JobState::Cancelled);
     }
 
     #[test]

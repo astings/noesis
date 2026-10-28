@@ -9,6 +9,7 @@ use std::sync::{Mutex, OnceLock};
 pub const RUNNING: &str = "running";
 pub const DONE: &str = "done";
 pub const FAILED: &str = "failed";
+pub const CANCELLED: &str = "cancelled";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HookStatusEntry {

@@ -1,7 +1,7 @@
 import { Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-const ENHANCE: Record<string, string> = { done: 'Done', queued: 'Queued', running: 'Running', failed: 'Failed' };
+const ENHANCE: Record<string, string> = { done: 'Done', queued: 'Queued', running: 'Running', failed: 'Failed', cancelled: 'Cancelled' };
 const HOOK: Record<string, string> = { done: 'Ran', running: 'Running', failed: 'Failed' };
 const TAGGING: Record<string, string> = { done: 'Done', running: 'Running', failed: 'Failed' };
 

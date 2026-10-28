@@ -129,6 +129,7 @@ pub enum HookKind {
 /// Receives `(meeting_id, status)` on every hook status transition.
 pub type Notify = std::sync::Arc<dyn Fn(&str, &str) + Send + Sync>;
 
+pub const HOOK_BUSY: &str = "A hook is already running for this meeting.";
 pub const NO_HOOK: &str = "No hook configured. Set one in Settings, Recordings.";
 
 /// The wiki row for the meeting's project wins, else the custom command. `force` re-runs
@@ -154,11 +155,15 @@ pub fn dispatch_with(
     force: bool,
     notify: Notify,
 ) -> std::result::Result<HookKind, String> {
-    use super::hook_status::{set, DONE, FAILED, RUNNING};
+    use super::hook_status::{set, CANCELLED, DONE, FAILED, RUNNING};
     let target = if prefs.wiki_automation { super::wiki_automation::find_target(&prefs.wiki_targets, &ctx.project) } else { None };
     let command = prefs.post_enhance_command.trim();
     if target.is_none() && command.is_empty() {
         return Err(NO_HOOK.to_string());
+    }
+    // one hook run per meeting: an overlapping run would share its job row and pid slot
+    if super::hook_status::memory_status(&ctx.meeting_id) == Some(RUNNING) {
+        return Err(HOOK_BUSY.to_string());
     }
     let id = ctx.meeting_id.clone();
     let transition = move |status: &'static str| {
@@ -168,7 +173,11 @@ pub fn dispatch_with(
     // Running before the spawn: a fast child must not finish before it is marked running.
     transition(RUNNING);
     let t = transition.clone();
-    let then: OnExit = Box::new(move |success| t(if success { DONE } else { FAILED }));
+    let cancel_id = ctx.meeting_id.clone();
+    // the reaper already turned a cancelled exit into `false`; tell it apart from a failure
+    let then: OnExit = Box::new(move |success| {
+        t(if success { DONE } else if crate::jobs::hook_cancel_requested(&cancel_id) { CANCELLED } else { FAILED })
+    });
     match target {
         Some(target) => match super::wiki_automation::run(target, ctx, prefs.wiki_budget_usd, force, Some(then)) {
             Ok(true) => Ok(HookKind::Wiki),
@@ -360,6 +369,17 @@ mod tests {
         assert!(wait_until(|| seen.lock().unwrap().len() == 2));
         assert_eq!(seen.lock().unwrap()[1].1, "failed");
         assert_eq!(super::super::hook_status::memory_status("m-cmd-bad"), Some("failed"));
+    }
+
+    #[test]
+    fn dispatch_refuses_a_second_run_while_one_is_running() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = read_context(dir.path(), "m-busy");
+        let mut prefs = super::super::recording_preferences::RecordingPreferences::default();
+        prefs.post_enhance_command = "sleep 2".into();
+        let (_seen, notify) = recorder();
+        dispatch_with(&prefs, &ctx, true, notify.clone()).unwrap();
+        assert_eq!(dispatch_with(&prefs, &ctx, true, notify).unwrap_err(), HOOK_BUSY);
     }
 
     #[test]
