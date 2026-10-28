@@ -3,8 +3,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { appDataDir } from '@tauri-apps/api/path';
 import { useCallback, useEffect, useState, useRef } from 'react';
-import { Play, Pause, Square, Mic, AlertCircle, X } from 'lucide-react';
-import { ProcessRequest, SummaryResponse } from '@/types/summary';
+import { AlertCircle, X } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -15,7 +14,6 @@ interface RecordingControlsProps {
   isRecording: boolean;
   onRecordingStop: (callApi?: boolean) => void;
   onRecordingStart: () => void;
-  onTranscriptReceived: (summary: SummaryResponse) => void;
   onTranscriptionError?: (message: string) => void;
   onStopInitiated?: () => void; // Called immediately when stop button is clicked
   isRecordingDisabled: boolean;
@@ -31,7 +29,6 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   isRecording,
   onRecordingStop,
   onRecordingStart,
-  onTranscriptReceived,
   onTranscriptionError,
   onStopInitiated,
   isRecordingDisabled,
@@ -43,8 +40,9 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   const recordingState = useRecordingState();
   const isPaused = recordingState.isPaused;
   const isStartingRecording = recordingState.isStartingRecording;
+  const elapsed = Math.floor(recordingState.activeDuration ?? 0);
+  const timer = `${Math.floor(elapsed / 60).toString().padStart(2, '0')}:${(elapsed % 60).toString().padStart(2, '0')}`;
 
-  const [recordingPath, setRecordingPath] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -138,7 +136,6 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
         }
       });
       console.log('stop_recording command completed successfully:', result);
-      setRecordingPath(savePath);
       // setShowPlayback(true);
       setIsProcessing(false);
       onRecordingStop(true);
@@ -307,98 +304,58 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     };
   }, [onRecordingStop, onTranscriptionError]);
 
+  const isBusyStarting = isStarting || isProcessing || isValidatingModel || isStartingRecording;
+
   return (
     <TooltipProvider>
-      <div className="flex flex-col space-y-2">
-        <div className="flex items-center space-x-2 bg-background rounded-full shadow-lg px-4 py-2">
+      <div className="flex flex-col items-center space-y-2">
+        <div className="flex items-center gap-3.5">
           {isProcessing && !isParentProcessing ? (
-            <div className="flex items-center space-x-2">
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-foreground"></div>
-              <span className="text-sm text-muted-foreground">Processing recording...</span>
+            <div className="flex items-center gap-2">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-foreground"></div>
+              <span className="text-[13px] text-muted-foreground">Processing recording...</span>
             </div>
+          ) : !isRecording ? (
+            <button
+              onClick={handleStartRecording}
+              disabled={isBusyStarting || isRecordingDisabled}
+              className="inline-flex h-8 items-center gap-2 rounded-md bg-foreground px-3.5 text-[13px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {isValidatingModel || isStartingRecording ? (
+                <span className="h-3 w-3 animate-spin rounded-full border-b-2 border-background" />
+              ) : (
+                <span className="h-[7px] w-[7px] rounded-full bg-recording" />
+              )}
+              Start recording
+            </button>
           ) : (
             <>
-              <>
-                  {!isRecording ? (
-                    // Start recording button
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() => {
-                            handleStartRecording();
-                          }}
-                          disabled={isStarting || isProcessing || isRecordingDisabled || isValidatingModel || isStartingRecording}
-                          className={`w-12 h-12 flex items-center justify-center ${isStarting || isProcessing || isValidatingModel || isStartingRecording ? 'bg-muted-foreground/40' : 'bg-recording hover:bg-recording/90'
-                            } rounded-full text-white transition-colors relative`}
-                        >
-                          {isValidatingModel || isStartingRecording ? (
-                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-background"></div>
-                          ) : (
-                            <Mic size={20} />
-                          )}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Start recording</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    // Recording controls (pause/resume + stop)
-                    <>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            onClick={() => {
-                              if (isPaused) {
-                                handleResumeRecording();
-                              } else {
-                                handlePauseRecording();
-                              }
-                            }}
-                            disabled={isPausing || isResuming || isStopping}
-                            className={`w-10 h-10 flex items-center justify-center ${isPausing || isResuming || isStopping
-                              ? 'bg-accent border-2 border-border text-muted-foreground'
-                              : 'bg-background border-2 border-border text-muted-foreground hover:border-border hover:bg-card'
-                              } rounded-full transition-colors relative`}
-                          >
-                            {isPaused ? <Play size={16} /> : <Pause size={16} />}
-                            {(isPausing || isResuming) && (
-                              <div className="absolute -top-8 text-muted-foreground font-medium text-xs">
-                                {isPausing ? 'Pausing...' : 'Resuming...'}
-                              </div>
-                            )}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>{isPaused ? 'Resume recording' : 'Pause recording'}</p>
-                        </TooltipContent>
-                      </Tooltip>
+              <span className={`h-2 w-2 rounded-full ${isPaused ? 'bg-warning' : 'bg-recording animate-pulse'}`} />
+              <span className="font-mono text-[13px] tabular-nums">{isStopping ? 'Stopping...' : timer}</span>
 
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            onClick={() => {
-                              handleStopRecording();
-                            }}
-                            disabled={isStopping || isPausing || isResuming || isStartingRecording}
-                            className={`w-10 h-10 flex items-center justify-center ${isStopping || isPausing || isResuming || isStartingRecording ? 'bg-muted-foreground/40' : 'bg-recording hover:bg-recording/90'
-                              } rounded-full text-white transition-colors relative`}
-                          >
-                            <Square size={16} />
-                            {isStopping && (
-                              <div className="absolute -top-8 text-muted-foreground font-medium text-xs">
-                                Stopping...
-                              </div>
-                            )}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Stop recording</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </>
-                  )}
-                </>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={handleStopRecording}
+                    disabled={isStopping || isPausing || isResuming || isStartingRecording}
+                    aria-label="Stop recording"
+                    className="grid h-11 w-11 place-items-center rounded-full border border-border bg-background transition-colors hover:bg-accent disabled:opacity-50"
+                  >
+                    <span className="h-3.5 w-3.5 rounded-[3px] bg-recording" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Stop recording</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <button
+                onClick={isPaused ? handleResumeRecording : handlePauseRecording}
+                disabled={isPausing || isResuming || isStopping}
+                className="inline-flex h-8 items-center rounded-md border border-border bg-background px-2.5 text-[13px] text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+              >
+                {isPausing ? 'Pausing...' : isResuming ? 'Resuming...' : isPaused ? 'Resume' : 'Pause'}
+              </button>
             </>
           )}
         </div>

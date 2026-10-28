@@ -1,12 +1,14 @@
 "use client";
 
 import { Transcript, TranscriptSegmentData } from '@/types';
-import { TranscriptView } from '@/components/TranscriptView';
 import { VirtualizedTranscriptView } from '@/components/VirtualizedTranscriptView';
 import { TranscriptButtonGroup } from './TranscriptButtonGroup';
 import { useMemo } from 'react';
+import { format, isValid, parseISO } from 'date-fns';
 
 interface TranscriptPanelProps {
+  title: string;
+  createdAt?: string;
   transcripts: Transcript[];
   onCopyTranscript: () => void;
   onOpenMeetingFolder: () => Promise<void>;
@@ -29,6 +31,8 @@ interface TranscriptPanelProps {
 }
 
 export function TranscriptPanel({
+  title,
+  createdAt,
   transcripts,
   onCopyTranscript,
   onOpenMeetingFolder,
@@ -57,13 +61,22 @@ export function TranscriptPanel({
       endTime: t.audio_end_time,
       text: t.text,
       confidence: t.confidence,
+      speaker: t.speaker,
     }));
   }, [transcripts, usePagination, segments]);
 
+  const created = createdAt ? parseISO(createdAt) : null;
+
   return (
-    <div className="flex h-full min-w-0 w-full bg-background flex-col relative @container">
-      {/* Title area */}
-      <div className="p-4 border-b border-border">
+    <div className="flex h-full min-w-0 w-full bg-background flex-col relative">
+      {/* Top bar: title, date, actions */}
+      <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-border">
+        <h1 className="mr-auto min-w-0 truncate text-sm font-semibold">
+          {title}
+          {created && isValid(created) && (
+            <span className="font-normal text-muted-foreground"> · {format(created, 'd MMM, HH:mm')}</span>
+          )}
+        </h1>
         <TranscriptButtonGroup
           transcriptCount={usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length || 0)}
           onCopyTranscript={onCopyTranscript}
@@ -75,7 +88,7 @@ export function TranscriptPanel({
       </div>
 
       {/* Transcript content - use virtualized view for better performance */}
-      <div className="flex-1 overflow-hidden pb-4">
+      <div className="flex-1 overflow-hidden">
         <VirtualizedTranscriptView
           segments={convertedSegments}
           isRecording={isRecording}

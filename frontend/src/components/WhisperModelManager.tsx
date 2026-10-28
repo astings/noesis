@@ -609,7 +609,7 @@ function ModelCard({
         ${isSelected && isAvailable
           ? 'border-primary bg-primary/10'
           : isAvailable
-            ? 'border-border hover:border-border bg-background'
+            ? 'border-border hover:border-primary/40 bg-background'
             : 'border-border bg-card'
         }
         ${isAvailable ? '' : 'cursor-default'}

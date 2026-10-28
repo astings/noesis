@@ -6,6 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ProjectSelect } from '@/components/ProjectSelect';
+import { SettingsGroup, SettingRow } from '@/components/SettingsGroup';
 import type { RecordingPreferences, WikiTarget } from '@/components/RecordingSettings';
 
 interface Props {
@@ -46,96 +47,103 @@ export function WikiAutomationSettings({ preferences, onChange, disabled }: Prop
   };
 
   return (
-    <div className="p-4 border rounded-lg space-y-3">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <div className="font-medium">Wiki automation</div>
-          <div className="text-sm text-muted-foreground">
+    <SettingsGroup title="Wiki automation">
+      <SettingRow
+        label="Run Claude after enhance"
+        hint={
+          <>
             After each enhance, run Claude Code in the project&apos;s wiki to draft the transcript document and a log entry. Nothing is committed, scored or moved.
-          </div>
-        </div>
-        <Switch
-          checked={preferences.wiki_automation}
-          onCheckedChange={(on) => onChange({ ...preferences, wiki_automation: on })}
-          disabled={disabled}
-          aria-label="Wiki automation"
-        />
-      </div>
-      <div className="text-xs text-muted-foreground">
-        {claudePath === undefined
-          ? 'Looking for Claude Code...'
-          : claudePath
-            ? `Claude Code: ${claudePath}`
-            : 'Claude Code not found. Install it and sign in, then reopen settings.'}
-      </div>
+            <span className="block mt-1 font-mono">
+              {claudePath === undefined
+                ? 'Looking for Claude Code...'
+                : claudePath
+                  ? `Claude Code: ${claudePath}`
+                  : 'Claude Code not found. Install it and sign in, then reopen settings.'}
+            </span>
+          </>
+        }
+        control={
+          <Switch
+            checked={preferences.wiki_automation}
+            onCheckedChange={(on) => onChange({ ...preferences, wiki_automation: on })}
+            disabled={disabled}
+            aria-label="Wiki automation"
+          />
+        }
+      />
 
-      <div className="space-y-2">
-        {rows.map((row, i) => (
-          <div key={i} className="grid grid-cols-[10rem_1fr_10rem_auto] gap-2 items-center">
-            <ProjectSelect compact value={row.project} onChange={(p) => commitRows(updateRow(i, { project: p }))} disabled={disabled} />
-            <div className="flex gap-1">
+      <SettingRow label="Project wikis" hint="One wiki directory per project, with an optional skill">
+        <div className="space-y-2">
+          {rows.map((row, i) => (
+            <div key={i} className="grid grid-cols-[9rem_1fr_8rem_auto] gap-2 items-center">
+              <ProjectSelect compact value={row.project} onChange={(p) => commitRows(updateRow(i, { project: p }))} disabled={disabled} />
+              <div className="flex gap-1">
+                <Input
+                  aria-label="Wiki directory"
+                  className="h-8 font-mono text-xs"
+                  placeholder="/Users/you/Code/wiki"
+                  value={row.directory}
+                  onChange={(e) => updateRow(i, { directory: e.target.value })}
+                  onBlur={() => draft && commitRows(draft)}
+                  disabled={disabled}
+                />
+                <Button type="button" variant="outline" size="sm" onClick={() => browse(i)} disabled={disabled}>
+                  Browse
+                </Button>
+              </div>
               <Input
-                aria-label="Wiki directory"
-                className="font-mono text-xs"
-                placeholder="/Users/you/Code/wiki"
-                value={row.directory}
-                onChange={(e) => updateRow(i, { directory: e.target.value })}
+                aria-label="Skill (optional)"
+                className="h-8 text-xs"
+                placeholder="skill (optional)"
+                value={row.skill}
+                onChange={(e) => updateRow(i, { skill: e.target.value })}
                 onBlur={() => draft && commitRows(draft)}
                 disabled={disabled}
               />
-              <Button type="button" variant="outline" size="sm" onClick={() => browse(i)} disabled={disabled}>
-                Browse
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => commitRows(rows.filter((_, j) => j !== i))}
+                disabled={disabled}
+                aria-label="Remove row"
+              >
+                Remove
               </Button>
             </div>
-            <Input
-              aria-label="Skill (optional)"
-              className="text-xs"
-              placeholder="skill (optional)"
-              value={row.skill}
-              onChange={(e) => updateRow(i, { skill: e.target.value })}
-              onBlur={() => draft && commitRows(draft)}
-              disabled={disabled}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => commitRows(rows.filter((_, j) => j !== i))}
-              disabled={disabled}
-              aria-label="Remove row"
-            >
-              Remove
-            </Button>
-          </div>
-        ))}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => commitRows([...rows, { project: '', directory: '', skill: '' }])}
-          disabled={disabled}
-        >
-          Add project
-        </Button>
-      </div>
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => commitRows([...rows, { project: '', directory: '', skill: '' }])}
+            disabled={disabled}
+          >
+            Add project
+          </Button>
+        </div>
+      </SettingRow>
 
-      <div className="flex items-center gap-2">
-        <div className="text-sm text-muted-foreground">Cost cap per run (USD)</div>
-        <Input
-          aria-label="Cost cap per run in USD"
-          className="w-24"
-          type="number"
-          min={0.5}
-          step={0.5}
-          value={budgetDraft ?? String(preferences.wiki_budget_usd)}
-          onChange={(e) => setBudgetDraft(e.target.value)}
-          onBlur={commitBudget}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur();
-          }}
-          disabled={disabled}
-        />
-      </div>
-    </div>
+      <SettingRow
+        label="Cost cap per run"
+        hint="In US dollars, per Claude Code run"
+        control={
+          <Input
+            aria-label="Cost cap per run in USD"
+            className="h-8 w-24 text-[13px]"
+            type="number"
+            min={0.5}
+            step={0.5}
+            value={budgetDraft ?? String(preferences.wiki_budget_usd)}
+            onChange={(e) => setBudgetDraft(e.target.value)}
+            onBlur={commitBudget}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+            }}
+            disabled={disabled}
+          />
+        }
+      />
+    </SettingsGroup>
   );
 }

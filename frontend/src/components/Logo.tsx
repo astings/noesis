@@ -7,20 +7,16 @@ interface LogoProps {
 
 const Logo = ({ isCollapsed }: LogoProps) =>
   isCollapsed ? (
-    <div className="flex items-center justify-center mb-2">
-      <Image
-        src="/logo-collapsed.png"
-        alt="Meetily"
-        width={40}
-        height={40}
-        className="object-contain"
-        priority
-      />
-    </div>
+    <Image
+      src="/logo-collapsed.png"
+      alt="Meetily"
+      width={28}
+      height={28}
+      className="object-contain"
+      priority
+    />
   ) : (
-    <div className="w-full text-lg text-center border rounded-full bg-primary/10 border-border font-semibold text-foreground mb-2">
-      <span>Meetily</span>
-    </div>
+    <span>Meetily</span>
   );
 
 export default Logo;

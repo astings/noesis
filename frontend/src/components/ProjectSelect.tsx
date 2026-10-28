@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { INBOX, normalizeProjectName } from '@/lib/projects';
+import { cn } from '@/lib/utils';
 
 const NEW_PROJECT = '__new__';
 
@@ -14,10 +15,11 @@ interface ProjectSelectProps {
   onChange: (project: string) => void;
   disabled?: boolean;
   compact?: boolean;
+  className?: string;
 }
 
 /** spec 4.2: pick a project folder. Projects are folders under the recordings root; "New project" creates one by name. */
-export function ProjectSelect({ value, onChange, disabled, compact }: ProjectSelectProps) {
+export function ProjectSelect({ value, onChange, disabled, compact, className }: ProjectSelectProps) {
   const [projects, setProjects] = useState<string[]>([INBOX]);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState('');
@@ -67,7 +69,7 @@ export function ProjectSelect({ value, onChange, disabled, compact }: ProjectSel
         onChange(v);
       }}
     >
-      <SelectTrigger className={compact ? 'h-8 w-36 text-xs' : 'h-9 w-44 text-sm'} title="Project folder for this meeting">
+      <SelectTrigger className={cn(compact ? 'h-8 w-36 text-xs' : 'h-9 w-44 text-sm', className)} title="Project folder for this meeting">
         <SelectValue placeholder="Project" />
       </SelectTrigger>
       <SelectContent>

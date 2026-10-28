@@ -6,8 +6,7 @@ import { useAutoScroll } from "@/hooks/useAutoScroll";
 import { useTranscriptStreaming } from "@/hooks/useTranscriptStreaming";
 import { ConfidenceIndicator } from "./ConfidenceIndicator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
-import { RecordingStatusBar } from "./RecordingStatusBar";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { TranscriptSegmentData } from "@/types";
 
 export interface VirtualizedTranscriptViewProps {
@@ -39,16 +38,24 @@ export interface VirtualizedTranscriptViewProps {
 // Threshold for enabling virtualization (below this, use simple rendering)
 const VIRTUALIZATION_THRESHOLD = 10;
 
-// Helper function to format seconds as recording-relative time [MM:SS]
+// Helper function to format seconds as recording-relative time MM:SS
 function formatRecordingTime(seconds: number | undefined): string {
-    if (seconds === undefined) return '[--:--]';
+    if (seconds === undefined) return '--:--';
 
     const totalSeconds = Math.floor(seconds);
     const minutes = Math.floor(totalSeconds / 60);
     const secs = totalSeconds % 60;
 
-    return `[${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}]`;
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
+
+// spec 4.4: "me"/"them" (and the upstream "mic"/"system") get a label; anything else shows none
+const SPEAKER_LABEL: Record<string, { label: string; className: string }> = {
+    me: { label: 'Me', className: 'text-primary' },
+    mic: { label: 'Me', className: 'text-primary' },
+    them: { label: 'Them', className: 'text-muted-foreground' },
+    system: { label: 'Them', className: 'text-muted-foreground' },
+};
 
 // Helper function to remove filler words and repetitions
 function cleanStopWords(text: string): string {
@@ -68,6 +75,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
     id,
     timestamp,
     text,
+    speaker,
     confidence,
     isStreaming,
     showConfidence,
@@ -75,36 +83,35 @@ const TranscriptSegment = memo(function TranscriptSegment({
     id: string;
     timestamp: number;
     text: string;
+    speaker?: string | null;
     confidence?: number;
     isStreaming: boolean;
     showConfidence: boolean;
 }) {
     const displayText = cleanStopWords(text) || (text.trim() === '' ? '[Silence]' : text);
+    const who = speaker ? SPEAKER_LABEL[speaker] : undefined;
 
     return (
-        <div id={`segment-${id}`} className="mb-3">
-            <div className="flex items-start gap-2">
-                <Tooltip>
-                    <TooltipTrigger>
-                        <span className="text-xs text-muted-foreground mt-1 flex-shrink-0 min-w-[50px]">
-                            {formatRecordingTime(timestamp)}
-                        </span>
-                    </TooltipTrigger>
+        <div id={`segment-${id}`} className="grid grid-cols-[56px_1fr] gap-3 max-w-[72ch] pb-3.5">
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <span className="font-mono text-xs leading-[1.6] text-muted-foreground tabular-nums text-left">
+                        {formatRecordingTime(timestamp)}
+                    </span>
+                </TooltipTrigger>
+                {confidence !== undefined && showConfidence && (
                     <TooltipContent>
-                        {confidence !== undefined && showConfidence && (
-                            <ConfidenceIndicator confidence={confidence} showIndicator={showConfidence} />
-                        )}
+                        <ConfidenceIndicator confidence={confidence} showIndicator={showConfidence} />
                     </TooltipContent>
-                </Tooltip>
-                <div className="flex-1">
-                    {isStreaming ? (
-                        <div className="bg-muted border border-border rounded-lg px-3 py-2">
-                            <p className="text-base text-foreground leading-relaxed">{displayText}</p>
-                        </div>
-                    ) : (
-                        <p className="text-base text-foreground leading-relaxed">{displayText}</p>
-                    )}
-                </div>
+                )}
+            </Tooltip>
+            <div className="min-w-0">
+                {who && (
+                    <span className={`text-[11px] font-semibold uppercase tracking-wide ${who.className}`}>{who.label}</span>
+                )}
+                <p className={`text-sm leading-normal ${who ? 'mt-0.5' : ''} ${isStreaming ? 'text-muted-foreground' : 'text-foreground'}`}>
+                    {displayText}
+                </p>
             </div>
         </div>
     );
@@ -224,18 +231,8 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
     const useVirtualization = segments.length >= VIRTUALIZATION_THRESHOLD;
 
     return (
-        <div ref={scrollRef} className="flex flex-col h-full overflow-y-auto px-4 py-2">
-            {/* Recording Status Bar - Sticky at top, always visible when recording */}
-            <AnimatePresence>
-                {isRecording && (
-                    <div className="sticky top-0 z-10 bg-background pb-2">
-                        <RecordingStatusBar isPaused={isPaused} />
-                    </div>
-                )}
-            </AnimatePresence>
-
-            {/* Content - add padding when recording to prevent overlap */}
-            <div className={isRecording ? 'pt-2' : ''}>
+        <div ref={scrollRef} className="flex flex-col h-full overflow-y-auto px-6 py-5">
+            <div>
             {segments.length === 0 ? (
                 // Empty state
                 <motion.div
@@ -257,7 +254,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                         </>
                     ) : (
                         <>
-                            <p className="text-lg font-semibold">Welcome to meetily!</p>
+                            <p className="text-sm font-medium text-foreground">No transcript yet</p>
                             <p className="text-xs mt-1">Start recording to see live transcription</p>
                         </>
                     )}
@@ -293,6 +290,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         id={segment.id}
                                         timestamp={segment.timestamp}
                                         text={getDisplayText(segment)}
+                                        speaker={segment.speaker}
                                         confidence={segment.confidence}
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
@@ -307,7 +305,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                         <div ref={loadMoreTriggerRef} className="flex justify-center items-center py-4 mt-2">
                             {isLoadingMore ? (
                                 <div className="flex items-center gap-2 text-muted-foreground">
-                                    <div className="w-4 h-4 border-2 border-border border-t-gray-600 rounded-full animate-spin" />
+                                    <div className="w-4 h-4 border-2 border-border border-t-foreground rounded-full animate-spin" />
                                     <span className="text-sm">Loading more...</span>
                                 </div>
                             ) : hasMore && totalCount > 0 ? (
@@ -334,7 +332,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
             ) : (
                 // Simple rendering for small lists (better animations)
                 <>
-                    <div className="space-y-1">
+                    <div>
                         {segments.map((segment) => {
                             const isStreaming = streamingSegmentId === segment.id;
 
@@ -349,6 +347,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         id={segment.id}
                                         timestamp={segment.timestamp}
                                         text={getDisplayText(segment)}
+                                        speaker={segment.speaker}
                                         confidence={segment.confidence}
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
@@ -363,7 +362,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                         <div ref={loadMoreTriggerRef} className="flex justify-center items-center py-4 mt-2">
                             {isLoadingMore ? (
                                 <div className="flex items-center gap-2 text-muted-foreground">
-                                    <div className="w-4 h-4 border-2 border-border border-t-gray-600 rounded-full animate-spin" />
+                                    <div className="w-4 h-4 border-2 border-border border-t-foreground rounded-full animate-spin" />
                                     <span className="text-sm">Loading more...</span>
                                 </div>
                             ) : hasMore && totalCount > 0 ? (

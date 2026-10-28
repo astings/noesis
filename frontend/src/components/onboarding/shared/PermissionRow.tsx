@@ -18,7 +18,7 @@ export function PermissionRow({ icon, title, description, status, isPending = fa
   return (
     <div
       className={cn(
-        'flex items-center justify-between rounded-2xl border px-6 py-5',
+        'flex items-center justify-between rounded-lg border px-6 py-5',
         'transition-all duration-200',
         isAuthorized ? 'border-primary bg-muted' : isDenied ? 'border-destructive/40 bg-destructive/10' : 'bg-background border-border'
       )}

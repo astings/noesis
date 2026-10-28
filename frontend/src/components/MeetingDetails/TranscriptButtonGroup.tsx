@@ -7,10 +7,8 @@ import { ProjectSelect } from '@/components/ProjectSelect';
 import { INBOX, projectOfFolder } from '@/lib/projects';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
 import { Copy, FolderOpen, RefreshCw } from 'lucide-react';
 import { RetranscribeDialog } from './RetranscribeDialog';
-
 
 interface TranscriptButtonGroupProps {
   transcriptCount: number;
@@ -20,7 +18,6 @@ interface TranscriptButtonGroupProps {
   meetingFolderPath?: string | null;
   onRefetchTranscripts?: () => Promise<void>;
 }
-
 
 export function TranscriptButtonGroup({
   transcriptCount,
@@ -64,64 +61,57 @@ export function TranscriptButtonGroup({
   }, [onRefetchTranscripts]);
 
   return (
-    <div className="flex items-center justify-center w-full gap-2">
-      <ButtonGroup>
-        <Button
-          variant="outline"
-          size="sm"
-          className="px-2 @[22rem]:px-3"
-          onClick={() => {
-            onCopyTranscript();
-          }}
-          disabled={transcriptCount === 0}
-          title={transcriptCount === 0 ? 'No transcript available' : 'Copy Transcript'}
-        >
-          <Copy />
-          <span className="hidden @[22rem]:inline">Copy</span>
-        </Button>
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        className="px-2.5 text-[13px] shadow-none"
+        onClick={onCopyTranscript}
+        disabled={transcriptCount === 0}
+        title={transcriptCount === 0 ? 'No transcript available' : 'Copy transcript'}
+      >
+        <Copy />
+        Copy
+      </Button>
 
-        <Button
-          size="sm"
-          variant="outline"
-          className="px-2 @[22rem]:px-4"
-          onClick={() => {
-            onOpenMeetingFolder();
-          }}
-          title="Open Recording Folder"
-        >
-          <FolderOpen className="@[22rem]:mr-2" size={18} />
-          <span className="hidden @[22rem]:inline">Recording</span>
-        </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="px-2.5 text-[13px] shadow-none"
+        onClick={onOpenMeetingFolder}
+        title="Open the meeting folder"
+      >
+        <FolderOpen />
+        Open folder
+      </Button>
 
-        {meetingId && meetingFolderPath && (
+      {meetingId && meetingFolderPath && (
+        <>
+          <ProjectSelect
+            value={currentProject}
+            onChange={handleMove}
+            disabled={moving}
+            compact
+            className="w-auto min-w-28 gap-1.5 px-2.5 text-[13px] shadow-none"
+          />
           <Button
             size="sm"
-            variant="outline"
-            className="bg-primary/10 hover:bg-primary/20 border-primary/40 px-2 @[22rem]:px-4"
-            onClick={() => {
-              setShowRetranscribeDialog(true);
-            }}
+            className="px-2.5 text-[13px] shadow-none"
+            onClick={() => setShowRetranscribeDialog(true)}
             title="Retranscribe to enhance your recorded audio"
           >
-            <RefreshCw className="@[22rem]:mr-2" size={18} />
-            <span className="hidden @[22rem]:inline">Enhance</span>
+            <RefreshCw />
+            Enhance
           </Button>
-        )}
-      </ButtonGroup>
-
-      {meetingId && meetingFolderPath && (
-        <ProjectSelect value={currentProject} onChange={handleMove} disabled={moving} compact />
+          <RetranscribeDialog
+            open={showRetranscribeDialog}
+            onOpenChange={setShowRetranscribeDialog}
+            meetingId={meetingId}
+            meetingFolderPath={meetingFolderPath}
+            onComplete={handleRetranscribeComplete}
+          />
+        </>
       )}
-
-      {meetingId && meetingFolderPath && (
-        <RetranscribeDialog
-          open={showRetranscribeDialog}
-          onOpenChange={setShowRetranscribeDialog}
-          meetingId={meetingId}
-          meetingFolderPath={meetingFolderPath}
-          onComplete={handleRetranscribeComplete}
-        />
-      )}
-    </div>
+    </>
   );
 }

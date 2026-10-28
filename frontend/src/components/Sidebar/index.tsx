@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, File, Settings, ChevronLeftCircle, ChevronRightCircle, Calendar, StickyNote, Home, Trash2, Mic, Square, Plus, Search, Pencil, NotebookPen, SearchIcon, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Settings, Trash2, Search, Pencil, NotebookPen, SearchIcon, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSidebar } from './SidebarProvider';
 import type { CurrentMeeting } from '@/components/Sidebar/SidebarProvider';
@@ -22,7 +22,6 @@ import { VisuallyHidden } from "@/components/ui/visually-hidden"
 
 import { PROJECT_FOLDER_PREFIX } from '@/components/Sidebar/SidebarProvider';
 import Logo from '../Logo';
-import { Input } from '../ui/input';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '../ui/input-group';
 
 interface SidebarItem {
@@ -115,7 +114,6 @@ const Sidebar: React.FC = () => {
   //   }
   // }, [settingsSaveSuccess]);
 
-
   const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; itemId: string | null }>({ isOpen: false, itemId: null });
 
   useEffect(() => {
@@ -154,7 +152,6 @@ const Sidebar: React.FC = () => {
         model: payload.model,
         apiKey: payload.apiKey,
       });
-
 
       setSettingsSaveSuccess(true);
 
@@ -206,7 +203,6 @@ const Sidebar: React.FC = () => {
     }
     return filterTree(sidebarItems, item => item.title.toLowerCase().includes(q));
   }, [sidebarItems, searchQuery, searchResults, expandedFolders]);
-
 
   const handleDelete = async (itemId: string) => {
     console.log('Deleting item:', itemId);
@@ -326,65 +322,58 @@ const Sidebar: React.FC = () => {
   const renderCollapsedIcons = () => {
     if (!isCollapsed) return null;
 
-    const isHomePage = pathname === '/';
     const isMeetingPage = pathname?.includes('/meeting-details');
     const isSettingsPage = pathname === '/settings';
+    const railButton = 'p-2 rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground';
 
     return (
       <TooltipProvider>
-        <div className="flex flex-col items-center space-y-4 mt-4">
-          <Logo isCollapsed={isCollapsed} />
+        <div className="flex flex-1 flex-col items-center gap-1 py-2.5">
+          <button onClick={() => router.push('/')} aria-label="Home" className="mb-2">
+            <Logo isCollapsed={isCollapsed} />
+          </button>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button onClick={toggleCollapse} aria-label="Search transcripts" className={railButton}>
+                <Search className="w-4 h-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p>Search transcripts</p>
+            </TooltipContent>
+          </Tooltip>
 
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                onClick={() => router.push('/')}
-                className={`p-2 rounded-lg transition-colors duration-150 ${isHomePage ? 'bg-muted' : 'hover:bg-accent'
-                  }`}
+                onClick={toggleCollapse}
+                aria-label="Projects"
+                className={`${railButton} ${isMeetingPage ? 'bg-accent text-foreground' : ''}`}
               >
-                <Home className="w-5 h-5 text-muted-foreground" />
+                <NotebookPen className="w-4 h-4" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">
-              <p>Home</p>
+              <p>Projects</p>
             </TooltipContent>
           </Tooltip>
+
+          <div className="flex-1" />
 
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 onClick={handleRecordingToggle}
                 disabled={isRecording}
-                className={`p-2 ${isRecording ? 'bg-recording cursor-not-allowed' : 'bg-recording hover:bg-recording/90'} rounded-full transition-colors duration-150`}
+                aria-label={isRecording ? 'Recording in progress' : 'New recording'}
+                className="grid h-8 w-8 place-items-center rounded-md bg-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
               >
-                {isRecording ? (
-                  <Square className="w-5 h-5 text-white" />
-                ) : (
-                  <Mic className="w-5 h-5 text-white" />
-                )}
+                <span className={`h-2 w-2 rounded-full bg-recording ${isRecording ? 'animate-pulse' : ''}`} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">
-              <p>{isRecording ? "Recording in progress..." : "Start Recording"}</p>
-            </TooltipContent>
-          </Tooltip>
-
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => {
-                  if (isCollapsed) toggleCollapse();
-                  toggleFolder('meetings');
-                }}
-                className={`p-2 rounded-lg transition-colors duration-150 ${isMeetingPage ? 'bg-muted' : 'hover:bg-accent'
-                  }`}
-              >
-                <NotebookPen className="w-5 h-5 text-muted-foreground" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Meeting Notes</p>
+              <p>{isRecording ? 'Recording in progress...' : 'New recording'}</p>
             </TooltipContent>
           </Tooltip>
 
@@ -392,10 +381,10 @@ const Sidebar: React.FC = () => {
             <TooltipTrigger asChild>
               <button
                 onClick={() => router.push('/settings')}
-                className={`p-2 rounded-lg transition-colors duration-150 ${isSettingsPage ? 'bg-muted' : 'hover:bg-accent'
-                  }`}
+                aria-label="Settings"
+                className={`${railButton} ${isSettingsPage ? 'bg-accent text-foreground' : ''}`}
               >
-                <Settings className="w-5 h-5 text-muted-foreground" />
+                <Settings className="w-4 h-4" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">
@@ -403,6 +392,16 @@ const Sidebar: React.FC = () => {
             </TooltipContent>
           </Tooltip>
 
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button onClick={toggleCollapse} aria-label="Expand sidebar" className={railButton}>
+                <PanelLeftOpen className="w-4 h-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p>Expand sidebar</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
       </TooltipProvider>
     );
@@ -418,7 +417,6 @@ const Sidebar: React.FC = () => {
     const isExpanded = item.id.startsWith(PROJECT_FOLDER_PREFIX)
       ? !collapsedProjects.has(item.id)
       : expandedFolders.has(item.id);
-    const paddingLeft = `${depth * 12 + 12}px`;
     const isActive = item.type === 'file' && currentMeeting?.id === item.id;
     const isMeetingItem = item.type === 'file' && item.id.includes('-') && !item.id.startsWith('intro-call');
 
@@ -428,16 +426,20 @@ const Sidebar: React.FC = () => {
 
     if (isCollapsed) return null;
 
+    const isProject = item.type === 'folder';
+
     return (
       <div key={item.id}>
         <div
-          className={`flex items-center transition-all duration-150 group ${item.type === 'folder' && depth === 0
-            ? 'p-3 text-lg font-semibold h-10 mx-3 mt-3 rounded-lg'
-            : `px-3 py-2 my-0.5 rounded-md text-sm ${isActive ? 'bg-primary/10 text-primary font-medium' :
-              hasTranscriptMatch ? 'bg-warning/10' : 'hover:bg-card'
-            } cursor-pointer`
+          className={`group flex items-center gap-1.5 px-2 py-1 rounded-md text-sm cursor-pointer transition-colors ${isActive
+            ? 'bg-accent text-foreground'
+            : hasTranscriptMatch
+              ? 'bg-warning/10'
+              : isProject
+                ? 'text-foreground hover:bg-accent/60'
+                : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
             }`}
-          style={item.type === 'folder' && depth === 0 ? {} : { paddingLeft }}
+          style={isProject ? undefined : { paddingLeft: '22px' }}
           onClick={() => {
             if (item.type === 'folder') {
               toggleFolder(item.id);
@@ -448,60 +450,41 @@ const Sidebar: React.FC = () => {
             }
           }}
         >
-          {item.type === 'folder' ? (
+          {isProject ? (
             <>
-              {item.id === 'meetings' ? (
-                <Calendar className="w-4 h-4 mr-2" />
-              ) : item.id === 'notes' ? (
-                <Calendar className="w-4 h-4 mr-2" />
-              ) : null}
-              <span className={depth === 0 ? "" : "font-medium"}>{item.title}</span>
-              <div className="ml-auto">
-                {isExpanded ? (
-                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                )}
-              </div>
-              {searchQuery && item.id === 'meetings' && isSearching && (
-                <span className="ml-2 text-xs text-primary animate-pulse">Searching...</span>
+              {isExpanded ? (
+                <ChevronDown className="w-3.5 h-3.5 flex-none text-muted-foreground" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5 flex-none text-muted-foreground" />
               )}
+              <span className="truncate">{item.title}</span>
             </>
           ) : (
-            <div className="flex flex-col w-full">
-              <div className="flex items-center w-full">
-                {isMeetingItem ? (
-                  <div className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-full mr-2 bg-muted">
-                    <File className="w-3.5 h-3.5 text-muted-foreground" />
-                  </div>
-                ) : (
-                  <div className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-full mr-2 bg-primary/10">
-                    <Plus className="w-3.5 h-3.5 text-primary" />
-                  </div>
-                )}
-                <span className="flex-1 break-words">{item.title}</span>
+            <div className="flex flex-col w-full min-w-0">
+              <div className="flex items-center w-full min-w-0">
+                <span className="flex-1 truncate" title={item.title}>{item.title}</span>
                 {isMeetingItem && <EnhanceBadge status={item.enhanceStatus} />}
                 {isMeetingItem && (
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                  <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleEditStart(item.id, item.title);
                       }}
-                      className="hover:text-primary p-1 rounded-md hover:bg-primary/10 flex-shrink-0"
+                      className="p-0.5 rounded hover:text-foreground flex-shrink-0"
                       aria-label="Edit meeting title"
                     >
-                      <Pencil className="w-4 h-4" />
+                      <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         setDeleteModalState({ isOpen: true, itemId: item.id });
                       }}
-                      className="hover:text-destructive p-1 rounded-md hover:bg-destructive/10 flex-shrink-0"
+                      className="p-0.5 rounded hover:text-destructive flex-shrink-0"
                       aria-label="Delete meeting"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
@@ -509,7 +492,7 @@ const Sidebar: React.FC = () => {
 
               {/* Show transcript match snippet if available */}
               {hasTranscriptMatch && (
-                <div className="mt-1 ml-8 text-xs text-muted-foreground bg-warning/10 p-1.5 rounded border border-warning/40 line-clamp-2">
+                <div className="mt-1 text-xs text-muted-foreground line-clamp-2">
                   <span className="font-medium text-warning">Match:</span> {matchingResult.matchContext}
                 </div>
               )}
@@ -517,7 +500,7 @@ const Sidebar: React.FC = () => {
           )}
         </div>
         {item.type === 'folder' && isExpanded && item.children && (
-          <div className="ml-1">
+          <div className="space-y-px">
             {item.children.map(child => renderItem(child, depth + 1))}
           </div>
         )}
@@ -527,144 +510,85 @@ const Sidebar: React.FC = () => {
 
   return (
     <div className="fixed top-0 left-0 h-screen z-40">
-      {/* Floating collapse button */}
-      <button
-        onClick={toggleCollapse}
-        className="absolute -right-6 top-20 z-50 p-1 bg-background hover:bg-accent rounded-full shadow-lg border"
-        style={{ transform: 'translateX(50%)' }}
-      >
-        {isCollapsed ? (
-          <ChevronRightCircle className="w-6 h-6" />
-        ) : (
-          <ChevronLeftCircle className="w-6 h-6" />
-        )}
-      </button>
-
       <div
-        className={`h-screen bg-card border-r flex flex-col transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-64'
+        className={`h-screen bg-card border-r border-border flex flex-col transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-[220px]'
           }`}
       >
-        {/*  Header with traffic light spacing */}
-        <div className="flex-shrink-0 h-22 flex items-center">
+        {renderCollapsedIcons()}
 
-          {/* Title container */}
-
-
-
-          <div className="flex-1">
-            {!isCollapsed && (
-              <div className="p-3">
-                {/* <span className="text-lg text-center border rounded-full bg-primary/10 border-background font-semibold text-foreground mb-2 block items-center">
-                  <span>Meetily</span>
-                </span> */}
-                <Logo isCollapsed={isCollapsed} />
-
-                <div className="relative mb-1">
-                  <InputGroup >
-                    <InputGroupInput placeholder='Search meeting content...' value={searchQuery}
-                      onChange={(e) => handleSearchChange(e.target.value)}
-                    />
-                    <InputGroupAddon>
-                      <SearchIcon />
-                    </InputGroupAddon>
-                    {searchQuery &&
-                      <InputGroupAddon align={'inline-end'}>
-                        <InputGroupButton
-                          onClick={() => handleSearchChange('')}
-                        >
-                          <X />
-                        </InputGroupButton>
-                      </InputGroupAddon>
-                    }
-                  </InputGroup>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Main content - scrollable area */}
-        <div className="flex-1 flex flex-col min-h-0">
-          {/* Fixed navigation items */}
-          <div className="flex-shrink-0">
-            {!isCollapsed && (
-              <div
-                onClick={() => router.push('/')}
-                className="p-3  text-lg font-semibold items-center hover:bg-accent h-10   flex mx-3 mt-3 rounded-lg cursor-pointer"
-              >
-                <Home className="w-4 h-4 mr-2" />
-                <span>Home</span>
-              </div>
-            )}
-          </div>
-
-          {/* Content area */}
-          <div className="flex-1 flex flex-col min-h-0">
-            {renderCollapsedIcons()}
-            {/* Meeting Notes folder header - fixed */}
-            {!isCollapsed && (
-              <div className="flex-shrink-0">
-                {filteredSidebarItems.filter(item => item.type === 'folder').map(item => (
-                  <div key={item.id}>
-                    <div
-                      className="flex items-center transition-all duration-150 p-3 text-lg font-semibold h-10 mx-3 mt-3 rounded-lg"
-                    >
-                      <NotebookPen className="w-4 h-4 mr-2 text-muted-foreground" />
-                      <span className="text-foreground">{item.title}</span>
-                      {searchQuery && item.id === 'meetings' && isSearching && (
-                        <span className="ml-2 text-xs text-primary animate-pulse">Searching...</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Scrollable meeting items */}
-            {!isCollapsed && (
-              <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
-                {filteredSidebarItems
-                  .filter(item => item.type === 'folder' && expandedFolders.has(item.id) && item.children)
-                  .map(item => (
-                    <div key={`${item.id}-children`} className="mx-3">
-                      {item.children!.map(child => renderItem(child, 1))}
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Footer */}
         {!isCollapsed && (
+          <div className="flex flex-1 min-h-0 flex-col px-2 py-2.5">
+            {/* Wordmark routes home; the separate Home entry is gone */}
+            <div className="flex items-center justify-between px-1 pb-2">
+              <button onClick={() => router.push('/')} className="rounded-md px-1 text-sm font-semibold text-foreground">
+                <Logo isCollapsed={isCollapsed} />
+              </button>
+              <button
+                onClick={toggleCollapse}
+                aria-label="Collapse sidebar"
+                className="p-1 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <PanelLeftClose className="w-4 h-4" />
+              </button>
+            </div>
 
-          <div className="flex-shrink-0 p-2 border-t border-border">
-            <button
-              onClick={handleRecordingToggle}
-              disabled={isRecording}
-              className={`w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-white ${isRecording ? 'bg-recording/50 cursor-not-allowed' : 'bg-recording hover:bg-recording/90'} rounded-lg transition-colors`}
-            >
-              {isRecording ? (
-                <>
-                  <Square className="w-4 h-4 mr-2" />
-                  <span>Recording in progress...</span>
-                </>
-              ) : (
-                <>
-                  <Mic className="w-4 h-4 mr-2" />
-                  <span>Start Recording</span>
-                </>
+            <div className="px-1 pb-1">
+              <InputGroup className="h-8 bg-background shadow-none">
+                <InputGroupInput
+                  placeholder="Search transcripts"
+                  className="text-[13px]"
+                  value={searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                />
+                <InputGroupAddon>
+                  <SearchIcon />
+                </InputGroupAddon>
+                {searchQuery &&
+                  <InputGroupAddon align={'inline-end'}>
+                    <InputGroupButton onClick={() => handleSearchChange('')} aria-label="Clear search">
+                      <X />
+                    </InputGroupButton>
+                  </InputGroupAddon>
+                }
+              </InputGroup>
+            </div>
+
+            <div className="flex items-center gap-2 px-2 pt-2.5 pb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+              <span>Projects</span>
+              {searchQuery && isSearching && (
+                <span className="normal-case tracking-normal text-primary animate-pulse">Searching...</span>
               )}
-            </button>
+            </div>
 
+            {/* Scrollable project tree */}
+            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-px">
+              {filteredSidebarItems
+                .filter(item => item.type === 'folder' && expandedFolders.has(item.id) && item.children)
+                .map(item => (
+                  <React.Fragment key={`${item.id}-children`}>
+                    {item.children!.map(child => renderItem(child, 1))}
+                  </React.Fragment>
+                ))}
+            </div>
 
-            <button
-              onClick={() => router.push('/settings')}
-              className="w-full flex items-center justify-center px-3 py-1.5 mt-1 mb-1 text-sm font-medium text-foreground bg-accent hover:bg-accent/80 rounded-lg transition-colors"
-            >
-              <Settings className="w-4 h-4 mr-2" />
-              <span>Settings</span>
-            </button>
+            <div className="flex-shrink-0 space-y-0.5 pt-2">
+              <button
+                onClick={handleRecordingToggle}
+                disabled={isRecording}
+                className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-foreground px-3 text-[13px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                <span className={`h-[7px] w-[7px] rounded-full bg-recording ${isRecording ? 'animate-pulse' : ''}`} />
+                {isRecording ? 'Recording in progress...' : 'New recording'}
+              </button>
+
+              <button
+                onClick={() => router.push('/settings')}
+                className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-sm transition-colors hover:bg-accent/60 hover:text-foreground ${pathname === '/settings' ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}
+              >
+                <Settings className="w-3.5 h-3.5" />
+                Settings
+              </button>
+            </div>
           </div>
         )}
       </div>

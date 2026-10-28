@@ -10,6 +10,8 @@ import { useConfig } from '@/contexts/ConfigContext';
 import type { RawModelInfo } from '@/hooks/useTranscriptionModels';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { WikiAutomationSettings } from '@/components/WikiAutomationSettings'; // spec 4.8
+import { Button } from '@/components/ui/button';
+import { SettingsGroup, SettingRow } from '@/components/SettingsGroup';
 
 export interface WikiTarget { project: string; directory: string; skill: string } // spec 4.8
 
@@ -239,208 +241,146 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold mb-4">Recording Settings</h3>
-        <p className="text-sm text-muted-foreground mb-6">
-          Configure how your audio recordings are saved during meetings.
-        </p>
-      </div>
-
-      {/* Auto Save Toggle */}
-      <div className="flex items-center justify-between p-4 border rounded-lg">
-        <div className="flex-1">
-          <div className="font-medium">Save Audio Recordings</div>
-          <div className="text-sm text-muted-foreground">
-            Automatically save audio files when recording stops
-          </div>
-        </div>
-        <Switch
-          checked={preferences.auto_save}
-          onCheckedChange={handleAutoSaveToggle}
-          disabled={saving}
+      <SettingsGroup>
+        <SettingRow
+          label="Save audio recordings"
+          hint="Save the audio file when a recording stops"
+          control={<Switch checked={preferences.auto_save} onCheckedChange={handleAutoSaveToggle} disabled={saving} />}
         />
-      </div>
-
-      {/* spec 4.1: enhance after recording */}
-      <div className="p-4 border rounded-lg space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="font-medium">Enhance transcript after recording</div>
-            <div className="text-sm text-muted-foreground">
-              Re-transcribe the full recording with a slower, more accurate model as soon as it stops
-            </div>
-          </div>
-          <Switch
-            checked={preferences.auto_enhance}
-            onCheckedChange={handleAutoEnhanceToggle}
-            disabled={saving}
-          />
-        </div>
-        {preferences.auto_enhance && (
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-sm text-foreground">Model</span>
-            <Select value={preferences.enhance_model} onValueChange={handleEnhanceModelChange} disabled={saving}>
-              <SelectTrigger className="w-64">
-                <SelectValue placeholder="Pick a downloaded Whisper model" />
-              </SelectTrigger>
-              <SelectContent>
-                {enhanceModels.map((name) => (
-                  <SelectItem key={name} value={name}>{name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {enhanceModels.length === 0 && (
-              <span className="text-xs text-warning">
-                No Whisper model downloaded yet. Download one in Transcription settings.
+        {preferences.auto_save ? (
+          <SettingRow
+            label="Recordings folder"
+            hint={
+              <span className="font-mono break-all">
+                {preferences.save_folder || 'Default folder'} · {preferences.file_format.toUpperCase()}
               </span>
-            )}
+            }
+            control={
+              <Button variant="outline" size="sm" onClick={handleOpenFolder}>
+                <FolderOpen />
+                Open folder
+              </Button>
+            }
+          />
+        ) : (
+          <div className="px-3.5 py-3 text-xs text-warning">
+            Audio recording is off. Turn on "Save audio recordings" to keep the meeting audio.
           </div>
         )}
-      </div>
+        {/* spec 4.1: enhance after recording */}
+        <SettingRow
+          label="Enhance transcript after recording"
+          hint="Re-transcribe the full recording with a slower, more accurate model as soon as it stops"
+          control={<Switch checked={preferences.auto_enhance} onCheckedChange={handleAutoEnhanceToggle} disabled={saving} />}
+        >
+          {preferences.auto_enhance && (
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-[13px] text-foreground">Model</span>
+              <Select value={preferences.enhance_model} onValueChange={handleEnhanceModelChange} disabled={saving}>
+                <SelectTrigger className="h-8 w-64 text-[13px]">
+                  <SelectValue placeholder="Pick a downloaded Whisper model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {enhanceModels.map((name) => (
+                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {enhanceModels.length === 0 && (
+                <span className="text-xs text-warning">
+                  No Whisper model downloaded yet. Download one in Transcription settings.
+                </span>
+              )}
+            </div>
+          )}
+        </SettingRow>
+        <SettingRow
+          label="Recording start notification"
+          hint="Remind you to tell participants that the meeting is recorded"
+          control={<Switch checked={showRecordingNotification} onCheckedChange={handleNotificationToggle} />}
+        />
+      </SettingsGroup>
+
+      {/* spec 4.5: Zoom call detection */}
+      <SettingsGroup title="Zoom">
+        <SettingRow
+          label="Start recording when a Zoom call begins"
+          hint="Records into the project selected on the home screen"
+          control={<Switch checked={preferences.auto_start_on_call} onCheckedChange={handleAutoStartToggle} disabled={saving} />}
+        />
+        <SettingRow
+          label="Stop recording when the Zoom call ends"
+          hint="About 20 seconds after you leave the meeting, the recording stops and is saved"
+          control={<Switch checked={preferences.auto_stop_on_call_end} onCheckedChange={handleAutoStopToggle} disabled={saving} />}
+        />
+      </SettingsGroup>
+
+      {/* spec 4.4: speaker labels */}
+      <SettingsGroup title="Transcripts">
+        <SettingRow
+          label="Your name in transcripts"
+          hint='Lines from your microphone are labelled with this name; everyone else is "Others"'
+          control={
+            <Input
+              aria-label="Your name in transcripts"
+              className="h-8 w-44 text-[13px]"
+              value={ownerDraft ?? preferences.owner_name}
+              onChange={(e) => setOwnerDraft(e.target.value)}
+              onBlur={commitOwnerName}
+              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+              disabled={saving}
+            />
+          }
+        />
+      </SettingsGroup>
 
       {/* spec 4.8: wiki automation */}
       <WikiAutomationSettings preferences={preferences} onChange={applyPreferences} disabled={saving} />
 
       {/* spec 4.7: post-enhance hook */}
-      <div className="p-4 border rounded-lg">
-        <div className="font-medium">Custom command (advanced)</div>
-        <div className="text-sm text-muted-foreground mb-2">
-          Shell command started after an enhance when wiki automation is off or the project has no row above. It gets MEETILY_FOLDER, MEETILY_PROJECT, MEETILY_TITLE and MEETILY_MEETING_ID; output goes to hook.log in the meeting folder. Empty means off.
-        </div>
-        <Input
-          aria-label="Custom command (advanced)"
-          className="font-mono text-sm"
-          placeholder="~/Code/Perso/ok-meetily/scripts/post-enhance.sh"
-          value={hookDraft ?? preferences.post_enhance_command}
-          onChange={(e) => setHookDraft(e.target.value)}
-          onBlur={commitHookCommand}
-          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-          disabled={saving}
-        />
-      </div>
-
-      {/* spec 4.5: Zoom call detection */}
-      <div className="p-4 border rounded-lg space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="font-medium">Stop recording when the Zoom call ends</div>
-            <div className="text-sm text-muted-foreground">
-              About 20 seconds after you leave the meeting, the recording stops and is saved
-            </div>
-          </div>
-          <Switch checked={preferences.auto_stop_on_call_end} onCheckedChange={handleAutoStopToggle} disabled={saving} />
-        </div>
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="font-medium">Start recording when a Zoom call begins</div>
-            <div className="text-sm text-muted-foreground">
-              Records into the project selected on the home screen
-            </div>
-          </div>
-          <Switch checked={preferences.auto_start_on_call} onCheckedChange={handleAutoStartToggle} disabled={saving} />
-        </div>
-      </div>
-
-      {/* spec 4.4: speaker labels */}
-      <div className="p-4 border rounded-lg flex items-center justify-between gap-4">
-        <div className="flex-1">
-          <div className="font-medium">Your name in transcripts</div>
-          <div className="text-sm text-muted-foreground">
-            Lines from your microphone are labelled with this name; everyone else is "Others"
-          </div>
-        </div>
-        <Input
-          aria-label="Your name in transcripts"
-          className="w-44"
-          value={ownerDraft ?? preferences.owner_name}
-          onChange={(e) => setOwnerDraft(e.target.value)}
-          onBlur={commitOwnerName}
-          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-          disabled={saving}
-        />
-      </div>
-
-      {/* Folder Location - Only shown when auto_save is enabled */}
-      {preferences.auto_save && (
-        <div className="space-y-4">
-          <div className="p-4 border rounded-lg bg-card">
-            <div className="font-medium mb-2">Save Location</div>
-            <div className="text-sm text-muted-foreground mb-3 break-all">
-              {preferences.save_folder || 'Default folder'}
-            </div>
-            <button
-              onClick={handleOpenFolder}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-md hover:bg-card transition-colors"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Open Folder
-            </button>
-          </div>
-
-          <div className="p-4 border rounded-lg bg-primary/10">
-            <div className="text-sm text-primary">
-              <strong>File Format:</strong> {preferences.file_format.toUpperCase()} files
-            </div>
-            <div className="text-xs text-primary mt-1">
-              Recordings are saved with timestamp: recording_YYYYMMDD_HHMMSS.{preferences.file_format}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Info when auto_save is disabled */}
-      {!preferences.auto_save && (
-        <div className="p-4 border rounded-lg bg-warning/10">
-          <div className="text-sm text-warning">
-            Audio recording is disabled. Enable "Save Audio Recordings" to automatically save your meeting audio.
-          </div>
-        </div>
-      )}
-
-      {/* Recording Notification Toggle */}
-      <div className="flex items-center justify-between p-4 border rounded-lg">
-        <div className="flex-1">
-          <div className="font-medium">Recording Start Notification</div>
-          <div className="text-sm text-muted-foreground">
-            Show reminder to inform participants when recording starts
-          </div>
-        </div>
-        <Switch
-          checked={showRecordingNotification}
-          onCheckedChange={handleNotificationToggle}
-        />
-      </div>
+      <SettingsGroup title="Advanced">
+        <SettingRow
+          label="Custom command"
+          hint="Shell command started after an enhance when wiki automation is off or the project has no wiki. It gets MEETILY_FOLDER, MEETILY_PROJECT, MEETILY_TITLE and MEETILY_MEETING_ID; output goes to hook.log in the meeting folder. Empty means off."
+        >
+          <Input
+            aria-label="Custom command (advanced)"
+            className="h-8 font-mono text-xs"
+            placeholder="~/Code/Perso/ok-meetily/scripts/post-enhance.sh"
+            value={hookDraft ?? preferences.post_enhance_command}
+            onChange={(e) => setHookDraft(e.target.value)}
+            onBlur={commitHookCommand}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            disabled={saving}
+          />
+        </SettingRow>
+      </SettingsGroup>
 
       {/* Device Preferences */}
-      <div className="space-y-4">
-        <div className="border-t pt-6">
-          <h4 className="text-base font-medium text-foreground mb-4">Default Audio Devices</h4>
-          <p className="text-sm text-muted-foreground mb-4">
-            Set your preferred microphone and system audio devices for recording. These will be automatically selected when starting new recordings.
-          </p>
-
+      <SettingsGroup title="Default audio devices">
+        <SettingRow
+          label="Microphone and system audio"
+          hint="Selected automatically when a new recording starts"
+        >
           {isRecording && (
             <p
               role="status"
               aria-live="polite"
-              className="text-sm text-warning bg-warning/10 border border-warning/40 rounded-md p-2 mb-4"
+              className="text-xs text-warning bg-warning/10 border border-warning/40 rounded-md p-2"
             >
               Device selection is locked while a recording is in progress. Connecting a new device mid-recording will not switch to it. Stop the current meeting to change devices.
             </p>
           )}
-
-          <div className="border rounded-lg p-4 bg-card">
-            <DeviceSelection
-              selectedDevices={{
-                micDevice: preferences.preferred_mic_device,
-                systemDevice: preferences.preferred_system_device
-              }}
-              onDeviceChange={handleDeviceChange}
-              disabled={saving || isRecording}
-            />
-          </div>
-        </div>
-      </div>
+          <DeviceSelection
+            selectedDevices={{
+              micDevice: preferences.preferred_mic_device,
+              systemDevice: preferences.preferred_system_device
+            }}
+            onDeviceChange={handleDeviceChange}
+            disabled={saving || isRecording}
+          />
+        </SettingRow>
+      </SettingsGroup>
     </div>
   );
 }

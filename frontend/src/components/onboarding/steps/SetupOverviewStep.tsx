@@ -19,14 +19,6 @@ export function SetupOverviewStep() {
     checkPlatform();
   }, []);
 
-  const steps = [
-    {
-      number: 1,
-      type: 'transcription',
-      title: 'Download Transcription Engine',
-    },
-  ];
-
   const handleContinue = () => {
     goNext();
   };
@@ -39,26 +31,9 @@ export function SetupOverviewStep() {
       totalSteps={isMac ? 4 : 3}
     >
       <div className="flex flex-col items-center space-y-10">
-        {/* Steps Card */}
         <div className="w-full max-w-md bg-background rounded-lg border border-border p-4">
-          <div className="space-y-4">
-            {steps.map((step) => {
-              return (
-                <div
-                  key={step.number}
-                  className={`flex items-start gap-4 p-1`}
-                >
-                  <div className="flex-1 ml-1">
-                    <h3 className="font-medium text-foreground flex items-center gap-2">
-                        Step {step.number} :  {step.title}
-                        </h3>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <h3 className="font-medium text-foreground">Download Transcription Engine</h3>
         </div>
-
 
         {/* CTA Section */}
         <div className="w-full max-w-xs space-y-4">

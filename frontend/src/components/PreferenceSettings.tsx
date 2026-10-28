@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react"
 import { Switch } from "./ui/switch"
 import { FolderOpen } from "lucide-react"
+import { Button } from "./ui/button"
+import { SettingsGroup, SettingRow } from "./SettingsGroup"
 import { invoke } from "@tauri-apps/api/core"
 import { useConfig, NotificationSettings } from "@/contexts/ConfigContext"
 
@@ -99,12 +101,12 @@ export function PreferenceSettings() {
 
   // Show loading only if we're actually loading and don't have cached data
   if (isLoadingPreferences && !notificationSettings && !storageLocations) {
-    return <div className="max-w-2xl mx-auto p-6">Loading Preferences...</div>
+    return <div className="text-sm text-muted-foreground">Loading preferences...</div>
   }
 
   // Show loading if notificationsEnabled hasn't been determined yet
   if (notificationsEnabled === null && !isLoadingPreferences) {
-    return <div className="max-w-2xl mx-auto p-6">Loading Preferences...</div>
+    return <div className="text-sm text-muted-foreground">Loading preferences...</div>
   }
 
   // Ensure we have a boolean value for the Switch component
@@ -112,77 +114,30 @@ export function PreferenceSettings() {
 
   return (
     <div className="space-y-6">
-      {/* Notifications Section */}
-      <div className="bg-background rounded-lg border border-border p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">Notifications</h3>
-            <p className="text-sm text-muted-foreground">Enable or disable notifications of start and end of meeting</p>
-          </div>
-          <Switch checked={notificationsEnabledValue} onCheckedChange={setNotificationsEnabled} />
-        </div>
-      </div>
+      <SettingsGroup>
+        <SettingRow
+          label="Notifications"
+          hint="Notify when a meeting recording starts and ends"
+          control={<Switch checked={notificationsEnabledValue} onCheckedChange={setNotificationsEnabled} />}
+        />
+      </SettingsGroup>
 
-      {/* Data Storage Locations Section */}
-      <div className="bg-background rounded-lg border border-border p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">Data Storage Locations</h3>
-        <p className="text-sm text-muted-foreground mb-6">
-          View and access where Meetily stores your data
-        </p>
-
-        <div className="space-y-4">
-          {/* Database Location */}
-          {/* <div className="p-4 border rounded-lg bg-card">
-            <div className="font-medium mb-2">Database</div>
-            <div className="text-sm text-muted-foreground mb-3 break-all font-mono text-xs">
-              {storageLocations?.database || 'Loading...'}
-            </div>
-            <button
-              onClick={() => handleOpenFolder('database')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-md hover:bg-accent transition-colors"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Open Folder
-            </button>
-          </div> */}
-
-          {/* Models Location */}
-          {/* <div className="p-4 border rounded-lg bg-card">
-            <div className="font-medium mb-2">Whisper Models</div>
-            <div className="text-sm text-muted-foreground mb-3 break-all font-mono text-xs">
-              {storageLocations?.models || 'Loading...'}
-            </div>
-            <button
-              onClick={() => handleOpenFolder('models')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-md hover:bg-accent transition-colors"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Open Folder
-            </button>
-          </div> */}
-
-          {/* Recordings Location */}
-          <div className="p-4 border rounded-lg bg-card">
-            <div className="font-medium mb-2">Meeting Recordings</div>
-            <div className="text-sm text-muted-foreground mb-3 break-all font-mono text-xs">
-              {storageLocations?.recordings || 'Loading...'}
-            </div>
-            <button
-              onClick={() => handleOpenFolder('recordings')}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-md hover:bg-accent transition-colors"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Open Folder
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-4 p-3 bg-primary/10 rounded-md">
-          <p className="text-xs text-primary">
-            <strong>Note:</strong> Database and models are stored together in your application data directory for unified management.
-          </p>
-        </div>
-      </div>
+      <SettingsGroup title="Data storage">
+        <SettingRow
+          label="Meeting recordings"
+          hint={<span className="font-mono break-all">{storageLocations?.recordings || 'Loading...'}</span>}
+          control={
+            <Button variant="outline" size="sm" onClick={() => handleOpenFolder('recordings')}>
+              <FolderOpen />
+              Open folder
+            </Button>
+          }
+        />
+        <SettingRow
+          label="Database and models"
+          hint="Stored together in the application data directory"
+        />
+      </SettingsGroup>
     </div>
   )
 }

@@ -35,6 +35,7 @@ pub struct Transcript {
     pub audio_start_time: Option<f64>,
     pub audio_end_time: Option<f64>,
     pub duration: Option<f64>,
+    pub speaker: Option<String>, // spec 4.4
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]

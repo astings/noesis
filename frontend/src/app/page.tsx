@@ -21,6 +21,8 @@ import { TranscriptRecovery } from '@/components/TranscriptRecovery';
 import { indexedDBService } from '@/services/indexedDBService';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Copy, GlobeIcon } from 'lucide-react';
 
 export default function Home() {
   // Local page state (not moved to contexts)
@@ -29,7 +31,7 @@ export default function Home() {
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
 
   // Use contexts for state management
-  const { meetingTitle } = useTranscripts();
+  const { meetingTitle, transcripts, copyTranscript } = useTranscripts();
   const { transcriptModelConfig, selectedDevices } = useConfig();
   const recordingState = useRecordingState();
 
@@ -169,7 +171,7 @@ export default function Home() {
   const isProcessingStop = status === RecordingStatus.PROCESSING_TRANSCRIPTS || isProcessing;
 
   return (
-    <div className="flex flex-col h-screen bg-card">
+    <div className="flex flex-col h-screen bg-background">
       {/* All Modals supported*/}
       <SettingsModals
         modals={modals}
@@ -186,54 +188,56 @@ export default function Home() {
         onDelete={deleteRecoverableMeeting}
         onLoadPreview={loadMeetingTranscripts}
       />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border">
+        <h1 className="mr-auto min-w-0 truncate text-sm font-semibold">
+          {meetingTitle === '+ New Call' ? 'New recording' : meetingTitle}
+        </h1>
+        {transcripts.length > 0 && (
+          <Button variant="ghost" size="sm" className="text-[13px]" onClick={copyTranscript} title="Copy transcript">
+            <Copy />
+            Copy
+          </Button>
+        )}
+        {transcriptModelConfig.provider === 'localWhisper' && (
+          <Button variant="ghost" size="sm" className="text-[13px]" onClick={() => showModal('languageSettings')} title="Language">
+            <GlobeIcon />
+            Language
+          </Button>
+        )}
+        {/* spec 4.2 */}
+        <ProjectSelect
+          value={project}
+          onChange={(p) => { setProject(p); setLastProject(p); }}
+          disabled={isRecordingDisabled || recordingState.isRecording}
+          compact
+          className="w-auto min-w-28 gap-1.5 rounded-full text-muted-foreground shadow-none"
+        />
+      </div>
+
+      <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
         <TranscriptPanel
           isProcessingStop={isProcessingStop}
           isStopping={isStopping}
-          showModal={showModal}
         />
 
         {/* Recording controls - only show when permissions are granted or already recording and not showing status messages */}
         {(hasMicrophone || isRecording) &&
           status !== RecordingStatus.PROCESSING_TRANSCRIPTS &&
           status !== RecordingStatus.SAVING && (
-            <div className="fixed bottom-12 left-0 right-0 z-10">
-              <div
-                className="flex justify-center pl-8 transition-[margin] duration-300"
-                style={{
-                  marginLeft: sidebarCollapsed ? '4rem' : '16rem'
+            <div className="flex justify-center border-t border-border px-4 py-3.5">
+              <RecordingControls
+                isRecording={recordingState.isRecording}
+                onRecordingStop={(callApi = true) => handleRecordingStop(callApi)}
+                onRecordingStart={handleRecordingStart}
+                onStopInitiated={() => setIsStopping(true)}
+                onTranscriptionError={(message) => {
+                  showModal('errorAlert', message);
                 }}
-              >
-                <div className="w-2/3 max-w-[750px] flex justify-center">
-                  <div className="bg-background rounded-full shadow-lg flex items-center">
-                    {/* spec 4.2 */}
-                    {!recordingState.isRecording && (
-                      <div className="pl-3">
-                        <ProjectSelect
-                          value={project}
-                          onChange={(p) => { setProject(p); setLastProject(p); }}
-                          disabled={isRecordingDisabled}
-                          compact
-                        />
-                      </div>
-                    )}
-                    <RecordingControls
-                      isRecording={recordingState.isRecording}
-                      onRecordingStop={(callApi = true) => handleRecordingStop(callApi)}
-                      onRecordingStart={handleRecordingStart}
-                      onTranscriptReceived={() => { }} // Not actually used by RecordingControls
-                      onStopInitiated={() => setIsStopping(true)}
-                      onTranscriptionError={(message) => {
-                        showModal('errorAlert', message);
-                      }}
-                      isRecordingDisabled={isRecordingDisabled}
-                      isParentProcessing={isProcessingStop}
-                      selectedDevices={selectedDevices}
-                      meetingName={meetingTitle}
-                    />
-                  </div>
-                </div>
-              </div>
+                isRecordingDisabled={isRecordingDisabled}
+                isParentProcessing={isProcessingStop}
+                selectedDevices={selectedDevices}
+                meetingName={meetingTitle}
+              />
             </div>
           )}
 

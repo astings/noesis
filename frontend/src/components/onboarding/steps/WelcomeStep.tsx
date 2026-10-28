@@ -30,7 +30,7 @@ export function WelcomeStep() {
         <div className="w-16 h-px bg-border" />
 
         {/* Features Card */}
-        <div className="w-full max-w-md bg-background rounded-lg border border-border shadow-sm p-6 space-y-4">
+        <div className="w-full max-w-md bg-background rounded-lg border border-border p-6 space-y-4">
           {features.map((feature, index) => {
             const Icon = feature.icon;
             return (

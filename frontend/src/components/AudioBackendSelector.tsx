@@ -139,7 +139,7 @@ export function AudioBackendSelector({
               className={`flex items-start p-3 border rounded-lg transition-all ${
                 currentBackend === backend.id
                   ? 'border-primary bg-primary/10'
-                  : 'border-border hover:border-border bg-background'
+                  : 'border-border hover:border-primary/40 bg-background'
               } ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
             >
               <input
