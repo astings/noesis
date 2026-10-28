@@ -198,13 +198,24 @@ const Sidebar: React.FC = () => {
     try {
       await invoke<string>('assign_meeting', { meetingId, project });
       await refetchMeetings();
-      // The open details page caches folder_path; it refetches on this event.
-      await emit('meeting-moved', { meeting_id: meetingId });
       toast.success(`Moved to ${project === INBOX ? 'Inbox' : project}`);
     } catch (error) {
       toast.error('Could not move the meeting', { description: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    // The open details page caches folder_path; it refetches on this event. A failing emit must not read as a failed move.
+    try {
+      await emit('meeting-moved', { meeting_id: meetingId });
+    } catch (error) {
+      console.warn('meeting-moved emit failed:', error);
     }
   };
+
+  // Drag a meeting row onto a project section (header or its list). dragSource is the dragged meeting's current project.
+  const DRAG_TYPE = 'application/x-noesis-meeting';
+  const [dragSource, setDragSource] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const canDrop = (e: React.DragEvent, project: string) => dragSource !== null && dragSource !== project && e.dataTransfer.types.includes(DRAG_TYPE);
 
   const handleDeleteConfirm = () => {
     if (deleteModalState.itemId) {
@@ -396,9 +407,17 @@ const Sidebar: React.FC = () => {
     if (isCollapsed) return null;
 
     const isProject = item.type === 'folder';
+    const currentProject = meetings.find((m: CurrentMeeting) => m.id === item.id)?.project || INBOX;
 
     const row = (
         <div
+          draggable={isMeetingItem}
+          onDragStart={isMeetingItem ? (e) => {
+            e.dataTransfer.setData(DRAG_TYPE, item.id);
+            e.dataTransfer.effectAllowed = 'move';
+            setDragSource(currentProject);
+          } : undefined}
+          onDragEnd={isMeetingItem ? () => { setDragSource(null); setDropTarget(null); } : undefined}
           className={`group flex items-center gap-1.5 px-2 py-1 rounded-md text-sm cursor-pointer transition-colors ${isActive
             ? 'bg-accent text-foreground'
             : hasTranscriptMatch
@@ -469,10 +488,33 @@ const Sidebar: React.FC = () => {
         </div>
     );
 
-    const currentProject = meetings.find((m: CurrentMeeting) => m.id === item.id)?.project || INBOX;
+    const projectName = isProject ? item.id.slice(PROJECT_FOLDER_PREFIX.length) : '';
+    const dropProps = isProject ? {
+      onDragOver: (e: React.DragEvent) => {
+        if (!canDrop(e, projectName)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (dropTarget !== projectName) setDropTarget(projectName);
+      },
+      onDragLeave: (e: React.DragEvent) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null);
+      },
+      onDrop: (e: React.DragEvent) => {
+        setDropTarget(null);
+        if (!canDrop(e, projectName)) return;
+        e.preventDefault();
+        const id = e.dataTransfer.getData(DRAG_TYPE);
+        setDragSource(null);
+        if (id) moveMeeting(id, projectName);
+      },
+    } : {};
 
     return (
-      <div key={item.id}>
+      <div
+        key={item.id}
+        {...dropProps}
+        className={isProject && dropTarget === projectName ? 'rounded-md bg-accent ring-1 ring-primary/40' : undefined}
+      >
         {isMeetingItem ? (
           <ContextMenu onOpenChange={loadProjects}>
             <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
