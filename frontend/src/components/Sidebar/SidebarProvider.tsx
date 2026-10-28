@@ -24,15 +24,20 @@ export const PROJECT_FOLDER_PREFIX = 'project:';
 // Meetings whose manual hook start is awaiting its reply. A start failure emits a failed
 // status event and then returns Err; the caller toasts the Err, so the listener stays quiet.
 const startingHooks = new Set<string>();
+// Failed events swallowed while starting: a child can fail before the invoke reply arrives.
+const failedWhileStarting = new Set<string>();
 
 export async function runMeetingHook(meetingId: string) {
   startingHooks.add(meetingId);
   try {
-    toast.success(await invoke<string>('run_meeting_hook', { meetingId }));
+    const msg = await invoke<string>('run_meeting_hook', { meetingId });
+    if (failedWhileStarting.has(meetingId)) toast.error('Hook failed', { description: 'See hook.log in the meeting folder.' });
+    else toast.success(msg);
   } catch (error) {
     toast.error(String(error));
   } finally {
     startingHooks.delete(meetingId);
+    failedWhileStarting.delete(meetingId);
   }
 }
 
@@ -162,8 +167,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       setMeetings((prev) =>
         prev.map((m) => (m.id === event.payload.meeting_id ? { ...m, hookStatus: event.payload.status } : m)),
       );
-      if (event.payload.status === 'failed' && !startingHooks.has(event.payload.meeting_id)) {
-        toast.error('Hook failed', { description: 'See hook.log in the meeting folder.' });
+      if (event.payload.status === 'failed') {
+        if (startingHooks.has(event.payload.meeting_id)) failedWhileStarting.add(event.payload.meeting_id);
+        else toast.error('Hook failed', { description: 'See hook.log in the meeting folder.' });
       }
     }).then((fn) => {
       if (cancelled) fn();

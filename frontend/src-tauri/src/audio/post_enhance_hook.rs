@@ -171,6 +171,11 @@ pub fn dispatch_with(
                 Err(e.to_string())
             }
         },
+        // Auto run skips on hook.done, like wiki automation; a forced run always spawns.
+        None if !force && ctx.folder.join("hook.done").exists() => {
+            transition(DONE);
+            Ok(HookKind::Command)
+        }
         None => match spawn(command, ctx, Some(then)) {
             Ok(()) => Ok(HookKind::Command),
             Err(e) => {
@@ -323,6 +328,22 @@ mod tests {
         assert!(wait_until(|| seen.lock().unwrap().len() == 2));
         assert_eq!(seen.lock().unwrap()[1].1, "failed");
         assert_eq!(super::super::hook_status::memory_status("m-cmd-bad"), Some("failed"));
+    }
+
+    #[test]
+    fn dispatch_command_skips_on_hook_done_unless_forced() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("hook.done"), "x").unwrap();
+        let mut prefs = super::super::recording_preferences::RecordingPreferences::default();
+        prefs.post_enhance_command = "touch command-ran".into();
+        let (seen, notify) = recorder();
+        dispatch_with(&prefs, &read_context(dir.path(), "m-skip"), false, notify).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(!dir.path().join("command-ran").exists(), "not spawned when hook.done exists");
+        assert_eq!(seen.lock().unwrap().last().unwrap().1, "done");
+        let (_seen, notify) = recorder();
+        dispatch_with(&prefs, &read_context(dir.path(), "m-force"), true, notify).unwrap();
+        assert!(wait_until(|| dir.path().join("command-ran").exists()), "forced run spawns");
     }
 
     #[test]

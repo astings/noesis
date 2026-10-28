@@ -4,7 +4,8 @@
 # The app runs it with NOESIS_FOLDER, NOESIS_PROJECT, NOESIS_TITLE and NOESIS_MEETING_ID set,
 # from inside the meeting folder, and appends this script's output to hook.log there.
 # DRY_RUN=1 prints the claude command instead of running it.
-# A successful run writes hook.done in the meeting folder; delete that file to let a re-enhance reprocess the meeting.
+# The app owns hook.done (written on exit 0, checked before an automatic run); this script neither reads nor writes it.
+# Exit 2 means no wiki is configured for the project, which the app records as a failed hook.
 # The claude call may only read and write wiki pages: delete, move and assign_meeting are denied because the
 # session is unattended and its input is other people's words.
 set -eu
@@ -25,14 +26,9 @@ case "$NOESIS_PROJECT" in
   dex)        WIKI="$HOME/Code/Case/DEX/dex-case-tracking";     SKILL="dex-case-tracking" ;;
   recruiting) WIKI="$HOME/Code/Knowledge/recruiting";           SKILL="process-interview" ;;
   flo)        WIKI="$HOME/Code/Case/FLO/revenue-ai-knowledge";  SKILL="" ;;
-  *)          exit 0 ;;   # _inbox and unknown projects: nothing to do
+  *)          echo "no wiki configured for project $NOESIS_PROJECT"; exit 2 ;;
 esac
 
-MARKER="$NOESIS_FOLDER/hook.done"
-if [ -e "$MARKER" ]; then
-  echo "already processed ($MARKER exists), skipping"
-  exit 0
-fi
 if [ ! -d "$WIKI" ]; then
   echo "wiki directory $WIKI not found" >&2
   exit 1
@@ -57,6 +53,5 @@ echo "processing $NOESIS_MEETING_ID in $WIKI"
 claude -p "$PROMPT" --permission-mode acceptEdits --allowedTools mcp__open-knowledge mcp__noesis \
   --disallowedTools mcp__open-knowledge__delete mcp__open-knowledge__move mcp__noesis__assign_meeting \
   --max-budget-usd "$MAX_BUDGET_USD" </dev/null \
-  || { rc=$?; echo "claude failed with exit $rc, no hook.done written" >&2; exit "$rc"; }
-date > "$MARKER"
+  || { rc=$?; echo "claude failed with exit $rc, hook failed" >&2; exit "$rc"; }
 echo "done"

@@ -403,7 +403,7 @@ const Sidebar: React.FC = () => {
 
     const row = (
         <div
-          draggable={isMeetingItem}
+          draggable={isMeetingItem && item.hookStatus !== 'running'}
           onDragStart={isMeetingItem ? (e) => {
             e.dataTransfer.setData(DRAG_TYPE, item.id);
             e.dataTransfer.effectAllowed = 'move';
@@ -513,7 +513,7 @@ const Sidebar: React.FC = () => {
             <ContextMenuContent>
               <ContextMenuItem onSelect={() => handleEditStart(item.id, item.title)}>Rename</ContextMenuItem>
               <ContextMenuSub>
-                <ContextMenuSubTrigger>Move to</ContextMenuSubTrigger>
+                <ContextMenuSubTrigger disabled={item.hookStatus === 'running'}>Move to</ContextMenuSubTrigger>
                 <ContextMenuSubContent>
                   {projects.map((p) => (
                     <ContextMenuItem key={p} disabled={p === currentProject} onSelect={() => moveMeeting(item.id, p)}>
