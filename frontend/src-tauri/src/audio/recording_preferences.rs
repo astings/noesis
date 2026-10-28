@@ -51,6 +51,9 @@ pub struct RecordingPreferences {
     /// Start a recording when a Zoom meeting begins.
     #[serde(default = "default_true")]
     pub auto_start_on_call: bool,
+    /// Name an auto-started recording after the calendar event in progress.
+    #[serde(default)]
+    pub calendar_meeting_name: bool,
     // spec 4.4: how the owner is named in transcripts ("me" segments)
     #[serde(default = "default_owner_name")]
     pub owner_name: String,
@@ -127,6 +130,7 @@ impl Default for RecordingPreferences {
             enhance_language: None,
             auto_stop_on_call_end: true,
             auto_start_on_call: true,
+            calendar_meeting_name: false,
             owner_name: default_owner_name(),
             post_enhance_command: String::new(),
             wiki_automation: false,
@@ -528,6 +532,7 @@ mod tests {
         let d = RecordingPreferences::default();
         assert!(d.auto_stop_on_call_end);
         assert!(d.auto_start_on_call);
+        assert!(!p.calendar_meeting_name && !d.calendar_meeting_name);
     }
 
     #[test]

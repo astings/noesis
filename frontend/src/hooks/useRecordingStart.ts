@@ -236,8 +236,10 @@ export function useRecordingStart(
 
           // Start the actual backend recording
           try {
-            // Generate meeting title
-            const generatedMeetingTitle = generateMeetingTitle();
+            // The call detector leaves the calendar event title here when it found one
+            const calendarTitle = sessionStorage.getItem('autoStartTitle');
+            sessionStorage.removeItem('autoStartTitle');
+            const generatedMeetingTitle = calendarTitle || generateMeetingTitle();
 
             // Set STARTING status before initiating backend recording
             setStatus(RecordingStatus.STARTING, 'Initializing recording...');
