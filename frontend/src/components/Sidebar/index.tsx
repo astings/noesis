@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronDown, ChevronRight, Settings, Trash2, Pencil, Check, FolderPlus, NotebookPen, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSidebar } from './SidebarProvider';
@@ -48,10 +48,6 @@ const Sidebar: React.FC = () => {
     isCollapsed,
     toggleCollapse,
     handleRecordingToggle,
-    searchTranscripts,
-    searchResults,
-    isSearching,
-    searchQuery,
     meetings,
     setMeetings,
     refetchMeetings
@@ -89,37 +85,6 @@ const Sidebar: React.FC = () => {
 
   const [audioDeleteId, setAudioDeleteId] = useState<string | null>(null);
 const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; itemId: string | null }>({ isOpen: false, itemId: null });
-
-  // Search through transcripts as the title bar query changes
-  useEffect(() => {
-    if (searchQuery.trim()) searchTranscripts(searchQuery);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery]);
-
-  // spec 4.2: filter meetings inside project sections; drop empty sections, keep the top folder
-  const filterTree = (items: SidebarItem[], keep: (item: SidebarItem) => boolean): SidebarItem[] => {
-    const out: SidebarItem[] = [];
-    for (const item of items) {
-      if (item.type === 'folder') {
-        const children = filterTree(item.children ?? [], keep);
-        if (children.length > 0 || item.id === 'meetings') out.push({ ...item, children });
-      } else if (keep(item)) {
-        out.push(item);
-      }
-    }
-    return out;
-  };
-
-  // Combine search results with sidebar items
-  const filteredSidebarItems = useMemo(() => {
-    if (!searchQuery.trim()) return sidebarItems;
-    const q = searchQuery.toLowerCase();
-    if (searchResults.length > 0) {
-      const matchedMeetingIds = new Set(searchResults.map(result => result.id));
-      return filterTree(sidebarItems, item => matchedMeetingIds.has(item.id) || item.title.toLowerCase().includes(q));
-    }
-    return filterTree(sidebarItems, item => item.title.toLowerCase().includes(q));
-  }, [sidebarItems, searchQuery, searchResults, expandedFolders]);
 
   const handleDelete = async (itemId: string) => {
     console.log('Deleting item:', itemId);
@@ -384,22 +349,12 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
     );
   };
 
-  // Find matching transcript snippet for a meeting item
-  const findMatchingSnippet = (itemId: string) => {
-    if (!searchQuery.trim() || !searchResults.length) return null;
-    return searchResults.find(result => result.id === itemId);
-  };
-
   const renderItem = (item: SidebarItem, depth = 0) => {
     const isExpanded = item.id.startsWith(PROJECT_FOLDER_PREFIX)
       ? !collapsedProjects.has(item.id)
       : expandedFolders.has(item.id);
     const isActive = item.type === 'file' && currentMeeting?.id === item.id;
     const isMeetingItem = item.type === 'file' && item.id.includes('-') && !item.id.startsWith('intro-call');
-
-    // Check if this item has a matching transcript snippet
-    const matchingResult = isMeetingItem ? findMatchingSnippet(item.id) : null;
-    const hasTranscriptMatch = !!matchingResult;
 
     if (isCollapsed) return null;
 
@@ -417,9 +372,7 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
           onDragEnd={isMeetingItem ? () => { setDragSource(null); setDropTarget(null); } : undefined}
           className={`group flex items-center gap-1.5 px-2 py-1 rounded-md text-sm cursor-pointer transition-colors ${isActive
             ? 'bg-accent text-foreground'
-            : hasTranscriptMatch
-              ? 'bg-warning/10'
-              : isProject
+            : isProject
                 ? 'text-foreground hover:bg-accent/60'
                 : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
             }`}
@@ -472,13 +425,6 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
                   </div>
                 )}
               </div>
-
-              {/* Show transcript match snippet if available */}
-              {hasTranscriptMatch && (
-                <div className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                  <span className="font-medium text-warning">Match:</span> {matchingResult.matchContext}
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -573,14 +519,11 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
             <div className="flex h-8 items-center gap-2 px-2 text-[11px] uppercase tracking-wide text-muted-foreground">
               <NotebookPen className="w-4 h-4" />
               <span className={hideOnCollapse}>Projects</span>
-              {searchQuery && isSearching && (
-                <span className={`normal-case tracking-normal text-primary animate-pulse ${hideOnCollapse}`}>Searching...</span>
-              )}
             </div>
 
             {/* Scrollable project tree */}
             <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-px ${hideOnCollapse}`}>
-              {filteredSidebarItems
+              {sidebarItems
                 .filter(item => item.type === 'folder' && expandedFolders.has(item.id) && item.children)
                 .map(item => (
                   <React.Fragment key={`${item.id}-children`}>

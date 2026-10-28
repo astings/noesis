@@ -78,7 +78,7 @@ pub async fn rebuild(pool: &SqlitePool) -> Result<usize, String> {
     Ok(ids.len())
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Hit { pub start_seconds: f64, pub end_seconds: f64, pub snippet: String }
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MeetingHit { pub meeting_id: String, pub title: String, pub tags: Vec<String>, pub score: f64, pub hits: Vec<Hit> }

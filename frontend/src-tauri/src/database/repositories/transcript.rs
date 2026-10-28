@@ -111,6 +111,7 @@ impl TranscriptsRepository {
                 timestamp: created_at.map(|c| c.0).unwrap_or_default(),
                 tags: m.tags,
                 start_seconds: first.map(|h| h.start_seconds).unwrap_or(0.0),
+                hits: m.hits,
             });
         }
         Ok(results)
