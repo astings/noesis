@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, Settings, Trash2, Search, Pencil, NotebookPen, SearchIcon, X, PanelLeftClose, PanelLeftOpen, Home } from 'lucide-react';
+import { ChevronDown, ChevronRight, Settings, Trash2, Search, Pencil, Check, NotebookPen, SearchIcon, X, PanelLeftClose, PanelLeftOpen, Home } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSidebar } from './SidebarProvider';
 import type { CurrentMeeting } from '@/components/Sidebar/SidebarProvider';
@@ -19,6 +19,11 @@ import {
 } from "@/components/ui/dialog"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
+  ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import { INBOX } from '@/lib/projects';
 import { PROJECT_FOLDER_PREFIX } from '@/components/Sidebar/SidebarProvider';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '../ui/input-group';
 
@@ -64,7 +69,8 @@ const Sidebar: React.FC = () => {
     searchResults,
     isSearching,
     meetings,
-    setMeetings
+    setMeetings,
+    refetchMeetings
   } = useSidebar();
 
   // Get recording state from RecordingStateContext (single source of truth)
@@ -160,7 +166,7 @@ const Sidebar: React.FC = () => {
 
       // Show success toast
       toast.success("Meeting deleted successfully", {
-        description: "All associated data has been removed"
+        description: "The folder was moved to the Trash"
       });
 
       // If deleting the active meeting, navigate to home
@@ -170,9 +176,30 @@ const Sidebar: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to delete meeting:', error);
+      // The row is already gone when only the Trash move failed, so refresh the list either way.
+      await refetchMeetings();
       toast.error("Failed to delete meeting", {
         description: error instanceof Error ? error.message : String(error)
       });
+    }
+  };
+
+  // Right-click "Move to": project list is fetched when a menu opens. moveMeeting is the single move path (reused by drag-and-drop).
+  const [projects, setProjects] = useState<string[]>([INBOX]);
+  const loadProjects = (open: boolean) => {
+    if (!open) return;
+    invoke<string[]>('list_projects_command')
+      .then((list) => setProjects(Array.from(new Set([INBOX, ...list])).sort((a, b) => (a === INBOX ? -1 : b === INBOX ? 1 : a.localeCompare(b)))))
+      .catch((error) => console.warn('list_projects_command failed:', error));
+  };
+
+  const moveMeeting = async (meetingId: string, project: string) => {
+    try {
+      await invoke<string>('assign_meeting', { meetingId, project });
+      await refetchMeetings();
+      toast.success(`Moved to ${project === INBOX ? 'Inbox' : project}`);
+    } catch (error) {
+      toast.error('Could not move the meeting', { description: error instanceof Error ? error.message : String(error) });
     }
   };
 
@@ -367,8 +394,7 @@ const Sidebar: React.FC = () => {
 
     const isProject = item.type === 'folder';
 
-    return (
-      <div key={item.id}>
+    const row = (
         <div
           className={`group flex items-center gap-1.5 px-2 py-1 rounded-md text-sm cursor-pointer transition-colors ${isActive
             ? 'bg-accent text-foreground'
@@ -438,6 +464,33 @@ const Sidebar: React.FC = () => {
             </div>
           )}
         </div>
+    );
+
+    const currentProject = meetings.find((m: CurrentMeeting) => m.id === item.id)?.project || INBOX;
+
+    return (
+      <div key={item.id}>
+        {isMeetingItem ? (
+          <ContextMenu onOpenChange={loadProjects}>
+            <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem onSelect={() => handleEditStart(item.id, item.title)}>Rename</ContextMenuItem>
+              <ContextMenuSub>
+                <ContextMenuSubTrigger>Move to</ContextMenuSubTrigger>
+                <ContextMenuSubContent>
+                  {projects.map((p) => (
+                    <ContextMenuItem key={p} disabled={p === currentProject} onSelect={() => moveMeeting(item.id, p)}>
+                      <Check className={`w-3.5 h-3.5 ${p === currentProject ? '' : 'invisible'}`} />
+                      {p === INBOX ? 'Inbox' : p}
+                    </ContextMenuItem>
+                  ))}
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+              <ContextMenuSeparator />
+              <ContextMenuItem destructive onSelect={() => setDeleteModalState({ isOpen: true, itemId: item.id })}>Delete</ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+        ) : row}
         {item.type === 'folder' && isExpanded && item.children && (
           <div className="space-y-px">
             {item.children.map(child => renderItem(child, depth + 1))}
@@ -538,7 +591,7 @@ const Sidebar: React.FC = () => {
       {/* Confirmation Modal for Delete */}
       <ConfirmationModal
         isOpen={deleteModalState.isOpen}
-        text="Are you sure you want to delete this meeting? This action cannot be undone."
+        text="Delete this meeting? Its folder will be moved to the Trash."
         onConfirm={handleDeleteConfirm}
         onCancel={() => setDeleteModalState({ isOpen: false, itemId: null })}
       />
