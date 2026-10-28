@@ -231,8 +231,8 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
   if (loading) {
     return (
       <div className="animate-pulse">
-        <div className="h-4 bg-gray-200 rounded w-1/4 mb-4"></div>
-        <div className="h-8 bg-gray-200 rounded mb-4"></div>
+        <div className="h-4 bg-accent rounded w-1/4 mb-4"></div>
+        <div className="h-8 bg-accent rounded mb-4"></div>
       </div>
     );
   }
@@ -241,7 +241,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold mb-4">Recording Settings</h3>
-        <p className="text-sm text-gray-600 mb-6">
+        <p className="text-sm text-muted-foreground mb-6">
           Configure how your audio recordings are saved during meetings.
         </p>
       </div>
@@ -250,7 +250,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
       <div className="flex items-center justify-between p-4 border rounded-lg">
         <div className="flex-1">
           <div className="font-medium">Save Audio Recordings</div>
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-muted-foreground">
             Automatically save audio files when recording stops
           </div>
         </div>
@@ -266,7 +266,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <div className="font-medium">Enhance transcript after recording</div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-muted-foreground">
               Re-transcribe the full recording with a slower, more accurate model as soon as it stops
             </div>
           </div>
@@ -278,7 +278,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
         </div>
         {preferences.auto_enhance && (
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-sm text-gray-700">Model</span>
+            <span className="text-sm text-foreground">Model</span>
             <Select value={preferences.enhance_model} onValueChange={handleEnhanceModelChange} disabled={saving}>
               <SelectTrigger className="w-64">
                 <SelectValue placeholder="Pick a downloaded Whisper model" />
@@ -290,7 +290,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
               </SelectContent>
             </Select>
             {enhanceModels.length === 0 && (
-              <span className="text-xs text-amber-700">
+              <span className="text-xs text-warning">
                 No Whisper model downloaded yet. Download one in Transcription settings.
               </span>
             )}
@@ -304,7 +304,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
       {/* spec 4.7: post-enhance hook */}
       <div className="p-4 border rounded-lg">
         <div className="font-medium">Custom command (advanced)</div>
-        <div className="text-sm text-gray-600 mb-2">
+        <div className="text-sm text-muted-foreground mb-2">
           Shell command started after an enhance when wiki automation is off or the project has no row above. It gets MEETILY_FOLDER, MEETILY_PROJECT, MEETILY_TITLE and MEETILY_MEETING_ID; output goes to hook.log in the meeting folder. Empty means off.
         </div>
         <Input
@@ -324,7 +324,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <div className="font-medium">Stop recording when the Zoom call ends</div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-muted-foreground">
               About 20 seconds after you leave the meeting, the recording stops and is saved
             </div>
           </div>
@@ -333,7 +333,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <div className="font-medium">Start recording when a Zoom call begins</div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-muted-foreground">
               Records into the project selected on the home screen
             </div>
           </div>
@@ -345,7 +345,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
       <div className="p-4 border rounded-lg flex items-center justify-between gap-4">
         <div className="flex-1">
           <div className="font-medium">Your name in transcripts</div>
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-muted-foreground">
             Lines from your microphone are labelled with this name; everyone else is "Others"
           </div>
         </div>
@@ -363,25 +363,25 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
       {/* Folder Location - Only shown when auto_save is enabled */}
       {preferences.auto_save && (
         <div className="space-y-4">
-          <div className="p-4 border rounded-lg bg-gray-50">
+          <div className="p-4 border rounded-lg bg-card">
             <div className="font-medium mb-2">Save Location</div>
-            <div className="text-sm text-gray-600 mb-3 break-all">
+            <div className="text-sm text-muted-foreground mb-3 break-all">
               {preferences.save_folder || 'Default folder'}
             </div>
             <button
               onClick={handleOpenFolder}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-md hover:bg-card transition-colors"
             >
               <FolderOpen className="w-4 h-4" />
               Open Folder
             </button>
           </div>
 
-          <div className="p-4 border rounded-lg bg-blue-50">
-            <div className="text-sm text-blue-800">
+          <div className="p-4 border rounded-lg bg-primary/10">
+            <div className="text-sm text-primary">
               <strong>File Format:</strong> {preferences.file_format.toUpperCase()} files
             </div>
-            <div className="text-xs text-blue-600 mt-1">
+            <div className="text-xs text-primary mt-1">
               Recordings are saved with timestamp: recording_YYYYMMDD_HHMMSS.{preferences.file_format}
             </div>
           </div>
@@ -390,8 +390,8 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
 
       {/* Info when auto_save is disabled */}
       {!preferences.auto_save && (
-        <div className="p-4 border rounded-lg bg-yellow-50">
-          <div className="text-sm text-yellow-800">
+        <div className="p-4 border rounded-lg bg-warning/10">
+          <div className="text-sm text-warning">
             Audio recording is disabled. Enable "Save Audio Recordings" to automatically save your meeting audio.
           </div>
         </div>
@@ -401,7 +401,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
       <div className="flex items-center justify-between p-4 border rounded-lg">
         <div className="flex-1">
           <div className="font-medium">Recording Start Notification</div>
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-muted-foreground">
             Show reminder to inform participants when recording starts
           </div>
         </div>
@@ -414,8 +414,8 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
       {/* Device Preferences */}
       <div className="space-y-4">
         <div className="border-t pt-6">
-          <h4 className="text-base font-medium text-gray-900 mb-4">Default Audio Devices</h4>
-          <p className="text-sm text-gray-600 mb-4">
+          <h4 className="text-base font-medium text-foreground mb-4">Default Audio Devices</h4>
+          <p className="text-sm text-muted-foreground mb-4">
             Set your preferred microphone and system audio devices for recording. These will be automatically selected when starting new recordings.
           </p>
 
@@ -423,13 +423,13 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
             <p
               role="status"
               aria-live="polite"
-              className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2 mb-4"
+              className="text-sm text-warning bg-warning/10 border border-warning/40 rounded-md p-2 mb-4"
             >
               Device selection is locked while a recording is in progress. Connecting a new device mid-recording will not switch to it. Stop the current meeting to change devices.
             </p>
           )}
 
-          <div className="border rounded-lg p-4 bg-gray-50">
+          <div className="border rounded-lg p-4 bg-card">
             <DeviceSelection
               selectedDevices={{
                 micDevice: preferences.preferred_mic_device,

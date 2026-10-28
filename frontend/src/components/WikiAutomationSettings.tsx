@@ -50,7 +50,7 @@ export function WikiAutomationSettings({ preferences, onChange, disabled }: Prop
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="font-medium">Wiki automation</div>
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-muted-foreground">
             After each enhance, run Claude Code in the project&apos;s wiki to draft the transcript document and a log entry. Nothing is committed, scored or moved.
           </div>
         </div>
@@ -61,7 +61,7 @@ export function WikiAutomationSettings({ preferences, onChange, disabled }: Prop
           aria-label="Wiki automation"
         />
       </div>
-      <div className="text-xs text-gray-500">
+      <div className="text-xs text-muted-foreground">
         {claudePath === undefined
           ? 'Looking for Claude Code...'
           : claudePath
@@ -120,7 +120,7 @@ export function WikiAutomationSettings({ preferences, onChange, disabled }: Prop
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="text-sm text-gray-600">Cost cap per run (USD)</div>
+        <div className="text-sm text-muted-foreground">Cost cap per run (USD)</div>
         <Input
           aria-label="Cost cap per run in USD"
           className="w-24"
