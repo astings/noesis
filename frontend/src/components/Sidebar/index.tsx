@@ -396,7 +396,7 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
                 ? 'text-foreground hover:bg-accent/60'
                 : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
             }`}
-          style={isProject ? undefined : { paddingLeft: '22px' }}
+          style={isProject ? undefined : { paddingLeft: '14px' }}
           onClick={() => {
             if (item.type === 'folder') {
               toggleFolder(item.id);
@@ -424,7 +424,7 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
                 )}
                 <span className="flex-1 truncate" title={started ? `${item.title}\n${fullDateFmt.format(started)}` : item.title}>{item.title}</span>
                 {isMeetingItem && (
-                  <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                  <div className="ml-1 hidden flex-none items-center group-hover:flex group-focus-within:flex">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
