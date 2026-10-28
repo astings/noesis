@@ -74,7 +74,7 @@ pub async fn load_for(pool: &SqlitePool, provider: &str, model: &str) -> Result<
     Ok(cfg)
 }
 
-pub const NO_SUMMARY_MODEL: &str = "No summary model configured. Set one in Settings, Summary.";
+pub const NO_SUMMARY_MODEL: &str = "No summary model configured. Set one in Settings, Recordings, Summary model.";
 
 /// The summary model configured in Settings.
 pub async fn load(pool: &SqlitePool) -> Result<LlmConfig, String> {

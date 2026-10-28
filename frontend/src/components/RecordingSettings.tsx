@@ -44,6 +44,96 @@ interface RecordingSettingsProps {
   onSave?: (preferences: RecordingPreferences) => void;
 }
 
+const SUMMARY_PROVIDERS: { value: string; label: string; placeholder: string }[] = [
+  { value: 'builtin-ai', label: 'Built-in', placeholder: 'gemma3:1b' },
+  { value: 'ollama', label: 'Ollama', placeholder: 'llama3.2' },
+  { value: 'claude', label: 'Claude', placeholder: 'claude-haiku-4-5' },
+  { value: 'openai', label: 'OpenAI', placeholder: 'gpt-4o-mini' },
+  { value: 'groq', label: 'Groq', placeholder: 'llama-3.1-8b-instant' },
+  { value: 'openrouter', label: 'OpenRouter', placeholder: 'openai/gpt-4o-mini' },
+];
+const KEYED_PROVIDERS = ['claude', 'openai', 'groq', 'openrouter'];
+
+/** Picks the LLM used for automatic titles and tags (reads and writes the same settings row as summaries). */
+function SummaryModelSettings() {
+  const [provider, setProvider] = useState('builtin-ai');
+  const [model, setModel] = useState('');
+  const [endpoint, setEndpoint] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [hasKey, setHasKey] = useState(false);
+  const [whisperModel, setWhisperModel] = useState('large-v3');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    invoke<{ provider: string; model: string; whisperModel: string; apiKey: string | null; ollamaEndpoint: string | null } | null>('api_get_model_config')
+      .then((c) => {
+        if (!c) return;
+        setProvider(c.provider);
+        setModel(c.model);
+        setEndpoint(c.ollamaEndpoint ?? '');
+        setHasKey(!!c.apiKey);
+        if (c.whisperModel) setWhisperModel(c.whisperModel);
+      })
+      .catch((e) => console.error('Failed to load summary model', e));
+  }, []);
+
+  const known = SUMMARY_PROVIDERS.find((p) => p.value === provider);
+  const custom = !known;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await invoke('api_save_model_config', {
+        provider,
+        model: model.trim(),
+        whisperModel,
+        apiKey: apiKey.trim() || null,
+        ollamaEndpoint: provider === 'ollama' ? endpoint.trim() || null : null,
+      });
+      if (apiKey.trim()) setHasKey(true);
+      setApiKey('');
+      toast.success('Summary model saved');
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SettingsGroup title="Summary model">
+      <SettingRow label="Provider" hint="Used to name and tag meetings. Built-in and Ollama stay on this Mac.">
+        <Select value={provider} onValueChange={(v) => { setProvider(v); setHasKey(false); }} disabled={saving}>
+          <SelectTrigger aria-label="Provider" className="h-8 text-[13px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {SUMMARY_PROVIDERS.map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+            {custom && <SelectItem value={provider} disabled>Custom (configured elsewhere)</SelectItem>}
+          </SelectContent>
+        </Select>
+      </SettingRow>
+      <SettingRow label="Model">
+        <Input aria-label="Model" className="h-8 text-[13px]" value={model} placeholder={known?.placeholder} onChange={(e) => setModel(e.target.value)} disabled={saving} />
+      </SettingRow>
+      {provider === 'ollama' && (
+        <SettingRow label="Ollama endpoint">
+          <Input aria-label="Ollama endpoint" className="h-8 text-[13px]" value={endpoint} placeholder="http://localhost:11434" onChange={(e) => setEndpoint(e.target.value)} disabled={saving} />
+        </SettingRow>
+      )}
+      {KEYED_PROVIDERS.includes(provider) && (
+        <SettingRow label="API key">
+          <Input aria-label="API key" type="password" autoComplete="off" className="h-8 text-[13px]" value={apiKey} placeholder={hasKey ? 'Saved' : 'Paste a key'} onChange={(e) => setApiKey(e.target.value)} disabled={saving} />
+        </SettingRow>
+      )}
+      <SettingRow label="Save summary model" control={
+        <Button size="sm" variant="outline" onClick={save} disabled={saving || !model.trim()}>
+          {saving && <Loader2 className="animate-spin" />}
+          Save
+        </Button>
+      } />
+    </SettingsGroup>
+  );
+}
+
 export function RecordingSettings({ onSave }: RecordingSettingsProps) {
   const [preferences, setPreferences] = useState<RecordingPreferences>({
     save_folder: '',
@@ -364,6 +454,8 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
 
       {/* spec 4.8: wiki automation */}
       <WikiAutomationSettings preferences={preferences} onChange={applyPreferences} disabled={saving} />
+
+      <SummaryModelSettings />
 
       <SettingsGroup title="Titles, tags and audio">
         <SettingRow

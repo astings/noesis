@@ -45,7 +45,7 @@ The summary provider configured in the app (built-in model, Ollama, Claude, Groq
 
 ### Errors
 
-Every failure is logged and leaves the meeting as it was. Enhance stays `done`. No summary model configured: "No summary model configured. Set one in Settings, Summary."
+Every failure is logged and leaves the meeting as it was. Enhance stays `done`. No summary model configured: "No summary model configured. Set one in Settings, Recordings, Summary model."
 
 ## 2. Search
 
