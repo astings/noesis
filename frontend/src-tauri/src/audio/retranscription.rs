@@ -327,7 +327,7 @@ fn split_at_boundaries(segment: &crate::audio::vad::SpeechSegment, boundaries_ms
 
 /// Find audio file in meeting folder
 /// Tries common names first, then scans for any file with an audio extension
-fn find_audio_file(folder: &Path) -> Result<PathBuf> {
+pub(crate) fn find_audio_file(folder: &Path) -> Result<PathBuf> {
     let candidates = [
         "audio.mp4", "audio.m4a", "audio.wav", "audio.mp3",
         "audio.flac", "audio.ogg", "recording.mp4",
@@ -367,7 +367,14 @@ async fn run_retranscription<R: Runtime>(
     provider: Option<String>,
 ) -> Result<RetranscriptionResult> {
     let folder_path = PathBuf::from(&meeting_folder_path);
-    let audio_path = find_audio_file(&folder_path)?;
+    let audio_path = find_audio_file(&folder_path).map_err(|e| {
+        let removed = std::fs::read_to_string(folder_path.join("metadata.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .map(|m| m.get("audio_deleted_at").and_then(|v| v.as_str()).is_some())
+            .unwrap_or(false);
+        if removed { anyhow!("Audio was removed after enhance") } else { e }
+    })?;
 
     // Determine which provider to use (default to whisper)
     let use_parakeet = provider.as_deref() == Some("parakeet");

@@ -56,6 +56,7 @@ pub mod library;
 // spec phase 9 section 2: ranked full-text index
 pub mod search_index;
 pub mod meeting_tagging;
+pub mod audio_cleanup;
 // spec 4.3: transcript.md contract
 pub mod transcript_md;
 // spec 4.4: speaker labels from per-stream energy

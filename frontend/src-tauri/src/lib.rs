@@ -617,6 +617,11 @@ pub fn run() {
                 });
             }
 
+            // spec phase 9 section 3: delete audio after enhance, hourly
+
+            // spec phase 9 section 3: delete audio after enhance, hourly
+            tauri::async_runtime::spawn(audio::audio_cleanup::run(_app.handle().clone()));
+
             // spec 4.5: stop (and optionally start) recordings with the Zoom meeting
             #[cfg(target_os = "macos")]
             {
@@ -870,6 +875,8 @@ pub fn run() {
             audio::meeting_tagging::run_meeting_tagging,
             audio::meeting_tagging::tag_untagged_meetings,
             audio::meeting_tagging::list_tagging_statuses,
+            audio::audio_cleanup::delete_meeting_audio,
+            audio::audio_cleanup::get_meeting_extras,
             audio::library::list_projects_command,
             audio::wiki_automation::locate_claude_cli,
             audio::wiki_automation::select_wiki_directory,

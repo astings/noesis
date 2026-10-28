@@ -70,10 +70,19 @@ pub struct RecordingPreferences {
     // spec phase 9 section 1: the summary model names and tags meetings after enhance
     #[serde(default = "default_true")]
     pub auto_title_tags: bool,
+    // spec phase 9 section 3: delete audio once the enhanced transcript is on disk
+    #[serde(default = "default_true")]
+    pub delete_audio_after_enhance: bool,
+    #[serde(default = "default_audio_retention_hours")]
+    pub audio_retention_hours: u32,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_audio_retention_hours() -> u32 {
+    24
 }
 
 fn default_wiki_budget_usd() -> f64 {
@@ -115,6 +124,8 @@ impl Default for RecordingPreferences {
             wiki_budget_usd: default_wiki_budget_usd(),
             hook_auto_run: false,
             auto_title_tags: default_true(),
+            delete_audio_after_enhance: default_true(),
+            audio_retention_hours: default_audio_retention_hours(),
         }
     }
 }
@@ -522,6 +533,16 @@ mod tests {
         let p: RecordingPreferences = serde_json::from_str(old).unwrap();
         assert!(p.auto_title_tags);
         assert!(RecordingPreferences::default().auto_title_tags);
+    }
+
+    #[test]
+    fn audio_cleanup_defaults_on_with_24_hours() {
+        let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
+        let p: RecordingPreferences = serde_json::from_str(old).unwrap();
+        assert!(p.delete_audio_after_enhance);
+        assert_eq!(p.audio_retention_hours, 24);
+        assert!(RecordingPreferences::default().delete_audio_after_enhance);
+        assert_eq!(RecordingPreferences::default().audio_retention_hours, 24);
     }
 
     #[test]
