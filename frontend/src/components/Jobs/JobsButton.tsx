@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { isTerminal, useJobs, type Job, type JobState } from '@/hooks/useJobs';
 
-const KIND = { enhance: 'Enhance', summary: 'Summary', download: 'Download' } as const;
+const KIND = { enhance: 'Enhance', summary: 'Summary', download: 'Download', tagging: 'Title/tags' } as const;
 const ordinal = (n: number) => `${n}${['th', 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] ?? 'th'}`;
 const eta = (s: number) => (s < 60 ? '<1 min left' : `~${Math.round(s / 60)} min left`);
 const clock = (ms: number) => {
@@ -67,7 +67,8 @@ export function JobsButton() {
       <span className="min-w-0 truncate font-medium">{name(j)}</span>
     );
 
-  const cancel = (j: Job) => (
+  // one meeting's title/tags is a single LLM call that cannot be interrupted, so it gets no Cancel
+  const cancel = (j: Job) => j.kind === 'tagging' && j.meeting_id ? null : (
     <button type="button" aria-label={`Cancel ${KIND[j.kind]} of ${name(j)}`} title="Cancel" onClick={() => call('cancel_job', j.id)}
       className="flex h-6 w-6 flex-none items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground">
       <X className="h-3.5 w-3.5" />

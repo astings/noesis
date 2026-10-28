@@ -5,7 +5,7 @@ import { listen } from '@tauri-apps/api/event';
 export type JobState = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 export interface Job {
   id: string;
-  kind: 'enhance' | 'summary' | 'download';
+  kind: 'enhance' | 'summary' | 'download' | 'tagging';
   meeting_id: string | null;
   title: string;
   state: JobState;

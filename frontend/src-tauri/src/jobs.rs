@@ -24,6 +24,7 @@ pub enum JobKind {
     Enhance,
     Summary,
     Download,
+    Tagging,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -57,6 +58,8 @@ pub enum Control {
     WhisperDownload,
     ParakeetDownload,
     BuiltinDownload,
+    /// one meeting (`meeting_id` set) or the "tag untagged meetings" batch (`meeting_id` None)
+    Tagging,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -448,6 +451,8 @@ pub async fn cancel_job(app: AppHandle, id: String) -> Result<(), String> {
             crate::summary::summary_engine::commands::builtin_ai_cancel_download(app.clone(), app.state(), job.title.clone()).await?;
             finish(&id, Outcome::Cancelled); // its download error path is silent on cancel
         }
+        // the batch checks the flag between meetings; one LLM call is not interruptible
+        Control::Tagging => {}
     }
     Ok(())
 }
@@ -487,6 +492,10 @@ pub async fn retry_job(app: AppHandle, id: String) -> Result<(), String> {
                 let state = app.state::<crate::summary::summary_engine::commands::ModelManagerState>();
                 crate::summary::summary_engine::commands::builtin_ai_download_model(app.clone(), state, model).await
             }
+            Control::Tagging => match job.meeting_id {
+                Some(meeting_id) => crate::audio::meeting_tagging::run_meeting_tagging(app, meeting_id).await.map(|_| ()),
+                None => crate::audio::meeting_tagging::tag_untagged_meetings(app).await.map(|_| ()),
+            },
             Control::Summary { .. } => Ok(()),
         };
         if let Err(e) = result {
