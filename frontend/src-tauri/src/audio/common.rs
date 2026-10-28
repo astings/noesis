@@ -46,16 +46,6 @@ pub(crate) async fn unload_engine_after_batch(use_parakeet: bool) {
     }
 }
 
-/// Create transcript segments from transcription results.
-/// Each tuple is (text, start_ms, end_ms) from VAD timestamps.
-pub(crate) fn create_transcript_segments(transcripts: &[(String, f64, f64)]) -> Vec<TranscriptSegment> {
-    let labelled: Vec<(String, f64, f64, Option<String>)> = transcripts
-        .iter()
-        .map(|(text, s, e)| (text.clone(), *s, *e, None))
-        .collect();
-    create_labelled_transcript_segments(&labelled)
-}
-
 /// spec 4.4: segments with an optional speaker label ("me", "them", "both")
 pub(crate) fn create_labelled_transcript_segments(transcripts: &[(String, f64, f64, Option<String>)]) -> Vec<TranscriptSegment> {
     transcripts

@@ -23,7 +23,7 @@ interface TranscriptModelConfig {
  * Custom hook for fetching and managing transcription models (Whisper and Parakeet).
  *
  * This hook centralizes the model fetching logic that was previously duplicated
- * in ImportAudioDialog and RetranscribeDialog components.
+ * in the RetranscribeDialog component.
  *
  * @param transcriptModelConfig - User's saved model configuration from context
  * @returns Object containing available models, selected model key, loading state, and fetch function
