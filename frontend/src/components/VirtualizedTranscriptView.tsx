@@ -8,6 +8,7 @@ import { ConfidenceIndicator } from "./ConfidenceIndicator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { motion } from "framer-motion";
 import { TranscriptSegmentData } from "@/types";
+import { hitSegmentIndex } from "@/lib/hitSegment";
 
 export interface VirtualizedTranscriptViewProps {
     /** Transcript segments to display */
@@ -33,6 +34,9 @@ export interface VirtualizedTranscriptViewProps {
     totalCount?: number;
     loadedCount?: number;
     onLoadMore?: () => void;
+
+    /** Search hit block (seconds..end): scroll to the segment in it that best matches query, flash it once per key */
+    highlight?: { seconds: number; end: number; query: string; key: string };
 }
 
 // Threshold for enabling virtualization (below this, use simple rendering)
@@ -79,6 +83,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
     confidence,
     isStreaming,
     showConfidence,
+    flash = false,
 }: {
     id: string;
     timestamp: number;
@@ -87,12 +92,13 @@ const TranscriptSegment = memo(function TranscriptSegment({
     confidence?: number;
     isStreaming: boolean;
     showConfidence: boolean;
+    flash?: boolean;
 }) {
     const displayText = cleanStopWords(text) || (text.trim() === '' ? '[Silence]' : text);
     const who = speaker ? SPEAKER_LABEL[speaker] : undefined;
 
     return (
-        <div id={`segment-${id}`} className="grid grid-cols-[56px_1fr] gap-3 max-w-[72ch] pb-3.5">
+        <div id={`segment-${id}`} className={`grid grid-cols-[56px_1fr] gap-3 max-w-[72ch] pb-3.5 ${flash ? 'search-flash' : ''}`}>
             <Tooltip>
                 <TooltipTrigger asChild>
                     <span className="font-mono text-xs leading-[1.6] text-muted-foreground tabular-nums text-left">
@@ -131,6 +137,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
     totalCount = 0,
     loadedCount = 0,
     onLoadMore,
+    highlight,
 }) => {
     // Create scroll ref first - shared between virtualizer and auto-scroll hook
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -230,6 +237,29 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
     // Use simple rendering for small lists, virtualization for large lists
     const useVirtualization = segments.length >= VIRTUALIZATION_THRESHOLD;
 
+    // Search hit: page in until the hit time is loaded, scroll to its segment, flash it
+    const [flashId, setFlashId] = useState<string | null>(null);
+    const handledKeyRef = useRef<string | null>(null);
+    useEffect(() => {
+        if (!highlight || handledKeyRef.current === highlight.key || segments.length === 0) return;
+        if (segments[segments.length - 1].timestamp < highlight.end && hasMore) {
+            if (!isLoadingMore) onLoadMore?.();
+            return;
+        }
+        handledKeyRef.current = highlight.key;
+        const index = hitSegmentIndex(segments, highlight.seconds, highlight.end, highlight.query);
+        const id = segments[index].id;
+        if (useVirtualization) virtualizer.scrollToIndex(index, { align: 'center' });
+        else document.getElementById(`segment-${id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        setFlashId(id);
+    }, [highlight, segments, hasMore, isLoadingMore, onLoadMore, useVirtualization, virtualizer]);
+    // drop the class once the 2s animation is over, so the next hit on the same segment replays it
+    useEffect(() => {
+        if (!flashId) return;
+        const timer = setTimeout(() => setFlashId(null), 2000);
+        return () => clearTimeout(timer);
+    }, [flashId, highlight?.key]);
+
     return (
         <div ref={scrollRef} className="flex flex-col h-full overflow-y-auto px-6 py-5">
             <div>
@@ -294,6 +324,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         confidence={segment.confidence}
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
+                                        flash={flashId === segment.id}
                                     />
                                 </div>
                             );
@@ -351,6 +382,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         confidence={segment.confidence}
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
+                                        flash={flashId === segment.id}
                                     />
                                 </motion.div>
                             );

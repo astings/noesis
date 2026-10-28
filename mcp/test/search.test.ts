@@ -51,6 +51,14 @@ test('title hit ranks first, text hits carry block times, legacy is searched', (
   assert.equal(wd.hits[0].start_seconds, 80);
   assert.match(wd.hits[0].snippet, /\*\*budget\*\*/);
   assert.ok(r.some((m) => m.project === '_inbox'));
+  assert.ok(r[0].title_match && !r[0].hits[0].text_match);
+  assert.ok(!wd.title_match && wd.hits[0].text_match);
+});
+
+test('tag hit names the matched tag and is not a text match', () => {
+  const [m] = searchMeetings(root, { query: 'western' });
+  assert.deepEqual(m.matched_tags, ['western-digital']);
+  assert.ok(!m.title_match && !m.hits[0].text_match);
 });
 
 test('filters: tags, project, since', () => {

@@ -78,29 +78,38 @@ pub async fn rebuild(pool: &SqlitePool) -> Result<usize, String> {
     Ok(ids.len())
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Hit { pub start_seconds: f64, pub end_seconds: f64, pub snippet: String, pub text_match: bool }
+/// Title and tags are the same on every block of a meeting, so the best row's snippets say whether they matched.
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct Hit { pub start_seconds: f64, pub end_seconds: f64, pub snippet: String }
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct MeetingHit { pub meeting_id: String, pub title: String, pub tags: Vec<String>, pub score: f64, pub hits: Vec<Hit> }
+pub struct MeetingHit { pub meeting_id: String, pub title: String, pub tags: Vec<String>, pub score: f64, pub hits: Vec<Hit>, pub title_match: bool, pub matched_tags: Vec<String> }
+
+/// Tags whose words carry the snippet's ** marks (tags column, space-joined).
+fn marked_tags(tags_snippet: &str) -> Vec<String> {
+    tags_snippet.split_whitespace().filter(|t| t.contains("**")).map(|t| t.replace("**", "")).collect()
+}
 
 pub async fn search(pool: &SqlitePool, query: &str, limit: usize) -> Result<Vec<MeetingHit>, String> {
     let Some(q) = fts_query(query) else { return Ok(vec![]) };
-    let rows: Vec<(String, f64, f64, String, String, String, f64)> = sqlx::query_as(
+    let rows: Vec<(String, f64, f64, String, String, String, f64, String, String)> = sqlx::query_as(
         "SELECT meeting_id, start_seconds, end_seconds, title, tags, \
-         snippet(search_index, 5, '**', '**', '…', 24), bm25(search_index, 0, 0, 0, 5.0, 3.0, 1.0) AS score \
+         snippet(search_index, 5, '**', '**', '…', 24), bm25(search_index, 0, 0, 0, 5.0, 3.0, 1.0) AS score, \
+         snippet(search_index, 3, '**', '**', '', 64), snippet(search_index, 4, '**', '**', '', 64) \
          FROM search_index WHERE search_index MATCH ? ORDER BY score LIMIT 500")
         .bind(&q).fetch_all(pool).await
         // search-as-you-type: an FTS5 syntax error (e.g. a lone quote) is "no results", not an error
         .unwrap_or_else(|e| { log::debug!("search index: query {:?} failed: {}", q, e); vec![] });
     let mut out: Vec<MeetingHit> = Vec::new();
-    for (id, start, end, title, tags, snip, score) in rows {
-        let hit = Hit { start_seconds: start, end_seconds: end, snippet: snip };
+    for (id, start, end, title, tags, snip, score, title_snip, tags_snip) in rows {
+        let hit = Hit { start_seconds: start, end_seconds: end, text_match: snip.contains("**"), snippet: snip };
         match out.iter_mut().find(|m| m.meeting_id == id) {
             Some(m) => if m.hits.len() < 3 { m.hits.push(hit) },
             None => out.push(MeetingHit {
                 meeting_id: id, title, score,
                 tags: tags.split_whitespace().map(String::from).collect(),
                 hits: vec![hit],
+                title_match: title_snip.contains("**"),
+                matched_tags: marked_tags(&tags_snip),
             }),
         }
     }
@@ -166,8 +175,12 @@ mod tests {
         assert_eq!(r.iter().map(|m| m.meeting_id.as_str()).collect::<Vec<_>>(), vec!["m-title", "m-text"]);
         assert_eq!(r[1].hits[0].start_seconds, 30.0);
         assert!(r[1].hits[0].snippet.contains("**budget**"));
+        assert!(r[0].title_match && r[0].matched_tags.is_empty() && !r[0].hits[0].text_match);
+        assert!(!r[1].title_match && r[1].hits[0].text_match);
         let by_tag = search(&p, "finance", 10).await.unwrap();
         assert_eq!(by_tag[0].tags, vec!["finance"]);
+        assert_eq!(by_tag[0].matched_tags, vec!["finance"]);
+        assert!(!by_tag[0].title_match && !by_tag[0].hits[0].text_match);
         assert!(search(&p, "\"", 10).await.unwrap().is_empty());
     }
 }

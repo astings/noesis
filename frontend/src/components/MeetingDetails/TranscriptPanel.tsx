@@ -4,6 +4,7 @@ import { Transcript, TranscriptSegmentData } from '@/types';
 import { VirtualizedTranscriptView } from '@/components/VirtualizedTranscriptView';
 import { TranscriptButtonGroup } from './TranscriptButtonGroup';
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useSidebar, MEETING_EXTRAS_CHANGED } from '@/components/Sidebar/SidebarProvider';
@@ -67,6 +68,17 @@ export function TranscriptPanel({
       speaker: t.speaker,
     }));
   }, [transcripts, usePagination, segments]);
+
+  // set by a title bar search hit: /meeting-details?id=…&t=<block start>&e=<block end>&q=<query>&n=<click>
+  const searchParams = useSearchParams();
+  const t = searchParams.get('t');
+  const e = searchParams.get('e');
+  const q = searchParams.get('q') ?? '';
+  const n = searchParams.get('n');
+  const highlight = useMemo(
+    () => (t ? { seconds: Number(t), end: Number(e ?? t), query: q, key: `${t}|${n}` } : undefined),
+    [t, e, q, n],
+  );
 
   const { meetings, refetchMeetings } = useSidebar();
   const status = meetings.find((m) => m.id === meetingId);
@@ -167,6 +179,7 @@ export function TranscriptPanel({
           totalCount={totalCount}
           loadedCount={loadedCount}
           onLoadMore={onLoadMore}
+          highlight={highlight}
         />
       </div>
     </div>

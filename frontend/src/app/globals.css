@@ -48,6 +48,19 @@
   animation: fade-in 0.4s ease-out;
 }
 
+/* a search hit landing in the transcript: hold, then fade out */
+@keyframes search-flash {
+  0%, 30% { background-color: hsl(var(--warning) / 0.25); }
+  100% { background-color: transparent; }
+}
+
+.search-flash {
+  animation: search-flash 2s ease-out;
+  border-radius: 6px;
+  margin-inline: -0.5rem;
+  padding-inline: 0.5rem;
+}
+
 @keyframes fade-in-up {
   from {
     opacity: 0;
