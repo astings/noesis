@@ -7,6 +7,7 @@ import { useSidebar } from './SidebarProvider';
 import type { CurrentMeeting } from '@/components/Sidebar/SidebarProvider';
 import { ConfirmationModal } from '../ConfirmationModel/confirmation-modal';
 import { invoke } from '@tauri-apps/api/core';
+import { emit } from '@tauri-apps/api/event';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
@@ -197,6 +198,8 @@ const Sidebar: React.FC = () => {
     try {
       await invoke<string>('assign_meeting', { meetingId, project });
       await refetchMeetings();
+      // The open details page caches folder_path/transcript (meeting-details/page.tsx:89); it refetches on this event (page.tsx:40).
+      await emit('retranscription-complete', { meeting_id: meetingId });
       toast.success(`Moved to ${project === INBOX ? 'Inbox' : project}`);
     } catch (error) {
       toast.error('Could not move the meeting', { description: error instanceof Error ? error.message : String(error) });
