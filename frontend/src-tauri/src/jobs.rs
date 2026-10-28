@@ -329,6 +329,10 @@ fn update<T>(f: impl FnOnce(&mut Registry) -> (T, bool)) -> T {
 pub fn add(id: &str, kind: JobKind, meeting_id: Option<&str>, title: &str, control: Control, running: bool) {
     update(|r| (r.add(id, kind, meeting_id, title, control, running, Instant::now()), true))
 }
+/// Summary jobs are started and finished in different functions; both derive the id.
+pub fn summary_id(meeting_id: &str, started_at: DateTime<Utc>) -> String {
+    format!("summary:{}:{}", meeting_id, started_at.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true))
+}
 pub fn start(id: &str) {
     update(|r| (r.start(id, Instant::now()), true))
 }

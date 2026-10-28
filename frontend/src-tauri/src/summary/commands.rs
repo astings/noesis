@@ -525,6 +525,14 @@ pub async fn api_process_transcript<R: Runtime>(
 
     let cancellation_token =
         SummaryService::register_cancellation_token(&m_id, started_at);
+    crate::jobs::add(
+        &crate::jobs::summary_id(&m_id, started_at),
+        crate::jobs::JobKind::Summary,
+        Some(&m_id),
+        "",
+        crate::jobs::Control::Summary { started_at },
+        true,
+    );
     let meeting_id_clone = m_id.clone();
     tauri::async_runtime::spawn(async move {
         SummaryService::process_transcript_background(

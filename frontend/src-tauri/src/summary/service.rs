@@ -508,6 +508,7 @@ impl SummaryService {
 
         let duration = start_time.elapsed().as_secs_f64();
 
+        let job = crate::jobs::summary_id(&meeting_id, started_at);
         match result {
             Ok(generated) => {
                 info!(
@@ -524,6 +525,7 @@ impl SummaryService {
                 ) {
                     Ok(result) => result,
                     Err(error) => {
+                        crate::jobs::finish(&crate::jobs::summary_id(&meeting_id, started_at), crate::jobs::Outcome::Failed(error.to_string()));
                         Self::update_process_failed(&pool, &meeting_id, started_at, &error).await;
                         Self::cleanup_cancellation_token(&meeting_id, started_at);
                         return;
@@ -573,8 +575,10 @@ impl SummaryService {
                         meeting_id, error
                     ),
                 }
+                crate::jobs::finish(&job, crate::jobs::Outcome::Done);
             }
             Err(error) if cancellation_token.is_cancelled() => {
+                crate::jobs::finish(&job, crate::jobs::Outcome::Cancelled);
                 match SummaryProcessesRepository::update_process_cancelled(
                     &pool,
                     &meeting_id,
@@ -591,6 +595,7 @@ impl SummaryService {
                 }
             }
             Err(error) => {
+                crate::jobs::finish(&job, crate::jobs::Outcome::Failed(error.to_string()));
                 Self::update_process_failed(&pool, &meeting_id, started_at, &error).await;
             }
         }
@@ -604,6 +609,7 @@ impl SummaryService {
         started_at: DateTime<Utc>,
         error_msg: &str,
     ) {
+        crate::jobs::finish(&crate::jobs::summary_id(meeting_id, started_at), crate::jobs::Outcome::Failed(error_msg.to_string()));
         Self::update_process_failed(pool, meeting_id, started_at, error_msg).await;
         Self::cleanup_cancellation_token(meeting_id, started_at);
     }

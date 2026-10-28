@@ -151,11 +151,15 @@ pub async fn builtin_ai_download_model<R: Runtime>(
             .ok_or_else(|| "Model manager not initialized".to_string())?
             .clone() // Clone the Arc, not the ModelManager
     };
+    let job_id = uuid::Uuid::new_v4().to_string();
+    crate::jobs::add(&job_id, crate::jobs::JobKind::Download, None, &model_name, crate::jobs::Control::BuiltinDownload, true);
+    let job_id_cb = job_id.clone();
     // IMPORTANT: Only emit "downloading" status here, never "completed"
     // Completion event is emitted AFTER download task fully finishes (validation, etc.)
     let app_clone = app.clone();
     let model_name_clone = model_name.clone();
     let progress_callback = Box::new(move |progress: DownloadProgress| {
+        crate::jobs::progress(&job_id_cb, progress.percent as u8, Some(format!("{:.0} / {:.0} MB", progress.downloaded_mb, progress.total_mb)));
         let _ = app_clone.emit(
             "builtin-ai-download-progress",
             serde_json::json!({
@@ -174,6 +178,7 @@ pub async fn builtin_ai_download_model<R: Runtime>(
         .await
     {
         Ok(_) => {
+            crate::jobs::finish(&job_id, crate::jobs::Outcome::Done);
             // Download task completed successfully (validation passed, status set to Available)
             let _ = app.emit(
                 "builtin-ai-download-progress",
@@ -193,7 +198,10 @@ pub async fn builtin_ai_download_model<R: Runtime>(
 
             // Check if this is a cancellation error (marked with "CANCELLED:" prefix)
             // Don't emit error event for cancellations - cancel command already emits cancelled event
-            if !error_msg.starts_with("CANCELLED:") {
+            if error_msg.starts_with("CANCELLED:") {
+                crate::jobs::finish(&job_id, crate::jobs::Outcome::Cancelled);
+            } else {
+                crate::jobs::finish(&job_id, crate::jobs::Outcome::Failed(error_msg.clone()));
                 // Emit error via progress event for frontend to display (only for real errors)
                 let _ = app.emit(
                     "builtin-ai-download-progress",

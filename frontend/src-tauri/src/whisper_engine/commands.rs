@@ -429,12 +429,16 @@ pub async fn whisper_download_model(
     };
 
     if let Some(engine) = engine {
+        let job_id = uuid::Uuid::new_v4().to_string();
+        crate::jobs::add(&job_id, crate::jobs::JobKind::Download, None, &model_name, crate::jobs::Control::WhisperDownload, true);
+        let job_id_cb = job_id.clone();
         // Create progress callback that emits events
         let app_handle_clone = app_handle.clone();
         let model_name_clone = model_name.clone();
 
         let progress_callback = Box::new(move |progress: u8| {
             log::info!("Download progress for {}: {}%", model_name_clone, progress);
+            crate::jobs::progress(&job_id_cb, progress, None);
 
             // Emit download progress event
             if let Err(e) = app_handle_clone.emit(
@@ -454,6 +458,7 @@ pub async fn whisper_download_model(
 
         match result {
             Ok(()) => {
+                crate::jobs::finish(&job_id, crate::jobs::Outcome::Done);
                 // Emit completion event
                 if let Err(e) = app_handle.emit(
                     "model-download-complete",
@@ -470,9 +475,11 @@ pub async fn whisper_download_model(
                 // emit a terminal event or reject the original request, which would
                 // otherwise overwrite that path's Missing state with an error.
                 log::info!("Download cancelled for {}", model_name);
+                crate::jobs::finish(&job_id, crate::jobs::Outcome::Cancelled);
                 Ok(())
             }
             Err(e) => {
+                crate::jobs::finish(&job_id, crate::jobs::Outcome::Failed(e.to_string()));
                 // Emit error event
                 if let Err(emit_e) = app_handle.emit(
                     "model-download-error",
