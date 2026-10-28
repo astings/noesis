@@ -112,6 +112,8 @@ impl TranscriptsRepository {
                 tags: m.tags,
                 start_seconds: first.map(|h| h.start_seconds).unwrap_or(0.0),
                 hits: m.hits,
+                title_match: m.title_match,
+                matched_tags: m.matched_tags,
             });
         }
         Ok(results)

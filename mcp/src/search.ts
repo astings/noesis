@@ -4,7 +4,7 @@ import { parseBound } from './paths.ts';
 
 export type SearchOpts = { query: string; project?: string; tags?: string[]; since?: string; until?: string; limit?: number };
 export type SearchResult = Pick<MeetingInfo, 'meeting_id' | 'project' | 'title' | 'started_at' | 'tags' | 'path'>
-  & { score: number; hits: { start_seconds: number; end_seconds: number; snippet: string }[] };
+  & { score: number; title_match: boolean; matched_tags: string[]; hits: { start_seconds: number; end_seconds: number; snippet: string; text_match: boolean }[] };
 
 export function ftsQuery(input: string): string | null {
   const terms = input.split(/\s+/).filter(Boolean).map((t) => `"${t.replaceAll('"', '""')}"`);
@@ -45,17 +45,19 @@ export function searchMeetings(root: string, o: SearchOpts): SearchResult[] {
     const blocks = buildBlocks(segs);
     for (const b of blocks.length ? blocks : [{ start: 0, end: 0, text: '' }]) ins.run(i, b.start, b.end, m.title, m.tags.join(' '), b.text);
   });
-  let rows: { idx: number; start_seconds: number; end_seconds: number; snip: string; score: number }[] = [];
+  let rows: { idx: number; start_seconds: number; end_seconds: number; snip: string; score: number; title_snip: string; tags_snip: string }[] = [];
   try {
-    rows = db.prepare("SELECT idx, start_seconds, end_seconds, snippet(s, 5, '**', '**', '…', 24) AS snip, bm25(s, 0, 0, 0, 5.0, 3.0, 1.0) AS score FROM s WHERE s MATCH ? ORDER BY score LIMIT 500").all(q) as typeof rows;
+    rows = db.prepare("SELECT idx, start_seconds, end_seconds, snippet(s, 5, '**', '**', '…', 24) AS snip, bm25(s, 0, 0, 0, 5.0, 3.0, 1.0) AS score, snippet(s, 3, '**', '**', '', 64) AS title_snip, snippet(s, 4, '**', '**', '', 64) AS tags_snip FROM s WHERE s MATCH ? ORDER BY score LIMIT 500").all(q) as typeof rows;
   } catch { return []; } finally { db.close(); }
   const out = new Map<number, SearchResult>();
   for (const r of rows) {
-    const hit = { start_seconds: r.start_seconds, end_seconds: r.end_seconds, snippet: r.snip };
+    const hit = { start_seconds: r.start_seconds, end_seconds: r.end_seconds, snippet: r.snip, text_match: r.snip.includes('**') };
     const cur = out.get(r.idx);
     if (cur) { if (cur.hits.length < 3) cur.hits.push(hit); continue; }
     const { meeting_id, project, title, started_at, tags, path } = meetings[r.idx];
-    out.set(r.idx, { meeting_id, project, title, started_at, tags, path, score: r.score, hits: [hit] });
+    // same on every block of a meeting, so the best row says whether title and tags matched (as audio/search_index.rs)
+    const matched_tags = r.tags_snip.split(/\s+/).filter((t) => t.includes('**')).map((t) => t.replaceAll('**', ''));
+    out.set(r.idx, { meeting_id, project, title, started_at, tags, path, score: r.score, title_match: r.title_snip.includes('**'), matched_tags, hits: [hit] });
   }
   return [...out.values()].slice(0, o.limit ?? 10);
 }

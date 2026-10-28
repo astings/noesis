@@ -50,6 +50,8 @@ pub struct TranscriptSearchResult {
     pub start_seconds: f64,
     /// up to 3 best blocks in this meeting; matchContext and start_seconds are the first
     pub hits: Vec<crate::audio::search_index::Hit>,
+    pub title_match: bool,
+    pub matched_tags: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -55,7 +55,7 @@ server.registerTool(
 server.registerTool(
   'search_meetings',
   {
-    description: 'Keyword search (not semantic) over meeting titles, tags and transcript text under the Noesis recordings root. Ranked best first; each hit has start_seconds and end_seconds. Try synonyms and the other language if nothing matches, then call get_transcript with start_seconds/end_seconds around a hit to read the context.',
+    description: 'Keyword search (not semantic) over meeting titles, tags and transcript text under the Noesis recordings root. Ranked best first; each hit has start_seconds and end_seconds, and text_match is false when the block was returned only because the title (title_match) or tags (matched_tags) matched. Try synonyms and the other language if nothing matches, then call get_transcript with start_seconds/end_seconds around a hit to read the context.',
     inputSchema: {
       query: z.string().describe('Words to find; all must appear, the last one matches as a prefix.'),
       project: z.string().optional().describe('Project folder name, e.g. "dex". "_inbox" for untagged and legacy meetings.'),

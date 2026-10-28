@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, SearchIcon, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, SearchIcon, Tag, X } from 'lucide-react';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
 
@@ -24,8 +24,20 @@ export function TitleBar() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  // one row per hit, grouped under its meeting; the arrow keys walk this flat list
-  const rows = searchResults.flatMap((r) => r.hits.map((h) => ({ id: r.id, ...h })));
+  // per meeting: its header (opens the meeting), then one row per transcript hit; the arrow keys walk this flat list.
+  // blocks returned only because the title or a tag matched are not content hits, so they get no row
+  const groups = searchResults.map((r) => ({ ...r, contentHits: r.hits.filter((h) => h.text_match) }));
+  const rows = groups.flatMap((r) => [
+    { id: r.id, hit: undefined as (typeof r.hits)[number] | undefined },
+    ...r.contentHits.map((hit) => ({ id: r.id, hit })),
+  ]);
+  const option = (i: number) => ({
+    type: 'button' as const,
+    role: 'option',
+    'aria-selected': i === active,
+    onMouseEnter: () => setActive(i),
+    onClick: () => go(i),
+  });
   const navButton = 'flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/60 hover:text-foreground';
 
   useEffect(() => {
@@ -43,10 +55,11 @@ export function TitleBar() {
     const r = rows[i];
     if (!r) return;
     setOpen(false);
+    if (!r.hit) { router.push(`/meeting-details?id=${r.id}`); return; }
     // a hit is a block of segments (t..e); q lets the transcript find the segment holding the words.
     // n makes a repeat click on the same hit a new URL, so the transcript scrolls and flashes again
     const q = encodeURIComponent(searchQuery.trim());
-    router.push(`/meeting-details?id=${r.id}&t=${r.start_seconds}&e=${r.end_seconds}&q=${q}&n=${Date.now()}`);
+    router.push(`/meeting-details?id=${r.id}&t=${r.hit.start_seconds}&e=${r.hit.end_seconds}&q=${q}&n=${Date.now()}`);
   };
 
   const showResults = open && searchQuery.trim() !== '';
@@ -108,28 +121,31 @@ export function TitleBar() {
               {rows.length === 0 ? (
                 <div className="px-2 py-1.5 text-xs text-muted-foreground">{isSearching ? 'Searching…' : 'No results'}</div>
               ) : (
-                searchResults.map((r) => (
-                  <div key={r.id} className="py-0.5">
-                    <div className="truncate px-2 pt-1 text-[13px] font-medium">{r.title}</div>
-                    {r.hits.map((h) => {
-                      const i = rows.findIndex((row) => row.id === r.id && row.start_seconds === h.start_seconds);
-                      return (
-                        <button
-                          key={h.start_seconds}
-                          type="button"
-                          role="option"
-                          aria-selected={i === active}
-                          className={`flex w-full items-baseline gap-2 rounded px-2 py-1 text-left text-xs ${i === active ? 'bg-accent' : 'hover:bg-accent/60'}`}
-                          onMouseEnter={() => setActive(i)}
-                          onClick={() => go(i)}
-                        >
-                          <span className="flex-none font-mono text-[11px] tabular-nums text-muted-foreground">{formatTime(h.start_seconds)}</span>
-                          <span className="line-clamp-2 text-muted-foreground"><Snippet text={h.snippet} /></span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))
+                groups.map((r) => {
+                  const head = rows.findIndex((row) => row.id === r.id && !row.hit);
+                  return (
+                    <div key={r.id} className="py-0.5">
+                      <button {...option(head)} className={`flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-[13px] ${head === active ? 'bg-accent' : 'hover:bg-accent/60'}`}>
+                        <span className={`min-w-0 flex-1 truncate font-medium ${r.title_match ? 'text-primary' : ''}`} title={r.title_match ? 'Title matches' : undefined}>{r.title}</span>
+                        {/* tag hit: pill with a tag icon, unlike content hits (time + snippet rows) */}
+                        {r.matched_tags.map((tag) => (
+                          <span key={tag} title="Tag matches" className="flex flex-none items-center gap-1 rounded-full border border-warning/40 bg-warning/15 px-1.5 py-px text-[11px] text-foreground">
+                            <Tag className="h-3 w-3 text-warning" />{tag}
+                          </span>
+                        ))}
+                      </button>
+                      {r.contentHits.map((h) => {
+                        const i = rows.findIndex((row) => row.hit === h);
+                        return (
+                          <button key={h.start_seconds} {...option(i)} className={`flex w-full items-baseline gap-2 rounded py-1 pl-4 pr-2 text-left text-xs ${i === active ? 'bg-accent' : 'hover:bg-accent/60'}`}>
+                            <span className="flex-none font-mono text-[11px] tabular-nums text-muted-foreground">{formatTime(h.start_seconds)}</span>
+                            <span className="line-clamp-2 text-muted-foreground"><Snippet text={h.snippet} /></span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })
               )}
             </div>
           )}

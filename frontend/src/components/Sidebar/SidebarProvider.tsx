@@ -85,7 +85,9 @@ interface TranscriptSearchResult {
   tags: string[];
   start_seconds: number;
   // up to 3 best blocks in the meeting, best first (audio/search_index.rs)
-  hits: { start_seconds: number; end_seconds: number; snippet: string }[];
+  hits: { start_seconds: number; end_seconds: number; snippet: string; text_match: boolean }[];
+  title_match: boolean;
+  matched_tags: string[];
 }
 
 interface SidebarContextType {
