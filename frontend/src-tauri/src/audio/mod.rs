@@ -53,6 +53,7 @@ pub mod enhance_status;
 
 // spec 4.2: meeting library on disk (folders, projects, scan, reconcile)
 pub mod library;
+pub mod adopt;
 // spec phase 9 section 2: ranked full-text index
 pub mod search_index;
 pub mod meeting_tagging;

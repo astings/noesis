@@ -184,9 +184,8 @@ fn read_entry(root: &Path, folder: &Path) -> Option<LibraryEntry> {
     })
 }
 
-/// Every v2 meeting under `<root>/<project>/<meeting>/`. Legacy flat folders
-/// have `meeting_id: null` and are skipped; the MCP server reads them directly.
-pub fn scan(root: &Path) -> Vec<LibraryEntry> {
+/// Every folder holding a metadata.json: `<root>/<project>/<meeting>/` plus legacy `<root>/<meeting>/`.
+pub fn meeting_folders(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let Ok(projects) = std::fs::read_dir(root) else { return out };
     for project in projects.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()) {
@@ -194,16 +193,19 @@ pub fn scan(root: &Path) -> Vec<LibraryEntry> {
             continue;
         }
         if project.path().join("metadata.json").exists() {
-            continue; // legacy meeting at the root
+            out.push(project.path()); // legacy meeting at the root
+            continue;
         }
         let Ok(meetings) = std::fs::read_dir(project.path()) else { continue };
-        for meeting in meetings.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()) {
-            if let Some(entry) = read_entry(root, &meeting.path()) {
-                out.push(entry);
-            }
-        }
+        out.extend(meetings.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.join("metadata.json").exists()));
     }
     out
+}
+
+/// Every meeting with a `meeting_id` in its metadata.json. Legacy flat folders count once
+/// adoption (audio/adopt.rs) has written their id; until then they are skipped.
+pub fn scan(root: &Path) -> Vec<LibraryEntry> {
+    meeting_folders(root).iter().filter_map(|f| read_entry(root, f)).collect()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -235,9 +237,14 @@ pub fn plan_reconcile(
     updates
 }
 
-/// Update folder_path and title in SQLite from what is on disk. Returns the number of rows changed.
+/// Link or import folders the database does not know (audio/adopt.rs), then update folder_path and
+/// title in SQLite from what is on disk. Returns the number of rows changed.
 /// ponytail: reads every metadata.json on each call; fine for a few hundred meetings, cache the scan if it grows.
 pub async fn reconcile(pool: &sqlx::SqlitePool, root: &Path) -> Result<usize> {
+    let mut touched = super::adopt::adopt(pool, root).await.unwrap_or_else(|e| {
+        log::warn!("Library adopt failed: {}", e);
+        vec![]
+    });
     let rows: Vec<(String, Option<String>, String)> =
         sqlx::query_as("SELECT id, folder_path, title FROM meetings")
             .fetch_all(pool)
@@ -253,6 +260,15 @@ pub async fn reconcile(pool: &sqlx::SqlitePool, root: &Path) -> Result<usize> {
             .execute(pool)
             .await?;
         log::info!("Reconciled meeting {} to {}", u.meeting_id, u.folder_path);
+        touched.push(u.meeting_id.clone());
+    }
+    // title and folder changes reach the search index too
+    touched.sort();
+    touched.dedup();
+    for id in &touched {
+        if let Err(e) = super::search_index::reindex_meeting(pool, id).await {
+            log::warn!("search index: reindex after reconcile failed for {}: {}", id, e);
+        }
     }
     Ok(updates.len())
 }
@@ -572,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    fn scan_lists_v2_meetings_and_skips_legacy_folders() {
+    fn scan_lists_meetings_with_ids_including_adopted_legacy_folders() {
         let root = tempfile::tempdir().unwrap();
         write_meta(
             &root.path().join("dex").join("2026-10-27_12-03 wd"),
@@ -587,12 +603,16 @@ mod tests {
             r#"{"version":"1.0","meeting_id":null}"#,
         );
         write_meta(
+            &root.path().join("Meeting 30_09_26_11_56_04_2026-09-30_15-56"),
+            r#"{"version":"1.0","meeting_id":"meeting-d","meeting_name":"Meeting 30_09_26_11_56_04","title":"Adopted"}"#,
+        );
+        write_meta(
             &root.path().join("dex").join("2026-10-27_14-00"),
             r#"{"version":"2.0","meeting_id":"meeting-c","title":"","meeting_name":"Fallback"}"#,
         );
         let mut entries = scan(root.path());
         entries.sort_by(|x, y| x.meeting_id.cmp(&y.meeting_id));
-        assert_eq!(entries.len(), 3);
+        assert_eq!(entries.len(), 4, "the legacy folder without an id is skipped, the adopted one is not");
         assert_eq!(entries[0].meeting_id, "meeting-a");
         assert_eq!(entries[0].project, "dex");
         assert_eq!(entries[0].title.as_deref(), Some("WD"));
@@ -600,6 +620,7 @@ mod tests {
         assert_eq!(entries[1].project, "_inbox");
         assert_eq!(entries[1].title.as_deref(), Some("Meeting 27_10_26_13_00_00"), "falls back to meeting_name");
         assert_eq!(entries[2].title.as_deref(), Some("Fallback"), "empty title is ignored, meeting_name used");
+        assert_eq!((entries[3].project.as_str(), entries[3].title.as_deref()), ("_inbox", Some("Adopted")));
     }
 
     #[test]
