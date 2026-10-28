@@ -58,3 +58,12 @@ Section 5 of the personal-recorder spec changes only in names: the folder layout
 ## 7. Testing
 
 Rust unit tests for the migration planner and executor (temp dirs), the folder_path rewrite (in-memory SQLite), the pending-project move, and Trash-on-delete path selection. MCP `node --test` for the root lookup order. Frontend type-check and build. A manual smoke run on real data is done by the owner, after a backup, because the first launch migrates real directories.
+
+## 8. Addendum (2026-10-28): hook control, status tags, submenu
+
+- The post-enhance hook (wiki automation, or the custom command for projects without a wiki row) no longer runs automatically unless the new preference `hook_auto_run` (default false, also false for existing preference files) is on. Settings shows it as "Run hook automatically after enhance".
+- A "Run hook" action (meeting page next to Enhance, and the sidebar right-click menu) runs the same dispatch on demand. A manual run ignores an existing `hook.done` (it is a deliberate re-run) and refuses only while the meeting is being recorded. With nothing configured it returns "No hook configured. Set one in Settings, Recordings."
+- The custom command also writes `hook.done` when it exits 0, so both hook kinds report the same status.
+- Hook status per meeting: `running` (in memory while the child runs), `done` (`hook.done` exists), `failed` (last run in this session exited non-zero or did not start), none otherwise. Exposed by `list_hook_statuses` and the `hook-status-changed` event, mirroring `list_enhance_statuses` / `enhance-status-changed`.
+- Meeting rows and the meeting page header show two small status icons with tooltips: enhance (done, queued, running, failed) and hook (done, running, failed). Done states are shown, not hidden.
+- The right-click "Move to" trigger shows a chevron. Its submenu ends with a separator and "New project…", which opens a name dialog (same validation as `ProjectSelect`'s "New project...") and moves the meeting into the new project.
