@@ -7,13 +7,12 @@ import { ProjectSelect } from '@/components/ProjectSelect';
 import { INBOX, projectOfFolder } from '@/lib/projects';
 import { useSidebar, runMeetingHook, runMeetingTagging, deleteMeetingAudio } from '@/components/Sidebar/SidebarProvider';
 import { Button } from '@/components/ui/button';
-import { Copy, FolderOpen, RefreshCw, Tags, Trash2, Webhook } from 'lucide-react';
+import { ChevronDown, FolderOpen, RefreshCw, Tags, Trash2, Webhook } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ConfirmationModal } from '@/components/ConfirmationModel/confirmation-modal';
 import { RetranscribeDialog } from './RetranscribeDialog';
 
 interface TranscriptButtonGroupProps {
-  transcriptCount: number;
-  onCopyTranscript: () => void;
   onOpenMeetingFolder: () => Promise<void>;
   meetingId?: string;
   meetingFolderPath?: string | null;
@@ -22,8 +21,6 @@ interface TranscriptButtonGroupProps {
 }
 
 export function TranscriptButtonGroup({
-  transcriptCount,
-  onCopyTranscript,
   onOpenMeetingFolder,
   meetingId,
   meetingFolderPath,
@@ -70,18 +67,6 @@ export function TranscriptButtonGroup({
   return (
     <>
       <Button
-        variant="outline"
-        size="sm"
-        className="px-2.5 text-[13px] shadow-none"
-        onClick={onCopyTranscript}
-        disabled={transcriptCount === 0}
-        title={transcriptCount === 0 ? 'No transcript available' : 'Copy transcript'}
-      >
-        <Copy />
-        Copy
-      </Button>
-
-      <Button
         size="sm"
         variant="outline"
         className="px-2.5 text-[13px] shadow-none"
@@ -101,47 +86,37 @@ export function TranscriptButtonGroup({
             compact
             className="w-auto min-w-28 gap-1.5 px-2.5 text-[13px] shadow-none"
           />
-          <Button
-            size="sm"
-            className="px-2.5 text-[13px] shadow-none"
-            onClick={() => setShowRetranscribeDialog(true)}
-            disabled={audioDeleted}
-            title={audioGone ?? 'Retranscribe to enhance your recorded audio'}
-          >
-            <RefreshCw />
-            Enhance
-          </Button>
-          <Button
-            size="sm"
-            className="px-2.5 text-[13px] shadow-none"
-            onClick={() => runMeetingHook(meetingId)}
-            disabled={hookRunning}
-            title="Run the post-enhance hook for this meeting"
-          >
-            <Webhook />
-            Run hook
-          </Button>
-          <Button
-            size="sm"
-            className="px-2.5 text-[13px] shadow-none"
-            onClick={() => runMeetingTagging(meetingId)}
-            disabled={taggingRunning}
-            title="Name and tag this meeting with the summary model"
-          >
-            <Tags />
-            Title &amp; tags
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="px-2.5 text-[13px] text-destructive shadow-none"
-            onClick={() => setShowDeleteAudio(true)}
-            disabled={audioDeleted}
-            title={audioGone ?? 'Delete the audio of this meeting'}
-          >
-            <Trash2 />
-            Delete audio
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" className="px-2.5 text-[13px] shadow-none">
+                Actions
+                <ChevronDown />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem disabled={audioDeleted} title={audioGone} onSelect={() => setShowRetranscribeDialog(true)}>
+                <RefreshCw />
+                Enhance
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={hookRunning} onSelect={() => runMeetingHook(meetingId)}>
+                <Webhook />
+                Run hook
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={taggingRunning} onSelect={() => runMeetingTagging(meetingId)}>
+                <Tags />
+                Title &amp; tags
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                disabled={audioDeleted}
+                title={audioGone}
+                onSelect={() => setShowDeleteAudio(true)}
+              >
+                <Trash2 />
+                Delete audio
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <ConfirmationModal
             isOpen={showDeleteAudio}
             text="Delete the audio of this meeting? The transcript stays. Enhance and playback will no longer be possible."

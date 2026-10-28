@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, Settings, Trash2, Search, Pencil, Check, FolderPlus, NotebookPen, SearchIcon, X, PanelLeftClose, PanelLeftOpen, Home } from 'lucide-react';
+import { ChevronDown, ChevronRight, Settings, Trash2, Search, Pencil, Check, FolderPlus, NotebookPen, SearchIcon, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSidebar } from './SidebarProvider';
 import type { CurrentMeeting } from '@/components/Sidebar/SidebarProvider';
@@ -27,6 +27,7 @@ import {
 import { INBOX, normalizeProjectName } from '@/lib/projects';
 import { PROJECT_FOLDER_PREFIX, runMeetingHook, runMeetingTagging, deleteMeetingAudio } from '@/components/Sidebar/SidebarProvider';
 import { MeetingStatusTags } from '@/components/MeetingStatusTags';
+import { RetranscribeDialog } from '@/components/MeetingDetails/RetranscribeDialog';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '../ui/input-group';
 
 interface SidebarItem {
@@ -180,6 +181,17 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
 
   // "New project...": the dialog normalizes the name like ProjectSelect; assign_meeting creates the folder.
   const [newProject, setNewProject] = useState<{ meetingId: string; draft: string } | null>(null);
+  // The dialog needs the folder path, which the meeting list does not carry
+  const [enhanceTarget, setEnhanceTarget] = useState<{ meetingId: string; folderPath: string } | null>(null);
+  const openEnhance = async (meetingId: string) => {
+    try {
+      const { folder_path } = await invoke<{ folder_path?: string }>('api_get_meeting_metadata', { meetingId });
+      if (!folder_path) throw new Error('This meeting has no recording folder');
+      setEnhanceTarget({ meetingId, folderPath: folder_path });
+    } catch (error) {
+      toast.error('Could not enhance the meeting', { description: error instanceof Error ? error.message : String(error) });
+    }
+  };
   const confirmNewProject = () => {
     if (!newProject) return;
     const name = normalizeProjectName(newProject.draft);
@@ -293,8 +305,22 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
     setExpandedFolders(newExpanded);
   };
 
+  // On collapse the expanded tree stays mounted for the 300ms width animation, so it slides shut
+  // instead of popping; on expand the swap is immediate and the growing edge reveals it.
+  const [showRail, setShowRail] = useState(isCollapsed);
+  useEffect(() => {
+    if (!isCollapsed) {
+      setShowRail(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowRail(true), 300);
+    return () => clearTimeout(timer);
+  }, [isCollapsed]);
+  // Labels vanish on the first collapse frame; icons stay put and only the edge slides
+  const hideOnCollapse = isCollapsed ? 'opacity-0' : '';
+
   const renderCollapsedIcons = () => {
-    if (!isCollapsed) return null;
+    if (!showRail) return null;
 
     const isMeetingPage = pathname?.includes('/meeting-details');
     const isSettingsPage = pathname === '/settings';
@@ -302,9 +328,11 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
 
     return (
       <TooltipProvider>
-        <div className="flex flex-1 flex-col items-center gap-1 py-2.5">
-          <button onClick={() => router.push('/')} aria-label="Home" className={`${railButton} mb-2`}>
-            <Home className="w-4 h-4" />
+        {/* Fixed w-16 so content never reflows while the container animates; icon column sits at x=24 in both states */}
+        <div className="flex w-16 flex-1 flex-col items-center gap-1 py-2.5">
+          <button onClick={() => router.push('/')} aria-label="Home" className="grid h-10 w-10 place-items-center rounded-md">
+
+            <img src="/logo.png" alt="" className="w-7 h-7" />
           </button>
 
           <Tooltip>
@@ -530,6 +558,7 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
                   </ContextMenuItem>
                 </ContextMenuSubContent>
               </ContextMenuSub>
+              <ContextMenuItem onSelect={() => openEnhance(item.id)}>Enhance</ContextMenuItem>
               <ContextMenuItem disabled={item.hookStatus === 'running'} onSelect={() => runMeetingHook(item.id)}>Run hook</ContextMenuItem>
               <ContextMenuItem disabled={item.taggingStatus === 'running'} onSelect={() => runMeetingTagging(item.id)}>Regenerate title &amp; tags</ContextMenuItem>
               <ContextMenuItem onSelect={() => setAudioDeleteId(item.id)}>Delete audio</ContextMenuItem>
@@ -550,33 +579,36 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
   return (
     <div className="fixed top-0 left-0 h-screen z-40">
       <div
-        className={`h-screen bg-card border-r border-border flex flex-col transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-[220px]'
+        className={`h-screen overflow-hidden bg-card border-r border-border flex flex-col transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-[220px]'
           }`}
       >
         {renderCollapsedIcons()}
 
-        {!isCollapsed && (
-          <div className="flex flex-1 min-h-0 flex-col px-2 py-2.5">
-            {/* Wordmark routes home; the separate Home entry is gone */}
-            <div className="flex items-center px-1 pb-2">
-              <button onClick={() => router.push('/')} className="rounded-md px-1 text-sm font-semibold text-foreground">
-                Noesis
+        {!showRail && (
+          // Fixed width and px-4 keep every icon on the rail's x=24 column, so toggling only slides the edge
+          <div className="flex w-[220px] flex-1 min-h-0 flex-col px-4 py-2.5">
+            {/* Logo routes home; the separate Home entry is gone */}
+            <div className="mb-1 flex h-10 items-center">
+              <button onClick={() => router.push('/')} className="flex items-center gap-2 rounded-md pl-0.5 text-sm font-semibold text-foreground">
+                <img src="/logo.png" alt="" className="w-7 h-7" />
+                <span className={hideOnCollapse}>Noesis</span>
               </button>
             </div>
 
-            <div className="px-1 pb-1">
-              <InputGroup className="h-8 bg-background shadow-none">
+            <div className="pb-1">
+              <InputGroup className={`h-8 shadow-none ${isCollapsed ? 'border-transparent bg-transparent' : 'bg-background'}`}>
                 <InputGroupInput
                   placeholder="Search transcripts"
-                  className="text-[13px]"
+                  className={`text-[13px] ${hideOnCollapse}`}
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
                 />
-                <InputGroupAddon>
+                {/* pl-[7px] + 1px border lands the icon on x=24 */}
+                <InputGroupAddon className="pl-[7px]">
                   <SearchIcon />
                 </InputGroupAddon>
                 {searchQuery &&
-                  <InputGroupAddon align={'inline-end'}>
+                  <InputGroupAddon align={'inline-end'} className={hideOnCollapse}>
                     <InputGroupButton onClick={() => handleSearchChange('')} aria-label="Clear search">
                       <X />
                     </InputGroupButton>
@@ -585,15 +617,17 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
               </InputGroup>
             </div>
 
-            <div className="flex items-center gap-2 px-2 pt-2.5 pb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
-              <span>Projects</span>
+            {/* h-8 right under the search keeps NotebookPen level with the rail's */}
+            <div className="flex h-8 items-center gap-2 px-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+              <NotebookPen className="w-4 h-4" />
+              <span className={hideOnCollapse}>Projects</span>
               {searchQuery && isSearching && (
-                <span className="normal-case tracking-normal text-primary animate-pulse">Searching...</span>
+                <span className={`normal-case tracking-normal text-primary animate-pulse ${hideOnCollapse}`}>Searching...</span>
               )}
             </div>
 
             {/* Scrollable project tree */}
-            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-px">
+            <div className={`flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-px ${hideOnCollapse}`}>
               {filteredSidebarItems
                 .filter(item => item.type === 'folder' && expandedFolders.has(item.id) && item.children)
                 .map(item => (
@@ -603,22 +637,24 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
                 ))}
             </div>
 
-            <div className="flex-shrink-0 space-y-0.5 pt-2">
+            <div className="flex-shrink-0 space-y-1 pt-2">
+              {/* Dot stays where the rail's dot is: px-3 matches the rail's centred 8px dot.
+                  On collapse the bar shrinks to the rail's 32px square in step with the edge. */}
               <button
                 onClick={handleRecordingToggle}
                 disabled={isRecording}
-                className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-foreground px-3 text-[13px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+                className={`flex h-8 items-center gap-2 overflow-hidden whitespace-nowrap rounded-md bg-foreground px-3 text-[13px] font-medium text-background transition-[width,opacity] duration-300 hover:opacity-90 disabled:opacity-50 ${isCollapsed ? 'w-8' : 'w-full'}`}
               >
-                <span className={`h-[7px] w-[7px] rounded-full bg-recording ${isRecording ? 'animate-pulse' : ''}`} />
-                {isRecording ? 'Recording in progress...' : 'New recording'}
+                <span className={`h-2 w-2 shrink-0 rounded-full bg-recording ${isRecording ? 'animate-pulse' : ''}`} />
+                <span className={hideOnCollapse}>{isRecording ? 'Recording in progress...' : 'New recording'}</span>
               </button>
 
               <button
                 onClick={() => router.push('/settings')}
-                className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-sm transition-colors hover:bg-accent/60 hover:text-foreground ${pathname === '/settings' ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}
+                className={`flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm transition-colors hover:bg-accent/60 hover:text-foreground ${pathname === '/settings' ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}
               >
-                <Settings className="w-3.5 h-3.5" />
-                Settings
+                <Settings className="w-4 h-4" />
+                <span className={hideOnCollapse}>Settings</span>
               </button>
 
               {/* h-8 matches the rail's p-2 + 16px icon, so the toggle keeps its vertical spot */}
@@ -627,8 +663,8 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
                 aria-label="Collapse sidebar"
                 className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
               >
-                <PanelLeftClose className="w-3.5 h-3.5" />
-                Collapse
+                <PanelLeftClose className="w-4 h-4" />
+                <span className={hideOnCollapse}>Collapse</span>
               </button>
             </div>
           </div>
@@ -636,6 +672,15 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
       </div>
 
       {/* Confirmation Modal for Delete */}
+      {enhanceTarget && (
+        <RetranscribeDialog
+          open
+          onOpenChange={(open) => { if (!open) setEnhanceTarget(null); }}
+          meetingId={enhanceTarget.meetingId}
+          meetingFolderPath={enhanceTarget.folderPath}
+          onComplete={refetchMeetings}
+        />
+      )}
       <ConfirmationModal
         isOpen={deleteModalState.isOpen}
         text="Delete this meeting? Its folder will be moved to the Trash."
