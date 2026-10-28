@@ -153,7 +153,8 @@ fn write_tags(folder: &Path, tags: &[String]) -> Result<(), String> {
     let path = folder.join("metadata.json");
     let mut root: serde_json::Value = match std::fs::read_to_string(&path) {
         Ok(t) => serde_json::from_str(&t).map_err(|e| format!("metadata.json is not valid JSON: {}", e))?,
-        Err(_) => serde_json::json!({}),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
+        Err(e) => return Err(format!("Could not read metadata.json: {}", e)),
     };
     let obj = root.as_object_mut().ok_or("metadata.json root is not an object")?;
     obj.insert("tags".into(), serde_json::json!(tags));
@@ -238,6 +239,42 @@ mod tests {
         let raw: Vec<String> = ["Western Digital", "western_digital", " Q3 Budget! ", "", "a", "b", "c", "d", "e"].iter().map(|s| s.to_string()).collect();
         assert_eq!(normalize_tags(&raw), vec!["western-digital", "q3-budget", "a", "b", "c", "d"]);
         assert_eq!(normalize_tags(&["Réunion".to_string()]), vec!["réunion"]);
+    }
+
+    #[test]
+    fn write_tags_preserves_existing_keys_and_updates_transcript_md() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("metadata.json"), r#"{"title":"T","version":2,"tags":["old"]}"#).unwrap();
+        std::fs::write(dir.path().join("transcript.md"), "---\ntitle: \"T\"\n---\n[00:00] hi\n").unwrap();
+        write_tags(dir.path(), &["a".into(), "b".into()]).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("metadata.json")).unwrap()).unwrap();
+        assert_eq!(v["title"], "T");
+        assert_eq!(v["version"], 2);
+        assert_eq!(v["tags"], serde_json::json!(["a", "b"]));
+        assert!(v["tagged_at"].is_string());
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("transcript.md")).unwrap(),
+            "---\ntitle: \"T\"\ntags: [a, b]\n---\n[00:00] hi\n"
+        );
+    }
+
+    #[test]
+    fn write_tags_refuses_unparseable_or_unreadable_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("metadata.json");
+        std::fs::write(&p, "{ not json").unwrap();
+        assert!(write_tags(dir.path(), &["a".into()]).is_err());
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "{ not json");
+        std::fs::write(&p, [0xff, 0xfe, 0xfd]).unwrap();
+        assert!(write_tags(dir.path(), &["a".into()]).is_err());
+        assert_eq!(std::fs::read(&p).unwrap(), vec![0xff, 0xfe, 0xfd]);
+    }
+
+    #[test]
+    fn write_tags_creates_metadata_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        write_tags(dir.path(), &["a".into()]).unwrap();
+        assert!(dir.path().join("metadata.json").exists());
     }
 
     #[test]
