@@ -194,6 +194,72 @@ pub fn migrate_dirs() -> MigrationOutcome {
     migrate(app_data_pair(), &config_pairs(), recordings_pair(), |p| p.symlink_metadata().is_ok())
 }
 
+/// Written in the Noesis app data dir when the user answers "Never"; the dialog then stays away.
+pub const SKIP_MARKER: &str = "migration.skipped";
+
+/// Pure: a dialog is due when at least one legacy dir would be renamed.
+pub fn needs_prompt(steps: &[Step]) -> bool {
+    steps.iter().any(|s| matches!(s, Step::Rename(_)))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Answer {
+    Move,
+    NotNow,
+    Never,
+}
+
+/// Blocking native dialog. Runs before the Tauri window exists, so it uses rfd directly.
+#[cfg(target_os = "macos")]
+fn ask() -> Answer {
+    use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
+    let result = MessageDialog::new()
+        .set_level(MessageLevel::Info)
+        .set_title("Meetily data found")
+        .set_description("Meetily data was found on this Mac. Move it to Noesis now? Nothing is deleted. \"Not now\" asks again next launch.")
+        .set_buttons(MessageButtons::YesNoCancelCustom("Move".into(), "Not now".into(), "Never".into()))
+        .show();
+    match result {
+        MessageDialogResult::Custom(s) if s == "Move" => Answer::Move,
+        MessageDialogResult::Custom(s) if s == "Never" => Answer::Never,
+        _ => Answer::NotNow,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn ask() -> Answer {
+    Answer::Move
+}
+
+/// Startup step 1 with consent: skip for good after "Never", ask when a rename is due, else behave as `migrate_dirs`.
+pub fn migrate_dirs_after_asking() -> MigrationOutcome {
+    let exists = |p: &Path| p.symlink_metadata().is_ok();
+    let marker = app_data_pair().map(|m| m.to.join(SKIP_MARKER));
+    if marker.as_ref().is_some_and(|m| m.exists()) {
+        log::info!("migration: skipped for good ({} exists)", SKIP_MARKER);
+        return MigrationOutcome::default();
+    }
+    if !needs_prompt(&plan(&legacy_pairs(), exists)) {
+        return migrate_dirs();
+    }
+    match ask() {
+        Answer::Move => migrate_dirs(),
+        Answer::NotNow => {
+            log::info!("migration: postponed by the user");
+            MigrationOutcome::default()
+        }
+        Answer::Never => {
+            if let Some(m) = marker {
+                if let Err(e) = std::fs::create_dir_all(m.parent().unwrap_or(Path::new("/"))).and_then(|_| std::fs::write(&m, "")) {
+                    log::warn!("migration: could not write {}: {}", m.display(), e);
+                }
+            }
+            log::info!("migration: declined for good");
+            MigrationOutcome::default()
+        }
+    }
+}
+
 /// Rewrite paths when the root moved this run, or an earlier run moved it but died before
 /// the rewrite (old gone, new present). Both rewrites are idempotent.
 fn needs_rewrite(moved_this_run: bool, old_exists: bool, new_exists: bool) -> bool {
@@ -248,6 +314,14 @@ pub async fn finish<R: tauri::Runtime>(
 mod tests {
     use super::*;
     use sqlx::SqlitePool;
+
+    #[test]
+    fn a_prompt_is_due_only_when_something_would_be_renamed() {
+        let m = Move { from: "/old".into(), to: "/new".into() };
+        assert!(needs_prompt(&[Step::Nothing, Step::Rename(m.clone())]));
+        assert!(!needs_prompt(&[Step::Nothing, Step::SkipBothExist(m)]));
+        assert!(!needs_prompt(&[]));
+    }
 
     fn mv(from: &str, to: &str) -> Move {
         Move { from: PathBuf::from(from), to: PathBuf::from(to) }

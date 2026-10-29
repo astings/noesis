@@ -498,7 +498,7 @@ pub fn run() {
             jobs::init(_app.handle().clone());
             // spec 5.1: move the Meetily dirs before anything resolves app_data_dir(),
             // opens a store file, sets the model dirs or opens the database
-            let migration_outcome = migration::migrate_dirs();
+            let migration_outcome = migration::migrate_dirs_after_asking();
 
             #[cfg(target_os = "windows")]
             match _app.path().resolve(
