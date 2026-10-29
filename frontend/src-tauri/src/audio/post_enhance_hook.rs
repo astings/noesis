@@ -156,7 +156,7 @@ pub fn dispatch_with(
     notify: Notify,
 ) -> std::result::Result<HookKind, String> {
     use super::hook_status::{set, CANCELLED, DONE, FAILED, RUNNING};
-    let target = if prefs.wiki_automation { super::wiki_automation::find_target(&prefs.wiki_targets, &ctx.project) } else { None };
+    let target = if prefs.post_processing { super::wiki_automation::find_target(&prefs.post_processing_targets, &ctx.project) } else { None };
     let command = prefs.post_enhance_command.trim();
     if target.is_none() && command.is_empty() {
         return Err(NO_HOOK.to_string());
@@ -179,7 +179,7 @@ pub fn dispatch_with(
         t(if success { DONE } else if crate::jobs::hook_cancel_requested(&cancel_id) { CANCELLED } else { FAILED })
     });
     match target {
-        Some(target) => match super::wiki_automation::run(target, ctx, prefs.wiki_budget_usd, force, Some(then)) {
+        Some(target) => match super::wiki_automation::run(target, ctx, prefs.post_processing_budget_usd, force, Some(then)) {
             Ok(true) => Ok(HookKind::Wiki),
             // Skipped on hook.done (auto run only): report what the folder says.
             Ok(false) if !force && ctx.folder.join("hook.done").exists() => {
@@ -404,8 +404,8 @@ mod tests {
         std::fs::write(dir.path().join("metadata.json"), r#"{"project":"dex"}"#).unwrap();
         let mut prefs = super::super::recording_preferences::RecordingPreferences::default();
         prefs.post_enhance_command = "touch command-ran".into();
-        prefs.wiki_automation = true;
-        prefs.wiki_targets = vec![super::super::recording_preferences::WikiTarget { project: "dex".into(), directory: "/nonexistent/wiki".into(), skill: String::new() }];
+        prefs.post_processing = true;
+        prefs.post_processing_targets = vec![super::super::recording_preferences::PostProcessingTarget { project: "dex".into(), directory: "/nonexistent/wiki".into(), instructions: String::new(), skill: String::new() }];
         let (seen, notify) = recorder();
         let err = dispatch_with(&prefs, &read_context(dir.path(), "m-wiki"), true, notify).unwrap_err();
         assert!(err.contains("/nonexistent/wiki"), "{}", err);

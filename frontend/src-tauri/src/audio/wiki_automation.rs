@@ -7,7 +7,7 @@ use log::warn;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use super::post_enhance_hook::{spawn_logged, write_done_marker, HookContext, OnExit};
-use super::recording_preferences::WikiTarget;
+use super::recording_preferences::PostProcessingTarget;
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 
@@ -31,14 +31,14 @@ pub fn expand_home(path: &str) -> PathBuf {
 pub const ALLOWED_TOOLS: [&str; 2] = ["mcp__open-knowledge", "mcp__noesis"];
 pub const DENIED_TOOLS: [&str; 3] = ["mcp__open-knowledge__delete", "mcp__open-knowledge__move", "mcp__noesis__assign_meeting"];
 
-pub fn find_target<'a>(targets: &'a [WikiTarget], project: &str) -> Option<&'a WikiTarget> {
+pub fn find_target<'a>(targets: &'a [PostProcessingTarget], project: &str) -> Option<&'a PostProcessingTarget> {
     targets.iter().find(|t| t.project == project && !t.directory.trim().is_empty())
 }
 
 /// Nobody reads a headless run, so a question would hang until the budget runs out.
 const UNATTENDED: &str = "This run is unattended: do not ask questions; if the wiki already covers this meeting, stop without changes.";
 
-pub fn build_prompt(target: &WikiTarget, ctx: &HookContext) -> String {
+pub fn build_prompt(target: &PostProcessingTarget, ctx: &HookContext) -> String {
     let where_ = format!(
         "the new meeting recording at {} (project {}, meeting id {}, title: {})",
         ctx.folder.display(), ctx.project, ctx.meeting_id, ctx.title
@@ -93,7 +93,7 @@ fn note(folder: &Path, line: &str) {
 /// Run Claude Code in the wiki for this meeting. Errors are also noted in hook.log.
 /// `Ok(false)` means skipped (`hook.done` exists and `force` is off, or a run is in flight).
 /// `then` runs after the child exits, once the marker is written.
-pub fn run(target: &WikiTarget, ctx: &HookContext, budget_usd: f64, force: bool, then: Option<OnExit>) -> Result<bool> {
+pub fn run(target: &PostProcessingTarget, ctx: &HookContext, budget_usd: f64, force: bool, then: Option<OnExit>) -> Result<bool> {
     if !force && ctx.folder.join("hook.done").exists() {
         note(&ctx.folder, "skipped: hook.done exists");
         return Ok(false);
@@ -167,8 +167,8 @@ pub async fn select_wiki_directory<R: tauri::Runtime>(app: tauri::AppHandle<R>) 
 mod tests {
     use super::*;
 
-    fn target(project: &str, dir: &str, skill: &str) -> WikiTarget {
-        WikiTarget { project: project.into(), directory: dir.into(), skill: skill.into() }
+    fn target(project: &str, dir: &str, skill: &str) -> PostProcessingTarget {
+        PostProcessingTarget { project: project.into(), directory: dir.into(), instructions: String::new(), skill: skill.into() }
     }
     fn ctx(folder: &Path) -> HookContext {
         HookContext { folder: folder.to_path_buf(), project: "dex".into(), title: "Weekly sync".into(), meeting_id: "m-1".into() }

@@ -11,13 +11,35 @@ use log::error;
 #[cfg(target_os = "macos")]
 use crate::audio::capture::AudioCaptureBackend;
 
-/// spec 4.8: one wiki per project for the built-in post-enhance run
+/// spec 2026-10-28 generic settings, section 1: one directory per project for the post-processing run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct WikiTarget {
+pub struct PostProcessingTarget {
     pub project: String,
     pub directory: String,
+    /// Free text appended to the prompt template, e.g. "Use the dex-case-tracking skill."
     #[serde(default)]
+    pub instructions: String,
+    /// Legacy (spec 4.8): read once, turned into `instructions` by `normalize_legacy_targets`, never written.
+    #[serde(default, skip_serializing)]
     pub skill: String,
+}
+
+/// `skill` from an older file becomes an instructions sentence unless instructions were already set.
+pub fn normalize_legacy_targets(targets: &mut [PostProcessingTarget]) {
+    for t in targets.iter_mut() {
+        if t.instructions.trim().is_empty() && !t.skill.trim().is_empty() {
+            t.instructions = format!("Use the {} skill.", t.skill.trim());
+        }
+        t.skill.clear();
+    }
+}
+
+pub fn default_allowed_tools() -> Vec<String> {
+    crate::audio::post_processing::ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect()
+}
+
+pub fn default_denied_tools() -> Vec<String> {
+    crate::audio::post_processing::DENIED_TOOLS.iter().map(|s| s.to_string()).collect()
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -60,13 +82,23 @@ pub struct RecordingPreferences {
     // spec 4.7: shell command run when an enhance job finishes; empty means off
     #[serde(default)]
     pub post_enhance_command: String,
-    // spec 4.8: built-in Claude Code run per project
+    // generic settings section 1: built-in Claude Code run per project (was spec 4.8 "wiki automation")
+    #[serde(default, alias = "wiki_automation")]
+    pub post_processing: bool,
+    #[serde(default, alias = "wiki_targets")]
+    pub post_processing_targets: Vec<PostProcessingTarget>,
+    #[serde(default = "default_wiki_budget_usd", alias = "wiki_budget_usd")]
+    pub post_processing_budget_usd: f64,
+    /// Path to the agent binary; empty means auto-detect `claude`.
     #[serde(default)]
-    pub wiki_automation: bool,
+    pub agent_path: String,
+    /// Prompt template with {folder} {project} {title} {meeting_id} {instructions}; empty means built-in.
     #[serde(default)]
-    pub wiki_targets: Vec<WikiTarget>,
-    #[serde(default = "default_wiki_budget_usd")]
-    pub wiki_budget_usd: f64,
+    pub agent_prompt_template: String,
+    #[serde(default = "default_allowed_tools")]
+    pub agent_allowed_tools: Vec<String>,
+    #[serde(default = "default_denied_tools")]
+    pub agent_denied_tools: Vec<String>,
     // spec 8: off means the hook only runs from the "Run hook" action
     #[serde(default)]
     pub hook_auto_run: bool,
@@ -133,9 +165,13 @@ impl Default for RecordingPreferences {
             calendar_meeting_name: false,
             owner_name: default_owner_name(),
             post_enhance_command: String::new(),
-            wiki_automation: false,
-            wiki_targets: Vec::new(),
-            wiki_budget_usd: default_wiki_budget_usd(),
+            post_processing: false,
+            post_processing_targets: Vec::new(),
+            post_processing_budget_usd: default_wiki_budget_usd(),
+            agent_path: String::new(),
+            agent_prompt_template: String::new(),
+            agent_allowed_tools: default_allowed_tools(),
+            agent_denied_tools: default_denied_tools(),
             hook_auto_run: false,
             auto_title_tags: default_true(),
             delete_audio_after_enhance: default_true(),
@@ -206,6 +242,7 @@ pub async fn load_recording_preferences<R: Runtime>(
                     let backend = crate::audio::capture::get_current_backend();
                     p.system_audio_backend = Some(backend.to_string());
                 }
+                normalize_legacy_targets(&mut p.post_processing_targets);
                 p
             }
             Err(e) => {
@@ -536,16 +573,42 @@ mod tests {
     }
 
     #[test]
-    fn wiki_automation_defaults_off_with_empty_targets_and_five_dollars() {
+    fn post_processing_defaults_off_with_empty_targets_and_five_dollars() {
         let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
         let p: RecordingPreferences = serde_json::from_str(old).unwrap();
-        assert!(!p.wiki_automation);
-        assert!(p.wiki_targets.is_empty());
-        assert_eq!(p.wiki_budget_usd, 5.0);
-        let with: RecordingPreferences = serde_json::from_str(
-            r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4","wiki_targets":[{"project":"dex","directory":"/w/dex"}]}"#,
-        ).unwrap();
-        assert_eq!(with.wiki_targets[0].skill, "", "skill is optional in the file");
+        assert!(!p.post_processing);
+        assert!(p.post_processing_targets.is_empty());
+        assert_eq!(p.post_processing_budget_usd, 5.0);
+        assert_eq!(p.agent_path, "");
+        assert_eq!(p.agent_prompt_template, "");
+        assert_eq!(p.agent_allowed_tools, vec!["mcp__open-knowledge", "mcp__noesis"]);
+        assert_eq!(p.agent_denied_tools, vec!["mcp__open-knowledge__delete", "mcp__open-knowledge__move", "mcp__noesis__assign_meeting"]);
+    }
+
+    #[test]
+    fn old_wiki_keys_load_through_aliases_and_skill_becomes_instructions() {
+        let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4",
+            "wiki_automation":true,"wiki_budget_usd":2.5,
+            "wiki_targets":[{"project":"dex","directory":"/w/dex","skill":"dex-case-tracking"},{"project":"flo","directory":"/w/flo"}]}"#;
+        let mut p: RecordingPreferences = serde_json::from_str(old).unwrap();
+        assert!(p.post_processing);
+        assert_eq!(p.post_processing_budget_usd, 2.5);
+        assert_eq!(p.post_processing_targets.len(), 2);
+        normalize_legacy_targets(&mut p.post_processing_targets);
+        assert_eq!(p.post_processing_targets[0].instructions, "Use the dex-case-tracking skill.");
+        assert_eq!(p.post_processing_targets[0].skill, "");
+        assert_eq!(p.post_processing_targets[1].instructions, "");
+        let json = serde_json::to_value(&p).unwrap();
+        assert!(json.get("post_processing").is_some() && json.get("wiki_automation").is_none(), "new names are written");
+        assert!(json["post_processing_targets"][0].get("skill").is_none(), "skill is never written back");
+    }
+
+    #[test]
+    fn explicit_instructions_win_over_a_legacy_skill() {
+        let mut t = vec![PostProcessingTarget { project: "dex".into(), directory: "/w".into(), instructions: "Keep it short.".into(), skill: "x".into() }];
+        normalize_legacy_targets(&mut t);
+        assert_eq!(t[0].instructions, "Keep it short.");
+        assert_eq!(t[0].skill, "");
     }
 
     #[test]
