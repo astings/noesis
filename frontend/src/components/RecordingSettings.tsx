@@ -7,12 +7,12 @@ import { DeviceSelection, SelectedDevices } from '@/components/DeviceSelection';
 import { toast } from 'sonner';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
 import { useConfig } from '@/contexts/ConfigContext';
-import { WikiAutomationSettings } from '@/components/WikiAutomationSettings'; // spec 4.8
+import { PostProcessingSettings } from '@/components/PostProcessingSettings'; // generic settings section 1
 import { Button } from '@/components/ui/button';
 import { SettingsGroup, SettingRow } from '@/components/SettingsGroup';
 import { NotificationsRow } from '@/components/PreferenceSettings';
 
-export interface WikiTarget { project: string; directory: string; skill: string } // spec 4.8
+export interface PostProcessingTarget { project: string; directory: string; instructions: string } // generic settings section 1
 
 export interface RecordingPreferences {
   save_folder: string;
@@ -31,13 +31,17 @@ export interface RecordingPreferences {
   calendar_meeting_name: boolean;
   owner_name: string; // spec 4.4
   post_enhance_command: string; // spec 4.7
-  wiki_automation: boolean; // spec 4.8
+  post_processing: boolean; // generic settings section 1
+  post_processing_targets: PostProcessingTarget[];
+  post_processing_budget_usd: number;
+  agent_path: string;
+  agent_prompt_template: string;
+  agent_allowed_tools: string[];
+  agent_denied_tools: string[];
   hook_auto_run: boolean;
   auto_title_tags: boolean;
   delete_audio_after_enhance: boolean;
   audio_retention_hours: number;
-  wiki_targets: WikiTarget[];
-  wiki_budget_usd: number;
   transcription_languages: string[];
   title_tags_prompt: string;
 }
@@ -58,18 +62,22 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     enhance_model: 'large-v3',
     enhance_language: null,
     auto_stop_on_call_end: true,
-    auto_start_on_call: true,
+    auto_start_on_call: false,
     calendar_meeting_name: false,
     owner_name: 'Me',
     post_enhance_command: '',
-    wiki_automation: false,
+    post_processing: false,
+    post_processing_targets: [],
+    post_processing_budget_usd: 5,
+    agent_path: '',
+    agent_prompt_template: '',
+    agent_allowed_tools: ['mcp__open-knowledge', 'mcp__noesis'],
+    agent_denied_tools: ['mcp__open-knowledge__delete', 'mcp__open-knowledge__move', 'mcp__noesis__assign_meeting'],
     hook_auto_run: false,
     auto_title_tags: true,
-    delete_audio_after_enhance: true,
+    delete_audio_after_enhance: false,
     audio_retention_hours: 24,
-    wiki_targets: [],
-    wiki_budget_usd: 5,
-    transcription_languages: ['en', 'fr'],
+    transcription_languages: ['en'],
     title_tags_prompt: '',
   });
   const [loading, setLoading] = useState(true);
@@ -200,6 +208,18 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     await savePreferences(newPreferences);
   };
 
+  // generic settings section 4: the folder new recordings go into
+  const handleChangeFolder = async () => {
+    const picked = await invoke<string | null>('select_directory').catch(() => null);
+    if (!picked) return;
+    const current = preferences.save_folder;
+    if (current && (picked === current || picked.startsWith(current + '/') || current.startsWith(picked + '/'))) {
+      toast.error('Pick a folder outside the current recordings folder');
+      return;
+    }
+    await applyPreferences({ ...preferences, save_folder: picked });
+  };
+
   const handleOpenFolder = async () => {
     try {
       await invoke('open_recordings_folder');
@@ -267,13 +287,19 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
             hint={
               <span className="font-mono break-all">
                 {preferences.save_folder || 'Default folder'} · {preferences.file_format.toUpperCase()}
+                <span className="block font-sans mt-1">New recordings go here. Existing recordings stay where they are.</span>
               </span>
             }
             control={
-              <Button variant="outline" size="sm" onClick={handleOpenFolder}>
-                <FolderOpen />
-                Open folder
-              </Button>
+              <div className="flex gap-1">
+                <Button variant="outline" size="sm" onClick={handleChangeFolder} disabled={saving || isRecording}>
+                  Change
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleOpenFolder}>
+                  <FolderOpen />
+                  Open folder
+                </Button>
+              </div>
             }
           />
         ) : (
@@ -292,11 +318,11 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
         />
       </SettingsGroup>
 
-      {/* spec 4.5: Zoom call detection */}
-      <SettingsGroup title="Zoom">
+      {/* generic settings section 2: call detection (any app using the microphone; Zoom process on macOS 13) */}
+      <SettingsGroup title="Calls">
         <SettingRow
-          label="Start recording when a Zoom call begins"
-          hint="Records into the project selected on the home screen"
+          label="Start recording when a call begins"
+          hint="A call is any app using the microphone (Zoom, Teams, Meet, Webex, FaceTime). Records into the project selected on the home screen. Off by default: check the recording rules where you are."
           control={<Switch checked={preferences.auto_start_on_call} onCheckedChange={handleAutoStartToggle} disabled={saving} />}
         />
         <SettingRow
@@ -305,8 +331,8 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
           control={<Switch checked={preferences.calendar_meeting_name} onCheckedChange={handleCalendarNameToggle} disabled={saving || !preferences.auto_start_on_call} />}
         />
         <SettingRow
-          label="Stop recording when the Zoom call ends"
-          hint="About 20 seconds after you leave the meeting, the recording stops and is saved"
+          label="Stop recording when the call ends"
+          hint="About 20 seconds after the other app releases the microphone, the recording stops and is saved"
           control={<Switch checked={preferences.auto_stop_on_call_end} onCheckedChange={handleAutoStopToggle} disabled={saving} />}
         />
       </SettingsGroup>
@@ -330,8 +356,8 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
         />
       </SettingsGroup>
 
-      {/* spec 4.8: wiki automation */}
-      <WikiAutomationSettings preferences={preferences} onChange={applyPreferences} disabled={saving} />
+      {/* generic settings section 1: post-processing */}
+      <PostProcessingSettings preferences={preferences} onChange={applyPreferences} disabled={saving} />
 
       <SettingsGroup title="Audio files">
         <SettingRow
@@ -367,12 +393,12 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
         />
         <SettingRow
           label="Custom command"
-          hint="Shell command started after an enhance when wiki automation is off or the project has no wiki. It gets NOESIS_FOLDER, NOESIS_PROJECT, NOESIS_TITLE and NOESIS_MEETING_ID (the MEETILY_* names still work); output goes to hook.log in the meeting folder. Empty means off."
+          hint="Shell command started after an enhance when post-processing is off or the project has no row. It gets NOESIS_FOLDER, NOESIS_PROJECT, NOESIS_TITLE and NOESIS_MEETING_ID (the MEETILY_* names still work); output goes to hook.log in the meeting folder. Empty means off."
         >
           <Input
             aria-label="Custom command (advanced)"
             className="h-8 font-mono text-xs"
-            placeholder="~/Code/Perso/noesis/scripts/post-enhance.sh"
+            placeholder="/path/to/post-enhance.sh"
             value={hookDraft ?? preferences.post_enhance_command}
             onChange={(e) => setHookDraft(e.target.value)}
             onBlur={commitHookCommand}

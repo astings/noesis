@@ -122,7 +122,7 @@ pub fn spawn(command: &str, ctx: &HookContext, then: Option<OnExit>) -> Result<(
 // spec 8: one dispatch for the auto run after enhance and the manual "Run hook"
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HookKind {
-    Wiki,
+    Agent,
     Command,
 }
 
@@ -132,7 +132,7 @@ pub type Notify = std::sync::Arc<dyn Fn(&str, &str) + Send + Sync>;
 pub const HOOK_BUSY: &str = "A hook is already running for this meeting.";
 pub const NO_HOOK: &str = "No hook configured. Set one in Settings, Recordings.";
 
-/// The wiki row for the meeting's project wins, else the custom command. `force` re-runs
+/// The project row for the meeting's project wins, else the custom command. `force` re-runs
 /// wiki automation even when `hook.done` exists.
 pub fn dispatch<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
@@ -156,7 +156,7 @@ pub fn dispatch_with(
     notify: Notify,
 ) -> std::result::Result<HookKind, String> {
     use super::hook_status::{set, CANCELLED, DONE, FAILED, RUNNING};
-    let target = if prefs.wiki_automation { super::wiki_automation::find_target(&prefs.wiki_targets, &ctx.project) } else { None };
+    let target = if prefs.post_processing { super::post_processing::find_target(&prefs.post_processing_targets, &ctx.project) } else { None };
     let command = prefs.post_enhance_command.trim();
     if target.is_none() && command.is_empty() {
         return Err(NO_HOOK.to_string());
@@ -179,21 +179,21 @@ pub fn dispatch_with(
         t(if success { DONE } else if crate::jobs::hook_cancel_requested(&cancel_id) { CANCELLED } else { FAILED })
     });
     match target {
-        Some(target) => match super::wiki_automation::run(target, ctx, prefs.wiki_budget_usd, force, Some(then)) {
-            Ok(true) => Ok(HookKind::Wiki),
+        Some(target) => match super::post_processing::run(prefs, target, ctx, force, Some(then)) {
+            Ok(true) => Ok(HookKind::Agent),
             // Skipped on hook.done (auto run only): report what the folder says.
             Ok(false) if !force && ctx.folder.join("hook.done").exists() => {
                 transition(DONE);
-                Ok(HookKind::Wiki)
+                Ok(HookKind::Agent)
             }
             // Skipped because a run is in flight; its own exit settles the status.
-            Ok(false) => Err("Wiki automation is already running for this meeting.".to_string()),
+            Ok(false) => Err("Post-processing is already running for this meeting.".to_string()),
             Err(e) => {
                 transition(FAILED);
                 Err(e.to_string())
             }
         },
-        // Auto run skips on hook.done, like wiki automation; a forced run always spawns.
+        // Auto run skips on hook.done, like the built-in run; a forced run always spawns.
         None if !force && ctx.folder.join("hook.done").exists() => {
             transition(DONE);
             Ok(HookKind::Command)
@@ -399,18 +399,18 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_prefers_the_wiki_row_and_marks_a_failed_start() {
+    fn dispatch_prefers_the_project_row_and_marks_a_failed_start() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("metadata.json"), r#"{"project":"dex"}"#).unwrap();
         let mut prefs = super::super::recording_preferences::RecordingPreferences::default();
         prefs.post_enhance_command = "touch command-ran".into();
-        prefs.wiki_automation = true;
-        prefs.wiki_targets = vec![super::super::recording_preferences::WikiTarget { project: "dex".into(), directory: "/nonexistent/wiki".into(), skill: String::new() }];
+        prefs.post_processing = true;
+        prefs.post_processing_targets = vec![super::super::recording_preferences::PostProcessingTarget { project: "dex".into(), directory: "/nonexistent/wiki".into(), instructions: String::new(), skill: String::new() }];
         let (seen, notify) = recorder();
-        let err = dispatch_with(&prefs, &read_context(dir.path(), "m-wiki"), true, notify).unwrap_err();
+        let err = dispatch_with(&prefs, &read_context(dir.path(), "m-agent"), true, notify).unwrap_err();
         assert!(err.contains("/nonexistent/wiki"), "{}", err);
         assert_eq!(seen.lock().unwrap().last().unwrap().1, "failed");
         std::thread::sleep(std::time::Duration::from_millis(100));
-        assert!(!dir.path().join("command-ran").exists(), "the command does not run when a wiki row exists");
+        assert!(!dir.path().join("command-ran").exists(), "the command does not run when a project row exists");
     }
 }

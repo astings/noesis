@@ -169,12 +169,14 @@ anyhow = "1.0"
 time = { version = "0.3", features = ["formatting"] }
 reqwest = { version = "0.11", features = ["multipart", "json"] }
 core-graphics = "0.23"
+coreaudio-sys = "0.2.17"
+rfd = { version = "0.16", default-features = false }
 cidre = { git = "https://github.com/yury/cidre", rev = "a9587fa", features = ["av"] }
 dasp = "0.11.0"
 futures-channel = "0.3.31"
 objc2 = "0.6"
 block2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSDate", "NSString", "NSURL", "NSError", "NSArray", "NSPredicate"] }
+objc2-foundation = { version = "0.3", features = ["NSDate", "NSString", "NSURL", "NSError", "NSArray", "NSPredicate", "NSLocale", "NSPathUtilities"] }
 objc2-event-kit = { version = "0.3", features = ["EKEventStore", "EKEvent", "EKCalendarItem", "EKObject", "EKParticipant", "EKTypes", "block2"] }
 
 # PERFORMANCE: Enable Metal GPU + CoreML acceleration automatically on macOS

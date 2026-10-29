@@ -348,7 +348,7 @@ pub async fn api_get_meetings<R: Runtime>(
     );
     let pool = state.db_manager.pool();
     // spec 4.2: the filesystem is the source of truth; repair the index before listing
-    if let Err(e) = crate::audio::library::reconcile(pool, &crate::audio::get_default_recordings_folder()).await {
+    if let Err(e) = crate::audio::library::reconcile(pool, &crate::audio::recording_preferences::recordings_root(&_app)).await {
         log_warn!("Library reconcile failed: {}", e);
     }
     let meetings: Result<Vec<MeetingModel>, sqlx::Error> =
@@ -358,7 +358,7 @@ pub async fn api_get_meetings<R: Runtime>(
         Ok(meeting_models) => {
             log_info!("Successfully got {} meetings", meeting_models.len());
 
-            let root = crate::audio::get_default_recordings_folder();
+            let root = crate::audio::recording_preferences::recordings_root(&_app);
             let result: Vec<Meeting> = meeting_models
                 .into_iter()
                 .map(|m| Meeting {
@@ -800,7 +800,7 @@ pub async fn api_delete_meeting<R: Runtime>(
 
     // Trash the folder first: if that fails keep the row, so the list matches the disk.
     if let Some(folder) = folder_path.filter(|f| !f.trim().is_empty()) {
-        let root = crate::audio::recording_preferences::get_default_recordings_folder();
+        let root = crate::audio::recording_preferences::recordings_root(&_app);
         if let Err(e) = crate::audio::library::trash_meeting_folder(&root, std::path::Path::new(&folder)) {
             log_error!("Could not trash folder of meeting {}: {}", meeting_id, e);
             return Err(format!(
@@ -967,7 +967,7 @@ pub async fn api_save_meeting_title<R: Runtime>(
     );
     // spec 4.2: a title change renames the folder too (slug), via the library
     let pool = state.db_manager.pool();
-    let root = crate::audio::get_default_recordings_folder();
+    let root = crate::audio::recording_preferences::recordings_root(&_app);
     match crate::audio::library::assign(pool, &root, &meeting_id, None, Some(&title)).await {
         Ok(_) => {
             log_info!("Successfully saved meeting title");
@@ -1055,7 +1055,7 @@ pub async fn api_save_transcript<R: Runtime>(
             let mut moved_folder: Option<String> = None;
             let mut move_error: Option<String> = None;
             if let Some(project) = crate::audio::recording_commands::take_pending_project(&meeting_id) {
-                let root = crate::audio::recording_preferences::get_default_recordings_folder();
+                let root = crate::audio::recording_preferences::recordings_root(&app);
                 match crate::audio::library::assign(pool, &root, &meeting_id, Some(&project), None).await {
                     Ok(path) => {
                         log_info!("Moved meeting {} to project {} after recording", meeting_id, project);

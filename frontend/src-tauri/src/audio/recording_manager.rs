@@ -518,6 +518,10 @@ impl RecordingManager {
     }
 
     // spec 4.2
+    pub fn set_root(&mut self, root: std::path::PathBuf) {
+        self.recording_saver.set_root(root);
+    }
+
     pub fn set_project(&mut self, project: Option<String>) {
         self.recording_saver.set_project(project);
     }

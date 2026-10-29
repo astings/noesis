@@ -11,21 +11,29 @@ pub struct Candidate {
     pub all_day: bool,
     /// Canceled, or declined by the current user.
     pub skipped: bool,
-    /// A zoom.us link in the location, notes or URL.
-    pub zoom: bool,
+    /// A Zoom, Teams, Meet, Webex or FaceTime link in the location, notes or URL.
+    pub has_link: bool,
 }
 
 /// How early a meeting may start relative to the call (joining a few minutes early).
 pub const EARLY_JOIN_SECONDS: f64 = 5.0 * 60.0;
 
+/// Hosts that mark an event as a call. Matched as substrings, case-insensitively.
+pub const MEETING_LINK_HOSTS: [&str; 5] = ["zoom.us", "teams.microsoft.com", "meet.google.com", "webex.com", "facetime.apple.com"];
+
+pub fn has_meeting_link(haystack: &str) -> bool {
+    let h = haystack.to_lowercase();
+    MEETING_LINK_HOSTS.iter().any(|host| h.contains(host))
+}
+
 /// The event the call most likely belongs to: running now or starting within
-/// `EARLY_JOIN_SECONDS`, not all-day, not skipped. A Zoom link wins, then the latest start.
+/// `EARLY_JOIN_SECONDS`, not all-day, not skipped. A meeting link wins, then the latest start.
 pub fn pick_title(now: f64, events: &[Candidate]) -> Option<String> {
     events
         .iter()
         .filter(|e| !e.all_day && !e.skipped && e.end > now && e.start <= now + EARLY_JOIN_SECONDS)
         .filter(|e| !e.title.trim().is_empty())
-        .max_by(|a, b| (a.zoom, a.start).partial_cmp(&(b.zoom, b.start)).unwrap_or(std::cmp::Ordering::Equal))
+        .max_by(|a, b| (a.has_link, a.start).partial_cmp(&(b.has_link, b.start)).unwrap_or(std::cmp::Ordering::Equal))
         .map(|e| e.title.trim().to_string())
 }
 
@@ -89,7 +97,7 @@ mod mac {
                         end: e.endDate().timeIntervalSince1970(),
                         all_day: e.isAllDay(),
                         skipped: declined || e.status() == EKEventStatus::Canceled,
-                        zoom: haystack.contains("zoom.us"),
+                        has_link: super::has_meeting_link(&haystack),
                     }
                 })
                 .collect()
@@ -123,7 +131,7 @@ mod tests {
     use super::*;
 
     fn ev(title: &str, start: f64, end: f64) -> Candidate {
-        Candidate { title: title.into(), start, end, all_day: false, skipped: false, zoom: false }
+        Candidate { title: title.into(), start, end, all_day: false, skipped: false, has_link: false }
     }
 
     #[test]
@@ -146,15 +154,23 @@ mod tests {
     }
 
     #[test]
-    fn zoom_link_wins_then_latest_start() {
+    fn a_meeting_link_wins_then_latest_start() {
         let now = 10_000.0;
-        let mut zoom = ev("Zoom one", now - 1800.0, now + 600.0);
-        zoom.zoom = true;
+        let mut linked = ev("Teams one", now - 1800.0, now + 600.0);
+        linked.has_link = true;
         let later = ev("Later start", now - 60.0, now + 600.0);
-        assert_eq!(pick_title(now, &[zoom.clone(), later.clone()]).as_deref(), Some("Zoom one"));
+        assert_eq!(pick_title(now, &[linked.clone(), later.clone()]).as_deref(), Some("Teams one"));
         assert_eq!(
             pick_title(now, &[ev("Early", now - 1800.0, now + 600.0), later]).as_deref(),
             Some("Later start")
         );
+    }
+
+    #[test]
+    fn meeting_links_of_the_usual_apps_are_recognised() {
+        for h in ["https://zoom.us/j/1", "https://teams.microsoft.com/l/meetup-join/x", "https://meet.google.com/abc-defg-hij", "https://bcg.webex.com/meet/x", "https://facetime.apple.com/join#v=1"] {
+            assert!(has_meeting_link(&format!("Agenda {} notes", h)), "{}", h);
+        }
+        assert!(!has_meeting_link("Room 4.12, bring the deck"));
     }
 }

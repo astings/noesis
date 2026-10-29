@@ -498,7 +498,10 @@ pub fn run() {
             jobs::init(_app.handle().clone());
             // spec 5.1: move the Meetily dirs before anything resolves app_data_dir(),
             // opens a store file, sets the model dirs or opens the database
-            let migration_outcome = migration::migrate_dirs();
+            let migration_outcome = migration::migrate_dirs_after_asking();
+            // The window is created here, not from the config, so the migration dialog above
+            // runs before any webview call can create the new app data dir (spec 5).
+            tauri::WebviewWindowBuilder::from_config(_app.handle(), &_app.config().app.windows[0])?.build()?;
 
             #[cfg(target_os = "windows")]
             match _app.path().resolve(
@@ -618,7 +621,7 @@ pub fn run() {
             }
 
             // no enhance job survives a restart: a queued/running status on disk is stale
-            let interrupted = audio::enhance_status::mark_interrupted(&audio::get_default_recordings_folder());
+            let interrupted = audio::enhance_status::mark_interrupted(&audio::recording_preferences::recordings_root(&_app.handle()));
             if interrupted > 0 {
                 log::info!("Marked {} interrupted enhance job(s) failed", interrupted);
             }
@@ -626,7 +629,7 @@ pub fn run() {
             // spec 4.2: repair the meeting index from disk once at startup
             if let Some(state) = _app.handle().try_state::<state::AppState>() {
                 let pool = state.db_manager.pool();
-                match tauri::async_runtime::block_on(audio::library::reconcile(pool, &audio::get_default_recordings_folder())) {
+                match tauri::async_runtime::block_on(audio::library::reconcile(pool, &audio::recording_preferences::recordings_root(&_app.handle()))) {
                     Ok(n) => log::info!("Library reconcile at startup: {} rows updated", n),
                     Err(e) => log::warn!("Library reconcile at startup failed: {}", e),
                 }
@@ -913,8 +916,11 @@ pub fn run() {
             audio::audio_cleanup::delete_meeting_audio,
             audio::audio_cleanup::get_meeting_extras,
             audio::library::list_projects_command,
-            audio::wiki_automation::locate_claude_cli,
-            audio::wiki_automation::select_wiki_directory,
+            audio::post_processing::locate_claude_cli,
+            audio::post_processing::select_directory,
+            audio::post_processing::get_default_agent_prompt_template,
+            audio::post_processing::get_mcp_register_command,
+            audio::post_processing::register_mcp_with_claude,
             audio::library::assign_meeting,
         ])
         .build(tauri::generate_context!())

@@ -1,16 +1,36 @@
 {
-  "name": "noesis-mcp",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@alexandrelaine/noesis-mcp",
+  "version": "0.2.0",
   "type": "module",
   "description": "MCP server exposing the Noesis recordings library (projects, meetings, transcripts).",
-  "engines": { "node": ">=22.18" },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/astings/noesis.git",
+    "directory": "mcp"
+  },
+  "bin": {
+    "noesis-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
     "start": "node src/index.ts",
     "test": "node --test test/"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
     "zod": "4.6.6"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3"
   }
 }

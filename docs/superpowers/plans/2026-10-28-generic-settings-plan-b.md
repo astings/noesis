@@ -8,6 +8,8 @@
 
 **Tech Stack:** Rust (coreaudio-sys 0.2.17, rfd 0.16, tauri 2), TypeScript settings UI, npm.
 
+> **Rulings during execution (2026-10-29):** Task 4's dialog has two buttons, Move and Skip, not three; "Not now, ask again next launch" was impossible because the app creates the Noesis dirs during that same launch. Task 5 compiles `src/` to `dist/` with `tsc` at `prepack` and `bin` is `dist/index.js`; Node refuses to strip types under `node_modules`. The main window is created by setup after the dialog (`"create": false`). `choose_signal` combines both signals instead of preferring CoreAudio. The spec is the source of truth where this plan's task text differs.
+
 ## Global Constraints
 
 - Runs after Plan A on the same branch `enhance/generic-settings` (Task 6 edits `PostProcessingSettings.tsx`, which Plan A creates).

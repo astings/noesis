@@ -1143,7 +1143,7 @@ pub async fn start_retranscription_command<R: Runtime>(
         // spec 4.2: a title set while the job ran was written in place; now that the folder is free,
         // sync the folder slug and metadata to the database title.
         if let Some(state) = app.try_state::<AppState>() {
-            let root = crate::audio::get_default_recordings_folder();
+            let root = crate::audio::recording_preferences::recordings_root(&app);
             if let Err(e) = crate::audio::library::assign(state.db_manager.pool(), &root, &meeting_id_for_sync, None, None).await {
                 if !e.starts_with("Folder not found on disk") {
                     warn!("Post-enhance folder sync skipped for {}: {}", meeting_id_for_sync, e);

@@ -138,6 +138,8 @@ Deferred: splitting "them" into named speakers (pyannote segmentation plus embed
 
 ### 4.5 Zoom call detection: auto-stop, optional auto-start
 
+Generalised by [generic settings for distribution](2026-10-28-generic-settings-for-distribution-design.md), section 2: any process reading the microphone counts as a call on macOS 14; `CptHost` is the macOS 13 fallback; auto-start defaults off.
+
 What: stop recording when the Zoom meeting ends. Start when one begins.
 
 How:
@@ -151,6 +153,8 @@ How:
 Fallback if `CptHost` proves unreliable: system audio silence for more than N minutes while recording. Not built unless needed.
 
 ### 4.6 MCP server
+
+Distribution: published as `@alexandrelaine/noesis-mcp`, registered with `npx -y` or the Settings button (generic settings spec, section 5). The root also follows the app's `save_folder` preference (section 4).
 
 What: a small Model Context Protocol server that exposes the recordings root so every wiki can list and read meetings without a symlink. Registered once at user scope, so it is present in every Claude Code project.
 
@@ -178,6 +182,8 @@ The wiki automation itself is a user script outside the app. The reference scrip
 Lazier alternative: a `launchd` folder watcher outside the app. Rejected: the in-app hook fires exactly once with the right arguments and is fewer moving parts.
 
 ### 4.8 Wiki automation settings
+
+Superseded for the settings shape by [generic settings for distribution](2026-10-28-generic-settings-for-distribution-design.md), section 1: the card is "Post-processing", the prompt is a template, the tool lists are editable and `skill` became per-project instructions.
 
 What: the post-enhance hook without a script. A "Wiki automation" card in Recording settings holds a switch, a table of projects, and a cost cap; the app composes and runs the Claude Code call itself.
 

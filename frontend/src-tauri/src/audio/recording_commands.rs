@@ -399,6 +399,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     let meeting_id = format!("meeting-{}", uuid::Uuid::new_v4());
     manager.set_meeting_id(Some(meeting_id.clone()));
     manager.set_project(project.clone());
+    manager.set_root(crate::audio::recording_preferences::recordings_root(&app));
     manager.set_owner_name(prefs_owner_name); // spec 4.4
     if let Some(state) = app.try_state::<crate::state::AppState>() {
         match crate::database::repositories::setting::SettingsRepository::get_transcript_config(state.db_manager.pool()).await {
@@ -602,6 +603,7 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     let meeting_id = format!("meeting-{}", uuid::Uuid::new_v4());
     manager.set_meeting_id(Some(meeting_id.clone()));
     manager.set_project(project.clone());
+    manager.set_root(crate::audio::recording_preferences::recordings_root(&app));
     manager.set_owner_name(prefs_owner_name); // spec 4.4
     if let Some(state) = app.try_state::<crate::state::AppState>() {
         match crate::database::repositories::setting::SettingsRepository::get_transcript_config(state.db_manager.pool()).await {

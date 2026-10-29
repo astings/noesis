@@ -80,7 +80,9 @@ pub fn meeting_folder_name(stamp: &str, title: Option<&str>) -> String {
 
 /// The project a meeting folder belongs to: its parent directory when the
 /// folder sits two levels under the root, `_inbox` otherwise (legacy flat
-/// folders, or anything outside the root).
+/// folders). Outside the current root (the folder preference changed) the
+/// folder's own metadata says which project it belongs to; legacy flat folders
+/// have no `project` key and stay `_inbox`.
 pub fn project_of(root: &Path, folder: &Path) -> String {
     match folder.strip_prefix(root) {
         Ok(rel) => {
@@ -91,8 +93,13 @@ pub fn project_of(root: &Path, folder: &Path) -> String {
                 INBOX.to_string()
             }
         }
-        Err(_) => INBOX.to_string(),
+        Err(_) => project_from_metadata(folder).unwrap_or_else(|| INBOX.to_string()),
     }
+}
+
+fn project_from_metadata(folder: &Path) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(folder.join("metadata.json")).ok()?).ok()?;
+    v.get("project")?.as_str().filter(|p| is_valid_project_name(p)).map(str::to_string)
 }
 
 /// Project folders under the root, `_inbox` first, then sorted. A directory is a
@@ -419,7 +426,12 @@ async fn assign_inner(
             .unwrap_or_else(|| local_stamp(chrono::Local::now())),
     };
     let base = meeting_folder_name(&stamp, Some(&new_title));
-    let project_dir = root.join(&new_project);
+    // outside the current root (the folder preference changed) a title edit renames in place
+    let project_dir = if project.is_none() && !old_path.starts_with(root) {
+        old_path.parent().map(Path::to_path_buf).unwrap_or_else(|| root.to_path_buf())
+    } else {
+        root.join(&new_project)
+    };
     std::fs::create_dir_all(&project_dir).map_err(|e| format!("Cannot create project folder: {}", e))?;
     let mut new_path = project_dir.join(&base);
     let mut n = 2;
@@ -454,18 +466,19 @@ async fn assign_inner(
 }
 
 #[tauri::command]
-pub async fn list_projects_command() -> Result<Vec<String>, String> {
-    Ok(list_projects(&super::recording_preferences::get_default_recordings_folder()))
+pub async fn list_projects_command<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<Vec<String>, String> {
+    Ok(list_projects(&super::recording_preferences::recordings_root(&app)))
 }
 
 #[tauri::command]
-pub async fn assign_meeting(
+pub async fn assign_meeting<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     state: tauri::State<'_, crate::state::AppState>,
     meeting_id: String,
     project: Option<String>,
     title: Option<String>,
 ) -> Result<String, String> {
-    let root = super::recording_preferences::get_default_recordings_folder();
+    let root = super::recording_preferences::recordings_root(&app);
     assign(state.db_manager.pool(), &root, &meeting_id, project.as_deref(), title.as_deref())
         .await
         .map(|p| p.to_string_lossy().to_string())
@@ -483,7 +496,9 @@ pub fn trashable_folder(root: &Path, folder: &Path) -> bool {
     match folder.strip_prefix(&root).map(|r| r.components().count()) {
         Ok(2) => true,
         Ok(1) => folder.join("metadata.json").is_file(),
-        _ => false,
+        Ok(_) => false,
+        // outside the current root, our own metadata.json marker says it is a meeting folder
+        Err(_) => folder.join("metadata.json").is_file(),
     }
 }
 
@@ -522,6 +537,23 @@ mod tests {
         let legacy = started_at_of(Some("/r/Meeting_2026"), created);
         assert_eq!(chrono::DateTime::parse_from_rfc3339(&legacy).unwrap(), created);
         assert_eq!(chrono::DateTime::parse_from_rfc3339(&started_at_of(None, created)).unwrap(), created);
+    }
+
+    #[tokio::test]
+    async fn title_edit_outside_the_current_root_renames_in_place() {
+        let other = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let old = other.path().join("dex").join("2026-10-27_12-03 old");
+        write_meta(&old, r#"{"version":"2.0","meeting_id":"m-old","project":"dex","title":"Old"}"#);
+        let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        sqlx::query("CREATE TABLE meetings (id TEXT PRIMARY KEY, title TEXT NOT NULL, folder_path TEXT, updated_at TEXT)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO meetings (id, title, folder_path) VALUES ('m-old', 'Old', ?)")
+            .bind(old.to_string_lossy().to_string()).execute(&pool).await.unwrap();
+        let got = assign(&pool, root.path(), "m-old", None, Some("New title")).await.unwrap();
+        assert_eq!(got, other.path().join("dex").join("2026-10-27_12-03 new-title"));
+        assert!(got.exists());
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
     }
 
     #[test]
@@ -713,6 +745,26 @@ mod tests {
         assert!(create_meeting_folder_with_stamp(root.path(), "../escape", "2026-10-27_12-03", None, false).is_err());
         assert!(create_meeting_folder_with_stamp(root.path(), "/tmp/x", "2026-10-27_12-03", None, false).is_err());
         assert!(!root.path().parent().unwrap().join("escape").exists());
+    }
+
+    #[test]
+    fn meetings_outside_the_root_use_their_metadata() {
+        let t = tempfile::tempdir().unwrap();
+        let root = t.path().join("new-root");
+        let old = tempfile::tempdir().unwrap();
+        let with_project = old.path().join("a");
+        let no_project = old.path().join("b");
+        let no_meta = old.path().join("c");
+        write_meta(&with_project, r#"{"project":"dex"}"#);
+        write_meta(&no_project, r#"{"title":"x"}"#);
+        std::fs::create_dir_all(&no_meta).unwrap();
+        std::fs::create_dir_all(&root).unwrap();
+
+        assert_eq!(project_of(&root, &with_project), "dex");
+        assert_eq!(project_of(&root, &no_project), INBOX);
+        assert_eq!(project_of(&root, &no_meta), INBOX);
+        assert!(trashable_folder(&root, &with_project));
+        assert!(!trashable_folder(&root, &no_meta));
     }
 
     #[test]

@@ -11,13 +11,35 @@ use log::error;
 #[cfg(target_os = "macos")]
 use crate::audio::capture::AudioCaptureBackend;
 
-/// spec 4.8: one wiki per project for the built-in post-enhance run
+/// spec 2026-10-28 generic settings, section 1: one directory per project for the post-processing run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct WikiTarget {
+pub struct PostProcessingTarget {
     pub project: String,
     pub directory: String,
+    /// Free text appended to the prompt template, e.g. "Use the dex-case-tracking skill."
     #[serde(default)]
+    pub instructions: String,
+    /// Legacy (spec 4.8): read once, turned into `instructions` by `normalize_legacy_targets`, never written.
+    #[serde(default, skip_serializing)]
     pub skill: String,
+}
+
+/// `skill` from an older file becomes an instructions sentence unless instructions were already set.
+pub fn normalize_legacy_targets(targets: &mut [PostProcessingTarget]) {
+    for t in targets.iter_mut() {
+        if t.instructions.trim().is_empty() && !t.skill.trim().is_empty() {
+            t.instructions = format!("Use the {} skill.", t.skill.trim());
+        }
+        t.skill.clear();
+    }
+}
+
+pub fn default_allowed_tools() -> Vec<String> {
+    crate::audio::post_processing::ALLOWED_TOOLS.iter().map(|s| s.to_string()).collect()
+}
+
+pub fn default_denied_tools() -> Vec<String> {
+    crate::audio::post_processing::DENIED_TOOLS.iter().map(|s| s.to_string()).collect()
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -48,8 +70,8 @@ pub struct RecordingPreferences {
     /// Stop the recording about 20 seconds after the Zoom meeting ends.
     #[serde(default = "default_true")]
     pub auto_stop_on_call_end: bool,
-    /// Start a recording when a Zoom meeting begins.
-    #[serde(default = "default_true")]
+    /// Start a recording when a Zoom meeting begins. Off by default: recording consent rules differ by country.
+    #[serde(default)]
     pub auto_start_on_call: bool,
     /// Name an auto-started recording after the calendar event in progress.
     #[serde(default)]
@@ -60,21 +82,31 @@ pub struct RecordingPreferences {
     // spec 4.7: shell command run when an enhance job finishes; empty means off
     #[serde(default)]
     pub post_enhance_command: String,
-    // spec 4.8: built-in Claude Code run per project
+    // generic settings section 1: built-in Claude Code run per project (was spec 4.8 "wiki automation")
+    #[serde(default, alias = "wiki_automation")]
+    pub post_processing: bool,
+    #[serde(default, alias = "wiki_targets")]
+    pub post_processing_targets: Vec<PostProcessingTarget>,
+    #[serde(default = "default_wiki_budget_usd", alias = "wiki_budget_usd")]
+    pub post_processing_budget_usd: f64,
+    /// Path to the agent binary; empty means auto-detect `claude`.
     #[serde(default)]
-    pub wiki_automation: bool,
+    pub agent_path: String,
+    /// Prompt template with {folder} {project} {title} {meeting_id} {instructions}; empty means built-in.
     #[serde(default)]
-    pub wiki_targets: Vec<WikiTarget>,
-    #[serde(default = "default_wiki_budget_usd")]
-    pub wiki_budget_usd: f64,
+    pub agent_prompt_template: String,
+    #[serde(default = "default_allowed_tools")]
+    pub agent_allowed_tools: Vec<String>,
+    #[serde(default = "default_denied_tools")]
+    pub agent_denied_tools: Vec<String>,
     // spec 8: off means the hook only runs from the "Run hook" action
     #[serde(default)]
     pub hook_auto_run: bool,
     // spec phase 9 section 1: the summary model names and tags meetings after enhance
     #[serde(default = "default_true")]
     pub auto_title_tags: bool,
-    // spec phase 9 section 3: delete audio once the enhanced transcript is on disk
-    #[serde(default = "default_true")]
+    // phase 9 section 3: delete audio once the enhanced transcript is on disk. Off by default: destructive.
+    #[serde(default)]
     pub delete_audio_after_enhance: bool,
     #[serde(default = "default_audio_retention_hours")]
     pub audio_retention_hours: u32,
@@ -86,8 +118,36 @@ pub struct RecordingPreferences {
     pub title_tags_prompt: String,
 }
 
+/// The languages the Models tab offers; keep in sync with `LANGUAGES` in `components/ModelsSettings.tsx`.
+pub const KNOWN_LANGUAGES: [&str; 7] = ["en", "fr", "de", "es", "it", "nl", "pt"];
+
+/// ISO 639-1 codes of the given locales (`fr-FR`, `en_US`), deduplicated, known ones only; English when nothing is known.
+pub fn languages_from_locales(locales: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for l in locales {
+        let code = l.split(['-', '_']).next().unwrap_or("").to_lowercase();
+        if KNOWN_LANGUAGES.contains(&code.as_str()) && !out.contains(&code) {
+            out.push(code);
+        }
+    }
+    if out.is_empty() {
+        out.push("en".to_string());
+    }
+    out
+}
+
+#[cfg(target_os = "macos")]
+fn preferred_locales() -> Vec<String> {
+    objc2_foundation::NSLocale::preferredLanguages().iter().map(|s| s.to_string()).collect()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn preferred_locales() -> Vec<String> {
+    Vec::new()
+}
+
 fn default_transcription_languages() -> Vec<String> {
-    vec!["en".to_string(), "fr".to_string()]
+    languages_from_locales(&preferred_locales())
 }
 
 fn default_true() -> bool {
@@ -102,7 +162,15 @@ fn default_wiki_budget_usd() -> f64 {
     5.0
 }
 
+/// The macOS account's full name; "Me" when it is blank or on other platforms.
 fn default_owner_name() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        let name = objc2_foundation::NSFullUserName().to_string();
+        if !name.trim().is_empty() {
+            return name.trim().to_string();
+        }
+    }
     "Me".to_string()
 }
 
@@ -129,16 +197,20 @@ impl Default for RecordingPreferences {
             enhance_model: default_enhance_model(),
             enhance_language: None,
             auto_stop_on_call_end: true,
-            auto_start_on_call: true,
+            auto_start_on_call: false,
             calendar_meeting_name: false,
             owner_name: default_owner_name(),
             post_enhance_command: String::new(),
-            wiki_automation: false,
-            wiki_targets: Vec::new(),
-            wiki_budget_usd: default_wiki_budget_usd(),
+            post_processing: false,
+            post_processing_targets: Vec::new(),
+            post_processing_budget_usd: default_wiki_budget_usd(),
+            agent_path: String::new(),
+            agent_prompt_template: String::new(),
+            agent_allowed_tools: default_allowed_tools(),
+            agent_denied_tools: default_denied_tools(),
             hook_auto_run: false,
             auto_title_tags: default_true(),
-            delete_audio_after_enhance: default_true(),
+            delete_audio_after_enhance: false,
             audio_retention_hours: default_audio_retention_hours(),
             transcription_languages: default_transcription_languages(),
             title_tags_prompt: String::new(),
@@ -149,6 +221,26 @@ impl Default for RecordingPreferences {
 /// Get the default recordings folder based on platform
 pub fn get_default_recordings_folder() -> PathBuf {
     recordings_base_dir().join(crate::app_names::RECORDINGS_DIR_NAME)
+}
+
+/// `save_folder` from a stored preferences object; None when absent or blank.
+pub fn root_from_preferences_value(value: Option<&serde_json::Value>) -> Option<PathBuf> {
+    value?
+        .get("save_folder")?
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Generic settings section 4: the recordings root the app records into, lists and reconciles.
+/// The `save_folder` preference when set, else the platform default. Reads the store directly
+/// so callers without async context can use it.
+pub fn recordings_root<R: Runtime>(app: &AppHandle<R>) -> PathBuf {
+    app.store("recording_preferences.json")
+        .ok()
+        .and_then(|store| root_from_preferences_value(store.get("preferences").as_ref()))
+        .unwrap_or_else(get_default_recordings_folder)
 }
 
 /// Parent of the default recordings folder: Music on Windows, Movies on macOS,
@@ -206,6 +298,7 @@ pub async fn load_recording_preferences<R: Runtime>(
                     let backend = crate::audio::capture::get_current_backend();
                     p.system_audio_backend = Some(backend.to_string());
                 }
+                normalize_legacy_targets(&mut p.post_processing_targets);
                 p
             }
             Err(e) => {
@@ -491,12 +584,24 @@ mod tests {
     }
 
     #[test]
-    fn old_preferences_get_transcription_languages_and_builtin_prompt() {
+    fn languages_come_from_the_locales_the_app_knows() {
+        let l = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(languages_from_locales(&l(&["fr-FR", "en-US", "zz", "FR_CA"])), vec!["fr", "en"]);
+        assert_eq!(languages_from_locales(&l(&["ja-JP"])), vec!["en"], "nothing known falls back to English");
+        assert_eq!(languages_from_locales(&[]), vec!["en"]);
+        assert!(!RecordingPreferences::default().transcription_languages.is_empty());
         let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
         let p: RecordingPreferences = serde_json::from_str(old).unwrap();
-        assert_eq!(p.transcription_languages, vec!["en", "fr"]);
         assert_eq!(p.title_tags_prompt, "");
-        assert_eq!(RecordingPreferences::default().transcription_languages, vec!["en", "fr"]);
+    }
+
+    #[test]
+    fn root_from_preferences_falls_back_when_missing_or_empty() {
+        let v = serde_json::json!({"save_folder": "/Volumes/Work/recordings", "auto_save": true});
+        assert_eq!(root_from_preferences_value(Some(&v)), Some(PathBuf::from("/Volumes/Work/recordings")));
+        assert_eq!(root_from_preferences_value(Some(&serde_json::json!({"save_folder": "  "}))), None);
+        assert_eq!(root_from_preferences_value(Some(&serde_json::json!({"auto_save": true}))), None);
+        assert_eq!(root_from_preferences_value(None), None);
     }
 
     #[test]
@@ -524,28 +629,56 @@ mod tests {
     }
 
     #[test]
-    fn call_detection_defaults_stop_on_and_start_on() {
+    fn call_detection_defaults_stop_on_and_start_off() {
         let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
         let p: RecordingPreferences = serde_json::from_str(old).unwrap();
         assert!(p.auto_stop_on_call_end);
-        assert!(p.auto_start_on_call);
+        assert!(!p.auto_start_on_call, "a stranger opts in to auto-start");
         let d = RecordingPreferences::default();
         assert!(d.auto_stop_on_call_end);
-        assert!(d.auto_start_on_call);
+        assert!(!d.auto_start_on_call);
         assert!(!p.calendar_meeting_name && !d.calendar_meeting_name);
+        let stored = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4","auto_start_on_call":true}"#;
+        assert!(serde_json::from_str::<RecordingPreferences>(stored).unwrap().auto_start_on_call, "a stored value is kept");
     }
 
     #[test]
-    fn wiki_automation_defaults_off_with_empty_targets_and_five_dollars() {
+    fn post_processing_defaults_off_with_empty_targets_and_five_dollars() {
         let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
         let p: RecordingPreferences = serde_json::from_str(old).unwrap();
-        assert!(!p.wiki_automation);
-        assert!(p.wiki_targets.is_empty());
-        assert_eq!(p.wiki_budget_usd, 5.0);
-        let with: RecordingPreferences = serde_json::from_str(
-            r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4","wiki_targets":[{"project":"dex","directory":"/w/dex"}]}"#,
-        ).unwrap();
-        assert_eq!(with.wiki_targets[0].skill, "", "skill is optional in the file");
+        assert!(!p.post_processing);
+        assert!(p.post_processing_targets.is_empty());
+        assert_eq!(p.post_processing_budget_usd, 5.0);
+        assert_eq!(p.agent_path, "");
+        assert_eq!(p.agent_prompt_template, "");
+        assert_eq!(p.agent_allowed_tools, vec!["mcp__open-knowledge", "mcp__noesis"]);
+        assert_eq!(p.agent_denied_tools, vec!["mcp__open-knowledge__delete", "mcp__open-knowledge__move", "mcp__noesis__assign_meeting"]);
+    }
+
+    #[test]
+    fn old_wiki_keys_load_through_aliases_and_skill_becomes_instructions() {
+        let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4",
+            "wiki_automation":true,"wiki_budget_usd":2.5,
+            "wiki_targets":[{"project":"dex","directory":"/w/dex","skill":"dex-case-tracking"},{"project":"flo","directory":"/w/flo"}]}"#;
+        let mut p: RecordingPreferences = serde_json::from_str(old).unwrap();
+        assert!(p.post_processing);
+        assert_eq!(p.post_processing_budget_usd, 2.5);
+        assert_eq!(p.post_processing_targets.len(), 2);
+        normalize_legacy_targets(&mut p.post_processing_targets);
+        assert_eq!(p.post_processing_targets[0].instructions, "Use the dex-case-tracking skill.");
+        assert_eq!(p.post_processing_targets[0].skill, "");
+        assert_eq!(p.post_processing_targets[1].instructions, "");
+        let json = serde_json::to_value(&p).unwrap();
+        assert!(json.get("post_processing").is_some() && json.get("wiki_automation").is_none(), "new names are written");
+        assert!(json["post_processing_targets"][0].get("skill").is_none(), "skill is never written back");
+    }
+
+    #[test]
+    fn explicit_instructions_win_over_a_legacy_skill() {
+        let mut t = vec![PostProcessingTarget { project: "dex".into(), directory: "/w".into(), instructions: "Keep it short.".into(), skill: "x".into() }];
+        normalize_legacy_targets(&mut t);
+        assert_eq!(t[0].instructions, "Keep it short.");
+        assert_eq!(t[0].skill, "");
     }
 
     #[test]
@@ -564,19 +697,13 @@ mod tests {
     }
 
     #[test]
-    fn audio_cleanup_defaults_on_with_24_hours() {
+    fn audio_deletion_defaults_off_and_owner_name_is_never_blank() {
         let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
         let p: RecordingPreferences = serde_json::from_str(old).unwrap();
-        assert!(p.delete_audio_after_enhance);
+        assert!(!p.delete_audio_after_enhance);
+        assert!(!RecordingPreferences::default().delete_audio_after_enhance);
         assert_eq!(p.audio_retention_hours, 24);
-        assert!(RecordingPreferences::default().delete_audio_after_enhance);
-        assert_eq!(RecordingPreferences::default().audio_retention_hours, 24);
-    }
-
-    #[test]
-    fn owner_name_defaults_to_me() {
-        let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
-        let p: RecordingPreferences = serde_json::from_str(old).unwrap();
-        assert_eq!(p.owner_name, "Me");
+        assert!(!RecordingPreferences::default().owner_name.trim().is_empty());
+        assert!(!p.owner_name.trim().is_empty());
     }
 }

@@ -67,8 +67,8 @@ pub mod speaker_energy;
 // spec 4.7: post-enhance hook
 pub mod post_enhance_hook;
 pub mod hook_status;
-// spec 4.8: built-in wiki automation
-pub mod wiki_automation;
+// generic settings section 1: built-in Claude Code run per project (was spec 4.8)
+pub mod post_processing;
 
 pub use devices::{
     default_input_device, default_output_device, get_device_and_config, list_audio_devices,
