@@ -103,7 +103,7 @@ MCP server (`mcp/src/paths.ts`): root order becomes `NOESIS_RECORDINGS`, `MEETIL
 
 ### 5. Distribution hygiene
 
-Migration asks first. Before `migrate_dirs()` at `lib.rs:501`, when the plan holds at least one rename and no `migration.skipped` marker exists in the Noesis app data dir, a blocking `rfd::MessageDialog` (the crate behind `tauri-plugin-dialog`, added as a direct dependency) shows: "Meetily data was found on this Mac. Move it to Noesis now? Nothing is deleted." Buttons: "Move", "Not now", "Never". Move runs the migration as today. Not now skips it this launch and asks again next time. Never writes the marker and never asks again; the user can still move data by hand. A user without Meetily data never sees the dialog.
+Migration asks first. Before `migrate_dirs()` at `lib.rs:501`, when the plan holds at least one rename and no `migration.skipped` marker exists in the Noesis app data dir, a blocking `rfd::MessageDialog` (the crate behind `tauri-plugin-dialog`, added as a direct dependency) shows: "Meetily data was found on this Mac. Move it to Noesis now? Nothing is deleted. If you skip, Noesis starts fresh and leaves the Meetily data where it is; you can move it by hand later." Buttons: "Move" and "Skip". Move runs the migration as today. Skip (or closing the dialog) writes the marker and leaves the data in place for good, because the app creates its own dirs at that launch and a later automatic move is no longer possible. A user without Meetily data never sees the dialog.
 
 MCP without a checkout. `mcp/package.json` is published as `@alexandrelaine/noesis-mcp` (`noesis-mcp` is taken on npm), public, with `"bin": { "noesis-mcp": "src/index.ts" }` and a `#!/usr/bin/env node` shebang; Node 22.18 or newer stays the floor. Registration is `claude mcp add --scope user noesis -- npx -y @alexandrelaine/noesis-mcp`. The Post-processing card gets a "Register MCP server with Claude Code" button that runs that command through the located `claude` and shows success or the error text, plus a "Copy command" action for Codex and Cursor users. `mcp/README.md` documents both the npx route and the checkout route.
 
@@ -145,7 +145,7 @@ Manual acceptance:
 
 - Record from a Teams or Google Meet test call: recording starts (switch on) and stops within 30 seconds of leaving.
 - Change the recordings folder, record a two-minute meeting: the folder lands under the new root, the sidebar lists it, `list_meetings` from a wiki sees it.
-- Fresh user account with a copy of Meetily data: the dialog appears; "Never" writes the marker and the second launch is silent.
+- Fresh user account with a copy of Meetily data: the dialog appears; "Skip" writes the marker and the second launch is silent.
 - From a shell without the checkout on `PATH`: the Register button adds the server and `claude mcp list` shows `noesis`.
 - The owner's existing settings load with the same behaviour as before: three project rows with instructions "Use the … skill." (the former DEX-specific sentence "do not score, do not update trackers or the Blueprint" is not migrated; the owner adds it to the row's instructions by hand before turning post-processing on), languages en and fr, auto-start on.
 

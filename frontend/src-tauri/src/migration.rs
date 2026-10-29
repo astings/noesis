@@ -194,7 +194,7 @@ pub fn migrate_dirs() -> MigrationOutcome {
     migrate(app_data_pair(), &config_pairs(), recordings_pair(), |p| p.symlink_metadata().is_ok())
 }
 
-/// Written in the Noesis app data dir when the user answers "Never"; the dialog then stays away.
+/// Written in the Noesis app data dir when the user answers "Skip"; the dialog then stays away.
 pub const SKIP_MARKER: &str = "migration.skipped";
 
 /// Pure: a dialog is due when at least one legacy dir would be renamed.
@@ -205,8 +205,7 @@ pub fn needs_prompt(steps: &[Step]) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Answer {
     Move,
-    NotNow,
-    Never,
+    Skip,
 }
 
 /// Blocking native dialog. Runs before the Tauri window exists, so it uses rfd directly.
@@ -216,13 +215,12 @@ fn ask() -> Answer {
     let result = MessageDialog::new()
         .set_level(MessageLevel::Info)
         .set_title("Meetily data found")
-        .set_description("Meetily data was found on this Mac. Move it to Noesis now? Nothing is deleted. \"Not now\" asks again next launch.")
-        .set_buttons(MessageButtons::YesNoCancelCustom("Move".into(), "Not now".into(), "Never".into()))
+        .set_description("Meetily data was found on this Mac. Move it to Noesis now? Nothing is deleted. If you skip, Noesis starts fresh and leaves the Meetily data where it is; you can move it by hand later.")
+        .set_buttons(MessageButtons::OkCancelCustom("Move".into(), "Skip".into()))
         .show();
     match result {
         MessageDialogResult::Custom(s) if s == "Move" => Answer::Move,
-        MessageDialogResult::Custom(s) if s == "Never" => Answer::Never,
-        _ => Answer::NotNow,
+        _ => Answer::Skip,
     }
 }
 
@@ -231,7 +229,10 @@ fn ask() -> Answer {
     Answer::Move
 }
 
-/// Startup step 1 with consent: skip for good after "Never", ask when a rename is due, else behave as `migrate_dirs`.
+/// Startup step 1 with consent. Marker present: do nothing. No rename due: behave as `migrate_dirs`.
+/// Otherwise ask: "Move" migrates; "Skip" (or closing the dialog) writes the marker and leaves the
+/// data in place for good. A postponed move is not offered because this launch creates the Noesis
+/// dirs, after which the rename can never run again.
 pub fn migrate_dirs_after_asking() -> MigrationOutcome {
     let exists = |p: &Path| p.symlink_metadata().is_ok();
     let marker = app_data_pair().map(|m| m.to.join(SKIP_MARKER));
@@ -244,17 +245,15 @@ pub fn migrate_dirs_after_asking() -> MigrationOutcome {
     }
     match ask() {
         Answer::Move => migrate_dirs(),
-        Answer::NotNow => {
-            log::info!("migration: postponed by the user");
-            MigrationOutcome::default()
-        }
-        Answer::Never => {
+        Answer::Skip => {
             if let Some(m) = marker {
-                if let Err(e) = std::fs::create_dir_all(m.parent().unwrap_or(Path::new("/"))).and_then(|_| std::fs::write(&m, "")) {
-                    log::warn!("migration: could not write {}: {}", m.display(), e);
+                if let Some(dir) = m.parent() {
+                    if let Err(e) = std::fs::create_dir_all(dir).and_then(|_| std::fs::write(&m, "")) {
+                        log::warn!("migration: could not write {}: {}", m.display(), e);
+                    }
                 }
             }
-            log::info!("migration: declined for good");
+            log::info!("migration: skipped by the user; data left in place");
             MigrationOutcome::default()
         }
     }
