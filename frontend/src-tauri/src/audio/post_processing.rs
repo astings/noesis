@@ -112,7 +112,7 @@ pub fn resolve_agent(agent_path: &str) -> Option<PathBuf> {
 }
 
 /// Generic settings section 5: the published MCP server and the Claude Code registration for it.
-pub const MCP_PACKAGE: &str = "@alexandrelaine/noesis-mcp";
+pub const MCP_PACKAGE: &str = "@noesis-app/noesis-mcp";
 pub const MCP_REGISTER_ARGS: [&str; 9] = ["mcp", "add", "--scope", "user", "noesis", "--", "npx", "-y", MCP_PACKAGE];
 
 /// The same registration as a shell line, for Codex and Cursor users to adapt.
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn the_register_command_uses_npx_and_user_scope() {
-        assert_eq!(mcp_register_command(), "claude mcp add --scope user noesis -- npx -y @alexandrelaine/noesis-mcp");
+        assert_eq!(mcp_register_command(), "claude mcp add --scope user noesis -- npx -y @noesis-app/noesis-mcp");
         assert_eq!(MCP_REGISTER_ARGS.len(), 9);
     }
 

@@ -18,7 +18,7 @@
 - Before editing Rust, `pgrep -fl "tauri dev"` must print nothing.
 - macOS only. New native code lives under `#[cfg(target_os = "macos")]`.
 - Generic call detection requires macOS 14; macOS 13 keeps the Zoom-only check. Poll period and debounce stay 5 s and 4 ticks.
-- Copy: the settings group is "Calls". The dialog title is "Meetily data found". The npm package is `@alexandrelaine/noesis-mcp`; `noesis-mcp` is taken.
+- Copy: the settings group is "Calls". The dialog title is "Meetily data found". The npm package is `@noesis-app/noesis-mcp`; `noesis-mcp` is taken.
 - Auto-start defaults off (done in Plan A); nothing in this plan turns it on.
 
 ---
@@ -520,12 +520,12 @@ Replace `mcp/package.json` with:
 
 ```json
 {
-  "name": "@alexandrelaine/noesis-mcp",
+  "name": "@noesis-app/noesis-mcp",
   "version": "0.2.0",
   "type": "module",
   "description": "MCP server exposing the Noesis recordings library (projects, meetings, transcripts).",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/alexandrelaine/noesis" },
+  "repository": { "type": "git", "url": "https://github.com/astings/noesis" },
   "bin": { "noesis-mcp": "src/index.ts" },
   "files": ["src", "README.md"],
   "engines": { "node": ">=22.18" },
@@ -555,9 +555,9 @@ Expected: tests pass; the tarball lists `src/index.ts`, `src/library.ts`, `src/p
 In `mcp/README.md` replace the "Run" and "Register" paragraphs with:
 
 ```
-Run without a checkout: `npx -y @alexandrelaine/noesis-mcp` (Node 22.18 or newer; the package ships TypeScript that Node runs directly).
+Run without a checkout: `npx -y @noesis-app/noesis-mcp` (Node 22.18 or newer; the package ships TypeScript that Node runs directly).
 
-Register for Claude Code (all projects): `claude mcp add --scope user noesis -- npx -y @alexandrelaine/noesis-mcp`, or click "Register MCP server with Claude Code" in Noesis, Settings, Recordings, Post-processing.
+Register for Claude Code (all projects): `claude mcp add --scope user noesis -- npx -y @noesis-app/noesis-mcp`, or click "Register MCP server with Claude Code" in Noesis, Settings, Recordings, Post-processing.
 
 From a checkout instead: `node src/index.ts`, registered with `claude mcp add --scope user noesis -- node /ABSOLUTE/PATH/noesis/mcp/src/index.ts`.
 ```
@@ -568,7 +568,7 @@ Keep the root resolution sentence from Plan A Task 6.
 
 ```bash
 git add mcp/package.json mcp/README.md mcp/src/index.ts
-git commit -m "chore(mcp): publishable as @alexandrelaine/noesis-mcp with a bin entry"
+git commit -m "chore(mcp): publishable as @noesis-app/noesis-mcp with a bin entry"
 ```
 
 Publishing is the owner's step (npm account, outward-facing): `cd mcp && npm login && npm publish --access public`. Until it is published, the Register button of Task 6 registers a command that fails on first use with "404 Not Found" from npx; the button's error text shows it.
@@ -593,7 +593,7 @@ Add to the tests in `post_processing.rs`:
 ```rust
     #[test]
     fn the_register_command_uses_npx_and_user_scope() {
-        assert_eq!(mcp_register_command(), "claude mcp add --scope user noesis -- npx -y @alexandrelaine/noesis-mcp");
+        assert_eq!(mcp_register_command(), "claude mcp add --scope user noesis -- npx -y @noesis-app/noesis-mcp");
         assert_eq!(MCP_REGISTER_ARGS.len(), 9);
     }
 ```
@@ -609,7 +609,7 @@ After `resolve_agent` in `post_processing.rs` add:
 
 ```rust
 /// Generic settings section 5: the published MCP server and the Claude Code registration for it.
-pub const MCP_PACKAGE: &str = "@alexandrelaine/noesis-mcp";
+pub const MCP_PACKAGE: &str = "@noesis-app/noesis-mcp";
 pub const MCP_REGISTER_ARGS: [&str; 9] = ["mcp", "add", "--scope", "user", "noesis", "--", "npx", "-y", MCP_PACKAGE];
 
 /// The same registration as a shell line, for Codex and Cursor users to adapt.
@@ -739,7 +739,7 @@ git commit -m "feat(settings): Register MCP server with Claude Code button, with
 Append to the fork paragraph (line 15, after the Plan A sentence about `recordings_root`):
 
 ```
-Call detection is "another process reads the microphone" through CoreAudio process objects (`call_detector::mic_in_use_by_others`, macOS 14+), with the Zoom `CptHost` check as the macOS 13 fallback. The Meetily migration asks before moving (`migration::migrate_dirs_after_asking`; "Never" writes `migration.skipped` in the app data dir). The MCP server is published as `@alexandrelaine/noesis-mcp`; Settings has a Register button.
+Call detection is "another process reads the microphone" through CoreAudio process objects (`call_detector::mic_in_use_by_others`, macOS 14+), with the Zoom `CptHost` check as the macOS 13 fallback. The Meetily migration asks before moving (`migration::migrate_dirs_after_asking`; "Never" writes `migration.skipped` in the app data dir). The MCP server is published as `@noesis-app/noesis-mcp`; Settings has a Register button.
 ```
 
 - [ ] **Step 2: Main spec pointers**
@@ -753,7 +753,7 @@ Generalised by [generic settings for distribution](2026-10-28-generic-settings-f
 After the heading `### 4.6 MCP server` insert:
 
 ```
-Distribution: published as `@alexandrelaine/noesis-mcp`, registered with `npx -y` or the Settings button (generic settings spec, section 5). The root also follows the app's `save_folder` preference (section 4).
+Distribution: published as `@noesis-app/noesis-mcp`, registered with `npx -y` or the Settings button (generic settings spec, section 5). The root also follows the app's `save_folder` preference (section 4).
 ```
 
 - [ ] **Step 3: Commit**
