@@ -2,7 +2,7 @@
 
 MCP server over the Noesis recordings folder. Filesystem only; works with the app closed.
 
-Run: `node src/index.ts` (Node 22.18 or newer; no build step). Root, first match wins: `NOESIS_RECORDINGS`, `MEETILY_RECORDINGS`, `~/Movies/noesis-recordings` if it exists, `~/Movies/meetily-recordings` if it exists, else `~/Movies/noesis-recordings`.
+Run: `node src/index.ts` (Node 22.18 or newer; no build step). Root, first match wins: `NOESIS_RECORDINGS`, `MEETILY_RECORDINGS`, the app's "Recordings folder" setting (`~/Library/Application Support/com.noesis.app/recording_preferences.json`), `~/Movies/noesis-recordings` if it exists, `~/Movies/meetily-recordings` if it exists, else `~/Movies/noesis-recordings`.
 
 Register for Claude Code (all projects): `claude mcp add --scope user noesis -- node /ABSOLUTE/PATH/noesis/mcp/src/index.ts`
 

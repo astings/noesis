@@ -7,10 +7,28 @@ export const INBOX = '_inbox';
 const AUTO_TITLE = /^Meeting (\d{2}_\d{2}_\d{2}_\d{2}_\d{2}_\d{2}|\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})$/;
 const STAMP_PREFIX = /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}/;
 
-/** NOESIS_RECORDINGS, then MEETILY_RECORDINGS (legacy), then ~/Movies/noesis-recordings, falling back to the legacy ~/Movies/meetily-recordings only while it exists and the new one does not. */
-export function recordingsRoot(env: NodeJS.ProcessEnv = process.env, home: string = os.homedir()): string {
+/** The Tauri store the app writes its recording preferences to (macOS path; other platforms use the env vars). */
+export function prefsFileFor(home: string): string {
+  return path.join(home, 'Library', 'Application Support', 'com.noesis.app', 'recording_preferences.json');
+}
+
+/** `preferences.save_folder` from that store; null when the file is missing, unreadable or the value is blank. */
+export function rootFromPrefsFile(file: string): string | null {
+  try {
+    const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const v = json?.preferences?.save_folder;
+    return typeof v === 'string' && v.trim() ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** NOESIS_RECORDINGS, then MEETILY_RECORDINGS (legacy), then the app's save_folder preference, then ~/Movies/noesis-recordings, falling back to the legacy ~/Movies/meetily-recordings only while it exists and the new one does not. */
+export function recordingsRoot(env: NodeJS.ProcessEnv = process.env, home: string = os.homedir(), prefsFile: string = prefsFileFor(home)): string {
   const fromEnv = env.NOESIS_RECORDINGS || env.MEETILY_RECORDINGS;
   if (fromEnv) return fromEnv;
+  const fromPrefs = rootFromPrefsFile(prefsFile);
+  if (fromPrefs) return fromPrefs;
   const next = path.join(home, 'Movies', 'noesis-recordings');
   const legacy = path.join(home, 'Movies', 'meetily-recordings');
   return !fs.existsSync(next) && fs.existsSync(legacy) ? legacy : next;

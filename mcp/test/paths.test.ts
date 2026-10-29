@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import {
-  INBOX, recordingsRoot, isValidProjectName, slug, isAutoTitle, stampOfFolder, meetingFolderName, formatMmss, toLocalIso, parseBound,
+  INBOX, recordingsRoot, prefsFileFor, isValidProjectName, slug, isAutoTitle, stampOfFolder, meetingFolderName, formatMmss, toLocalIso, parseBound,
 } from '../src/paths.ts';
 
 test('project names are single normal components', () => {
@@ -47,15 +47,24 @@ test('parseBound: date-only covers the local day, datetimes pass through, junk i
   assert.ok(Number.isNaN(parseBound('10/27/2026', false)));
 });
 
-test('recordingsRoot: env vars, then existing dirs, noesis by default', () => {
+test('recordingsRoot: env vars, then the app preference, then existing dirs, noesis by default', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'noesis-paths-'));
   const movies = (n: string) => path.join(home, 'Movies', n);
-  assert.equal(recordingsRoot({ NOESIS_RECORDINGS: '/a', MEETILY_RECORDINGS: '/b' }, home), '/a');
-  assert.equal(recordingsRoot({ MEETILY_RECORDINGS: '/b' }, home), '/b');
-  assert.equal(recordingsRoot({}, home), movies('noesis-recordings'));
+  const prefs = path.join(home, 'prefs.json');
+  assert.equal(recordingsRoot({ NOESIS_RECORDINGS: '/a', MEETILY_RECORDINGS: '/b' }, home, prefs), '/a');
+  assert.equal(recordingsRoot({ MEETILY_RECORDINGS: '/b' }, home, prefs), '/b');
+  assert.equal(recordingsRoot({}, home, prefs), movies('noesis-recordings'));
   fs.mkdirSync(movies('meetily-recordings'), { recursive: true });
-  assert.equal(recordingsRoot({}, home), movies('meetily-recordings'));
+  assert.equal(recordingsRoot({}, home, prefs), movies('meetily-recordings'));
   fs.mkdirSync(movies('noesis-recordings'));
-  assert.equal(recordingsRoot({}, home), movies('noesis-recordings'));
+  assert.equal(recordingsRoot({}, home, prefs), movies('noesis-recordings'));
+  fs.writeFileSync(prefs, JSON.stringify({ preferences: { save_folder: '/Volumes/Work/rec' } }));
+  assert.equal(recordingsRoot({}, home, prefs), '/Volumes/Work/rec');
+  assert.equal(recordingsRoot({ NOESIS_RECORDINGS: '/a' }, home, prefs), '/a', 'the environment still wins');
+  fs.writeFileSync(prefs, JSON.stringify({ preferences: { save_folder: '  ' } }));
+  assert.equal(recordingsRoot({}, home, prefs), movies('noesis-recordings'), 'blank is ignored');
+  fs.writeFileSync(prefs, '{not json');
+  assert.equal(recordingsRoot({}, home, prefs), movies('noesis-recordings'), 'garbage is ignored');
+  assert.equal(prefsFileFor('/Users/x'), '/Users/x/Library/Application Support/com.noesis.app/recording_preferences.json');
   fs.rmSync(home, { recursive: true });
 });
