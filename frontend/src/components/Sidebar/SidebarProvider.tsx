@@ -106,6 +106,9 @@ interface SidebarContextType {
   isMeetingActive: boolean;
   setIsMeetingActive: (active: boolean) => void;
   handleRecordingToggle: () => void;
+  // Home while a recording runs: the Recent list instead of the live transcript
+  homeView: boolean;
+  goHome: () => void;
   searchTranscripts: (query: string) => Promise<void>;
   searchResults: TranscriptSearchResult[];
   isSearching: boolean;
@@ -148,6 +151,14 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 
   const pathname = usePathname();
   const router = useRouter();
+
+  // Only meaningful while recording; a new recording always starts on the live transcript
+  const [homeView, setHomeView] = useState(false);
+  useEffect(() => { if (!isRecording) setHomeView(false); }, [isRecording]);
+  const goHome = () => {
+    setHomeView(true);
+    router.push('/');
+  };
 
   // Extract fetchMeetings as a reusable function
   const fetchMeetings = React.useCallback(async () => {
@@ -314,6 +325,10 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
         router.push('/');
       }
 
+    } else {
+      // Recording: the button brings the live transcript back
+      setHomeView(false);
+      if (pathname !== '/') router.push('/');
     }
     // The actual recording start/stop is handled in the Home component
   };
@@ -351,6 +366,8 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       isMeetingActive,
       setIsMeetingActive,
       handleRecordingToggle,
+      homeView,
+      goHome,
       searchTranscripts,
       searchResults,
       isSearching,
