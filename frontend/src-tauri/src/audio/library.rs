@@ -426,7 +426,12 @@ async fn assign_inner(
             .unwrap_or_else(|| local_stamp(chrono::Local::now())),
     };
     let base = meeting_folder_name(&stamp, Some(&new_title));
-    let project_dir = root.join(&new_project);
+    // outside the current root (the folder preference changed) a title edit renames in place
+    let project_dir = if project.is_none() && !old_path.starts_with(root) {
+        old_path.parent().map(Path::to_path_buf).unwrap_or_else(|| root.to_path_buf())
+    } else {
+        root.join(&new_project)
+    };
     std::fs::create_dir_all(&project_dir).map_err(|e| format!("Cannot create project folder: {}", e))?;
     let mut new_path = project_dir.join(&base);
     let mut n = 2;
@@ -532,6 +537,23 @@ mod tests {
         let legacy = started_at_of(Some("/r/Meeting_2026"), created);
         assert_eq!(chrono::DateTime::parse_from_rfc3339(&legacy).unwrap(), created);
         assert_eq!(chrono::DateTime::parse_from_rfc3339(&started_at_of(None, created)).unwrap(), created);
+    }
+
+    #[tokio::test]
+    async fn title_edit_outside_the_current_root_renames_in_place() {
+        let other = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let old = other.path().join("dex").join("2026-10-27_12-03 old");
+        write_meta(&old, r#"{"version":"2.0","meeting_id":"m-old","project":"dex","title":"Old"}"#);
+        let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        sqlx::query("CREATE TABLE meetings (id TEXT PRIMARY KEY, title TEXT NOT NULL, folder_path TEXT, updated_at TEXT)")
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO meetings (id, title, folder_path) VALUES ('m-old', 'Old', ?)")
+            .bind(old.to_string_lossy().to_string()).execute(&pool).await.unwrap();
+        let got = assign(&pool, root.path(), "m-old", None, Some("New title")).await.unwrap();
+        assert_eq!(got, other.path().join("dex").join("2026-10-27_12-03 new-title"));
+        assert!(got.exists());
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
     }
 
     #[test]
