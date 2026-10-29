@@ -58,7 +58,7 @@ UI (`components/PostProcessingSettings.tsx`, renamed from `WikiAutomationSetting
 - "Prompt template": textarea, same pattern as "Prompt for titles and tags", with a "Reset to default" link and the placeholder list in the hint.
 - "Allowed tools" and "Denied tools": one text field each, space or comma separated.
 - "Cost cap per run": unchanged.
-- "Register MCP server with Claude Code": see section 5.
+- "Register with Claude Code" (row "MCP server"): see section 5.
 
 The custom shell command of spec 4.7 ("Custom command", Advanced group) stays as the escape hatch for any other agent. `dispatch_with` in `post_enhance_hook.rs` keeps its logic; only the names change.
 
@@ -103,9 +103,9 @@ MCP server (`mcp/src/paths.ts`): root order becomes `NOESIS_RECORDINGS`, `MEETIL
 
 ### 5. Distribution hygiene
 
-- Call detector: a pure `choose_signal(process_objects: Option<bool>, cpthost: Option<bool>) -> Option<bool>` is true when either is true, and `None` only when neither answered.
+Migration asks first. Before `migrate_dirs()` at `lib.rs:501`, when the plan holds at least one rename and no `migration.skipped` marker exists in the Noesis app data dir, a blocking `rfd::MessageDialog` (the crate behind `tauri-plugin-dialog`, added as a direct dependency) shows: "Meetily data was found on this Mac. Move it to Noesis now? Nothing is deleted. If you skip, Noesis starts fresh and leaves the Meetily data where it is; you can move it by hand later." Buttons: "Move" and "Skip". Move runs the migration as today. Skip (or closing the dialog) writes the marker and leaves the data in place for good, because the app creates its own dirs at that launch and a later automatic move is no longer possible. A user without Meetily data never sees the dialog. The main window is created by setup after the dialog returns (`"create": false` in `tauri.conf.json`), so no webview call can create the new app data dir while the user reads the dialog.
 
-MCP without a checkout. `mcp/package.json` is published as `@alexandrelaine/noesis-mcp` (`noesis-mcp` is taken on npm), public, with `"bin": { "noesis-mcp": "dist/index.js" }`: `tsc` compiles `src/` to `dist/` at `npm pack` because Node refuses to strip types from files under `node_modules`; the shebang survives compilation; the checkout keeps running `src/index.ts` directly; Node 22.18 or newer stays the floor. Registration is `claude mcp add --scope user noesis -- npx -y @alexandrelaine/noesis-mcp`. The Post-processing card gets a "Register MCP server with Claude Code" button that runs that command through the located `claude` and shows success or the error text, plus a "Copy command" action for Codex and Cursor users. `mcp/README.md` documents both the npx route and the checkout route.
+MCP without a checkout. `mcp/package.json` is published as `@alexandrelaine/noesis-mcp` (`noesis-mcp` is taken on npm), public, with `"bin": { "noesis-mcp": "dist/index.js" }`: `tsc` compiles `src/` to `dist/` at `npm pack` because Node refuses to strip types from files under `node_modules`; the shebang survives compilation; the checkout keeps running `src/index.ts` directly; Node 22.18 or newer stays the floor. Registration is `claude mcp add --scope user noesis -- npx -y @alexandrelaine/noesis-mcp`. The Post-processing card gets an "MCP server" row with a "Register with Claude Code" button that runs that command through the located `claude` and shows success or the error text, plus a "Copy command" action for Codex and Cursor users. `mcp/README.md` documents both the npx route and the checkout route.
 
 Example script. `scripts/post-enhance.sh` keeps its shape and loses the owner's rows: two example lines with `$HOME/path/to/wiki` placeholders.
 
@@ -136,7 +136,7 @@ Rust (`cargo test` in `frontend/src-tauri`):
 - `claude_args`: empty allowed or denied lists omit their flags.
 - `recordings_root`: empty or missing `save_folder` falls back to the default.
 - Calendar: `has_link` for each domain and for none.
-Migration asks first. Before `migrate_dirs()` at `lib.rs:501`, when the plan holds at least one rename and no `migration.skipped` marker exists in the Noesis app data dir, a blocking `rfd::MessageDialog` (the crate behind `tauri-plugin-dialog`, added as a direct dependency) shows: "Meetily data was found on this Mac. Move it to Noesis now? Nothing is deleted. If you skip, Noesis starts fresh and leaves the Meetily data where it is; you can move it by hand later." Buttons: "Move" and "Skip". Move runs the migration as today. Skip (or closing the dialog) writes the marker and leaves the data in place for good, because the app creates its own dirs at that launch and a later automatic move is no longer possible. A user without Meetily data never sees the dialog. The main window is created by setup after the dialog returns (`"create": false` in `tauri.conf.json`), so no webview call can create the new app data dir while the user reads the dialog.
+- Call detector: a pure `choose_signal(process_objects: Option<bool>, cpthost: Option<bool>) -> Option<bool>` is true when either is true, and `None` only when neither answered.
 - Language derivation: a pure function over a list of locale identifiers (`fr-FR`, `en-US`, `zz`) returns `["fr", "en"]`.
 
 MCP (`npm test`): root resolution reads `save_folder` from an injected data dir path and ignores an unreadable or empty file.
@@ -148,6 +148,8 @@ Manual acceptance:
 - Fresh user account with a copy of Meetily data: the dialog appears; "Skip" writes the marker and the second launch is silent.
 - From a shell without the checkout on `PATH`: the Register button adds the server and `claude mcp list` shows `noesis`.
 - The owner's existing settings load with the same behaviour as before: three project rows with instructions "Use the … skill." (the former DEX-specific sentence "do not score, do not update trackers or the Blueprint" is not migrated; the owner adds it to the row's instructions by hand before turning post-processing on), languages en and fr, auto-start on.
+- Call signal on a real call: with a Zoom meeting live, then a Teams or Google Meet call in the browser, `cargo test --lib probe_process_objects -- --ignored --nocapture` shows that app's PID with running input; with no call it shows none; while Noesis records alone only Noesis's own PID does.
+- Migration dialog left open: on a Mac with Meetily data, leave the dialog open 30 seconds, click Move, then confirm `~/Library/Application Support/com.noesis.app` holds the old Meetily database and the log says the dirs were moved, not "both exist".
 
 ## Decisions
 
