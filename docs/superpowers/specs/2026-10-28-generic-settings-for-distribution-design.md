@@ -147,7 +147,7 @@ Manual acceptance:
 - Change the recordings folder, record a two-minute meeting: the folder lands under the new root, the sidebar lists it, `list_meetings` from a wiki sees it.
 - Fresh user account with a copy of Meetily data: the dialog appears; "Never" writes the marker and the second launch is silent.
 - From a shell without the checkout on `PATH`: the Register button adds the server and `claude mcp list` shows `noesis`.
-- The owner's existing settings load with the same behaviour as before: three project rows with instructions "Use the … skill.", languages en and fr, auto-start on.
+- The owner's existing settings load with the same behaviour as before: three project rows with instructions "Use the … skill." (the former DEX-specific sentence "do not score, do not update trackers or the Blueprint" is not migrated; the owner adds it to the row's instructions by hand before turning post-processing on), languages en and fr, auto-start on.
 
 ## Decisions
 

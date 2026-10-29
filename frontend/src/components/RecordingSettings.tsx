@@ -211,7 +211,13 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
   // generic settings section 4: the folder new recordings go into
   const handleChangeFolder = async () => {
     const picked = await invoke<string | null>('select_directory').catch(() => null);
-    if (picked && picked !== preferences.save_folder) await applyPreferences({ ...preferences, save_folder: picked });
+    if (!picked) return;
+    const current = preferences.save_folder;
+    if (current && (picked === current || picked.startsWith(current + '/') || current.startsWith(picked + '/'))) {
+      toast.error('Pick a folder outside the current recordings folder');
+      return;
+    }
+    await applyPreferences({ ...preferences, save_folder: picked });
   };
 
   const handleOpenFolder = async () => {

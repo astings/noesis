@@ -30,9 +30,11 @@ export function PostProcessingSettings({ preferences, onChange, disabled }: Prop
   const [deniedDraft, setDeniedDraft] = useState<string | null>(null);
 
   useEffect(() => {
-    invoke<string | null>('locate_claude_cli').then(setClaudePath).catch(() => setClaudePath(null));
     invoke<string>('get_default_agent_prompt_template').then(setDefaultTemplate).catch(() => setDefaultTemplate(''));
   }, []);
+  useEffect(() => {
+    invoke<string | null>('locate_claude_cli', { agentPath: preferences.agent_path }).then(setClaudePath).catch(() => setClaudePath(null));
+  }, [preferences.agent_path]);
 
   const rows = draft ?? preferences.post_processing_targets;
   const commitRows = async (next: PostProcessingTarget[]) => {

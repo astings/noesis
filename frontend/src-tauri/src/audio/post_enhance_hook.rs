@@ -132,7 +132,7 @@ pub type Notify = std::sync::Arc<dyn Fn(&str, &str) + Send + Sync>;
 pub const HOOK_BUSY: &str = "A hook is already running for this meeting.";
 pub const NO_HOOK: &str = "No hook configured. Set one in Settings, Recordings.";
 
-/// The wiki row for the meeting's project wins, else the custom command. `force` re-runs
+/// The project row for the meeting's project wins, else the custom command. `force` re-runs
 /// wiki automation even when `hook.done` exists.
 pub fn dispatch<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
@@ -187,13 +187,13 @@ pub fn dispatch_with(
                 Ok(HookKind::Agent)
             }
             // Skipped because a run is in flight; its own exit settles the status.
-            Ok(false) => Err("Wiki automation is already running for this meeting.".to_string()),
+            Ok(false) => Err("Post-processing is already running for this meeting.".to_string()),
             Err(e) => {
                 transition(FAILED);
                 Err(e.to_string())
             }
         },
-        // Auto run skips on hook.done, like wiki automation; a forced run always spawns.
+        // Auto run skips on hook.done, like the built-in run; a forced run always spawns.
         None if !force && ctx.folder.join("hook.done").exists() => {
             transition(DONE);
             Ok(HookKind::Command)
@@ -407,7 +407,7 @@ mod tests {
         prefs.post_processing = true;
         prefs.post_processing_targets = vec![super::super::recording_preferences::PostProcessingTarget { project: "dex".into(), directory: "/nonexistent/wiki".into(), instructions: String::new(), skill: String::new() }];
         let (seen, notify) = recorder();
-        let err = dispatch_with(&prefs, &read_context(dir.path(), "m-wiki"), true, notify).unwrap_err();
+        let err = dispatch_with(&prefs, &read_context(dir.path(), "m-agent"), true, notify).unwrap_err();
         assert!(err.contains("/nonexistent/wiki"), "{}", err);
         assert_eq!(seen.lock().unwrap().last().unwrap().1, "failed");
         std::thread::sleep(std::time::Duration::from_millis(100));

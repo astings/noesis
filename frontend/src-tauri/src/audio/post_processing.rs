@@ -44,13 +44,14 @@ pub fn find_target<'a>(targets: &'a [PostProcessingTarget], project: &str) -> Op
 /// An empty template, or one that renders empty, uses the built-in template.
 pub fn render_prompt(template: &str, target: &PostProcessingTarget, ctx: &HookContext) -> String {
     let t = if template.trim().is_empty() { DEFAULT_PROMPT_TEMPLATE } else { template };
-    let out = t
+    let out = t.replace("{instructions}", target.instructions.trim());
+    let out = out.split(' ').filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ");
+    // collapse before the path-like values go in, so their own spaces survive
+    let out = out
         .replace("{folder}", &ctx.folder.display().to_string())
         .replace("{project}", &ctx.project)
         .replace("{title}", &ctx.title)
-        .replace("{meeting_id}", &ctx.meeting_id)
-        .replace("{instructions}", target.instructions.trim());
-    let out = out.split(' ').filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ");
+        .replace("{meeting_id}", &ctx.meeting_id);
     if out.is_empty() && t != DEFAULT_PROMPT_TEMPLATE {
         return render_prompt(DEFAULT_PROMPT_TEMPLATE, target, ctx);
     }
@@ -181,8 +182,8 @@ pub fn run(prefs: &RecordingPreferences, target: &PostProcessingTarget, ctx: &Ho
 
 /// Where the settings card says Claude Code was found.
 #[tauri::command]
-pub async fn locate_claude_cli() -> Option<String> {
-    locate_claude().map(|p| p.display().to_string())
+pub async fn locate_claude_cli(agent_path: String) -> Option<String> {
+    resolve_agent(&agent_path).map(|p| p.display().to_string())
 }
 
 /// Native folder picker, used for post-processing directories and the recordings folder.
@@ -244,6 +245,8 @@ mod tests {
     fn custom_template_keeps_unknown_placeholders_and_falls_back_when_empty() {
         let c = ctx(Path::new("/r/x"));
         assert_eq!(render_prompt("Summarize {folder} for {who}: {instructions}", &target_with("be brief"), &c), "Summarize /r/x for {who}: be brief");
+        let spaced = ctx(Path::new("/r/two  spaces"));
+        assert!(render_prompt("Read {folder}  now", &target_with(""), &spaced).contains("/r/two  spaces now"));
         assert_eq!(render_prompt("{instructions}", &target_with(""), &c), render_prompt("", &target_with(""), &c), "an empty render uses the built-in template");
     }
 
