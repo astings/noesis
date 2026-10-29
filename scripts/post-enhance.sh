@@ -1,6 +1,5 @@
 #!/bin/sh
-# spec 4.7: reference post-enhance command for Noesis (advanced). Most users should use the "Wiki automation"
-# table in Settings instead; this script does the same by hand. To use it, set "Custom command (advanced)" to this file's path.
+# spec 4.7: reference post-enhance command for Noesis (advanced). Most users should use the "Post-processing" card in Settings instead; this script does the same by hand. To use it, set "Custom command" to this file's path.
 # The app runs it with NOESIS_FOLDER, NOESIS_PROJECT, NOESIS_TITLE and NOESIS_MEETING_ID set,
 # from inside the meeting folder, and appends this script's output to hook.log there.
 # DRY_RUN=1 prints the claude command instead of running it.
@@ -21,12 +20,11 @@ NOESIS_MEETING_ID="${NOESIS_MEETING_ID:-${MEETILY_MEETING_ID:-}}"
 : "${NOESIS_MEETING_ID:?NOESIS_MEETING_ID is required}"
 NOESIS_TITLE="${NOESIS_TITLE:-${MEETILY_TITLE:-}}"
 
-# Project to wiki directory and skill. Add a line per project.
+# Project to directory and optional instructions. One line per project; these two are examples.
 case "$NOESIS_PROJECT" in
-  dex)        WIKI="$HOME/Code/Case/DEX/dex-case-tracking";     SKILL="dex-case-tracking" ;;
-  recruiting) WIKI="$HOME/Code/Knowledge/recruiting";           SKILL="process-interview" ;;
-  flo)        WIKI="$HOME/Code/Case/FLO/revenue-ai-knowledge";  SKILL="" ;;
-  *)          echo "no wiki configured for project $NOESIS_PROJECT"; exit 2 ;;
+  example)   WIKI="$HOME/path/to/example-notes";   SKILL="process-meeting" ;;
+  another)   WIKI="$HOME/path/to/another-notes";   SKILL="" ;;
+  *)         echo "no directory configured for project $NOESIS_PROJECT"; exit 2 ;;
 esac
 
 if [ ! -d "$WIKI" ]; then

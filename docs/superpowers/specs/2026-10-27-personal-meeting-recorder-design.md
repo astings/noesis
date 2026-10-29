@@ -179,6 +179,8 @@ Lazier alternative: a `launchd` folder watcher outside the app. Rejected: the in
 
 ### 4.8 Wiki automation settings
 
+Superseded for the settings shape by [generic settings for distribution](2026-10-28-generic-settings-for-distribution-design.md), section 1: the card is "Post-processing", the prompt is a template, the tool lists are editable and `skill` became per-project instructions.
+
 What: the post-enhance hook without a script. A "Wiki automation" card in Recording settings holds a switch, a table of projects, and a cost cap; the app composes and runs the Claude Code call itself.
 
 How: preferences gain `wiki_automation: bool` (default off), `wiki_targets: [{project, directory, skill}]` and `wiki_budget_usd: f64` (default 5). When an enhance job finishes with segments and the switch is on, the app looks up the meeting's project in `wiki_targets`. On a match it runs, from the wiki directory, `claude -p <prompt> --permission-mode acceptEdits --allowedTools mcp__open-knowledge mcp__noesis --disallowedTools mcp__open-knowledge__delete mcp__open-knowledge__move mcp__noesis__assign_meeting --max-budget-usd <cap>`, with the same detached spawn and `hook.log` as 4.7. The prompt names the skill when one is set ("Use the <skill> skill to process the new meeting recording at <folder> ...") and asks for a draft only. A successful run writes `hook.done` in the meeting folder; a later enhance skips the meeting while the marker exists (delete it to reprocess). The app finds `claude` in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, then `PATH`, and the settings card shows where it was found or that it is missing. Projects without a row fall through to the custom command of 4.7 when one is set, so both can coexist.
