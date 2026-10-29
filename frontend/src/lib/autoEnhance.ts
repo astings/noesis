@@ -26,8 +26,17 @@ export async function startAutoEnhanceIfEnabled(
   }
   // spec 4.1: no audio file is written when auto_save is off, so there is nothing to enhance
   if (!prefs.auto_enhance || !prefs.auto_save) return false;
+  return startEnhance(meetingId, folderPath, prefs);
+}
 
+/** Start the enhance job with the model and language set in Settings. */
+export async function startEnhance(
+  meetingId: string,
+  folderPath: string,
+  prefs?: RecordingPreferences,
+): Promise<boolean> {
   try {
+    prefs ??= await invoke<RecordingPreferences>('get_recording_preferences');
     await invoke('start_retranscription_command', {
       meetingId,
       meetingFolderPath: folderPath,
@@ -41,7 +50,7 @@ export async function startAutoEnhanceIfEnabled(
     return true;
   } catch (error) {
     console.error('[autoEnhance] failed to start:', error);
-    toast.error('Automatic enhance did not start', {
+    toast.error('Enhance did not start', {
       description: error instanceof Error ? error.message : String(error),
     });
     return false;

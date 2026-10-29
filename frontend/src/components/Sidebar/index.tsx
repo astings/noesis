@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/context-menu';
 import { INBOX, normalizeProjectName } from '@/lib/projects';
 import { PROJECT_FOLDER_PREFIX, runMeetingHook, runMeetingTagging, deleteMeetingAudio } from '@/components/Sidebar/SidebarProvider';
-import { RetranscribeDialog } from '@/components/MeetingDetails/RetranscribeDialog';
+import { startEnhance } from '@/lib/autoEnhance';
 import { groupByDate, parseDate, rowLabel, bucketOf, type SortOrder } from '@/lib/dateBuckets';
 
 interface SidebarItem {
@@ -150,13 +150,12 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
 
   // "New project...": the dialog normalizes the name like ProjectSelect; assign_meeting creates the folder.
   const [newProject, setNewProject] = useState<{ meetingId: string; draft: string } | null>(null);
-  // The dialog needs the folder path, which the meeting list does not carry
-  const [enhanceTarget, setEnhanceTarget] = useState<{ meetingId: string; folderPath: string } | null>(null);
+  // The meeting list does not carry the folder path
   const openEnhance = async (meetingId: string) => {
     try {
       const { folder_path } = await invoke<{ folder_path?: string }>('api_get_meeting_metadata', { meetingId });
       if (!folder_path) throw new Error('This meeting has no recording folder');
-      setEnhanceTarget({ meetingId, folderPath: folder_path });
+      await startEnhance(meetingId, folder_path);
     } catch (error) {
       toast.error('Could not enhance the meeting', { description: error instanceof Error ? error.message : String(error) });
     }
@@ -605,15 +604,6 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
       </div>
 
       {/* Confirmation Modal for Delete */}
-      {enhanceTarget && (
-        <RetranscribeDialog
-          open
-          onOpenChange={(open) => { if (!open) setEnhanceTarget(null); }}
-          meetingId={enhanceTarget.meetingId}
-          meetingFolderPath={enhanceTarget.folderPath}
-          onComplete={refetchMeetings}
-        />
-      )}
       <ConfirmationModal
         isOpen={deleteModalState.isOpen}
         text="Delete this meeting? Its folder will be moved to the Trash."

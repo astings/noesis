@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { ProjectSelect } from '@/components/ProjectSelect';
@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { ChevronDown, FolderOpen, RefreshCw, Tags, Trash2, Webhook } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ConfirmationModal } from '@/components/ConfirmationModel/confirmation-modal';
-import { RetranscribeDialog } from './RetranscribeDialog';
+import { startEnhance } from '@/lib/autoEnhance';
 
 interface TranscriptButtonGroupProps {
   onOpenMeetingFolder: () => Promise<void>;
@@ -27,7 +27,6 @@ export function TranscriptButtonGroup({
   onRefetchTranscripts,
   audioDeleted,
 }: TranscriptButtonGroupProps) {
-  const [showRetranscribeDialog, setShowRetranscribeDialog] = useState(false);
   const [showDeleteAudio, setShowDeleteAudio] = useState(false);
   const audioGone = audioDeleted ? 'Audio removed after enhance' : undefined;
 
@@ -56,13 +55,6 @@ export function TranscriptButtonGroup({
       setMoving(false);
     }
   };
-
-  const handleRetranscribeComplete = useCallback(async () => {
-    // Refetch transcripts to show the updated data
-    if (onRefetchTranscripts) {
-      await onRefetchTranscripts();
-    }
-  }, [onRefetchTranscripts]);
 
   return (
     <>
@@ -94,7 +86,7 @@ export function TranscriptButtonGroup({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem disabled={audioDeleted} title={audioGone} onSelect={() => setShowRetranscribeDialog(true)}>
+              <DropdownMenuItem disabled={audioDeleted} title={audioGone} onSelect={() => startEnhance(meetingId, meetingFolderPath)}>
                 <RefreshCw />
                 Enhance
               </DropdownMenuItem>
@@ -122,13 +114,6 @@ export function TranscriptButtonGroup({
             text="Delete the audio of this meeting? The transcript stays. Enhance and playback will no longer be possible."
             onConfirm={() => { setShowDeleteAudio(false); deleteMeetingAudio(meetingId); }}
             onCancel={() => setShowDeleteAudio(false)}
-          />
-          <RetranscribeDialog
-            open={showRetranscribeDialog}
-            onOpenChange={setShowRetranscribeDialog}
-            meetingId={meetingId}
-            meetingFolderPath={meetingFolderPath}
-            onComplete={handleRetranscribeComplete}
           />
         </>
       )}
