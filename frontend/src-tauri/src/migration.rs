@@ -208,7 +208,7 @@ pub enum Answer {
     Skip,
 }
 
-/// Blocking native dialog. Runs before the Tauri window exists, so it uses rfd directly.
+/// Blocking native dialog. Runs before the Tauri window exists, so it uses rfd directly (lib.rs creates the window after the migration; tauri.conf.json has "create": false).
 #[cfg(target_os = "macos")]
 fn ask() -> Answer {
     use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};

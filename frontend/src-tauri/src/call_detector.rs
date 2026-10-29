@@ -1,14 +1,14 @@
 //! Generic settings section 2 (was spec 4.5 Zoom only): call detection. A call is another
-//! process reading the microphone, read from CoreAudio's process objects (macOS 14+). On
-//! macOS 13, or when CoreAudio does not answer, the Zoom helper process `CptHost` is the
-//! fallback. A background task samples every 5 seconds; a pure state machine turns the
+//! process reading the microphone, read from CoreAudio's process objects (macOS 14+), or the
+//! Zoom helper process `CptHost`: either signal says a call is on. On macOS 13, or when
+//! CoreAudio does not answer, the Zoom check is the only one. A background task samples every 5 seconds; a pure state machine turns the
 //! samples into Started and Ended events, debouncing the end so a reconnect blip does not
 //! stop a recording.
 
 use log::{info, warn};
 use tauri::{AppHandle, Runtime};
 
-/// Poll period for the helper process check.
+/// Poll period for the call signals.
 pub const POLL_SECONDS: u64 = 5;
 /// Idle samples required after a call before `Ended` fires (4 x 5 s = 20 s).
 pub const END_DEBOUNCE_TICKS: u32 = 4;
@@ -66,9 +66,14 @@ pub fn others_reading_input(states: &[(i32, bool)], own_pid: i32) -> bool {
     states.iter().any(|&(pid, running)| pid != own_pid && running)
 }
 
-/// Pure: CoreAudio when it answered, else the Zoom process check.
+/// Pure: a call is on when either signal says so. CoreAudio alone decides only when the
+/// Zoom check did not answer, and the Zoom check alone when CoreAudio did not (macOS 13).
 pub fn choose_signal(mic: Option<bool>, zoom: Option<bool>) -> Option<bool> {
-    mic.or(zoom)
+    match (mic, zoom) {
+        (None, z) => z,
+        (m, None) => m,
+        (Some(a), Some(b)) => Some(a || b),
+    }
 }
 
 /// Every CoreAudio process object as (pid, is running input). None when the property is
@@ -138,7 +143,7 @@ pub fn mic_in_use_by_others() -> Option<bool> {
     process_input_states().map(|s| others_reading_input(&s, std::process::id() as i32))
 }
 
-/// What the loop polls: CoreAudio first, the Zoom process as the fallback.
+/// What the loop polls: CoreAudio and the Zoom process, either one counts.
 #[cfg(target_os = "macos")]
 pub fn sample_in_call() -> Option<bool> {
     choose_signal(mic_in_use_by_others(), zoom_meeting_active())
@@ -149,7 +154,7 @@ pub fn sample_in_call() -> Option<bool> {
 pub async fn run<R: Runtime>(app: AppHandle<R>) {
     use tauri::Manager;
     let mut state = CallState::default();
-    let signal = if mic_in_use_by_others().is_some() { "microphone in use (CoreAudio)" } else { "Zoom process CptHost (macOS 13 fallback)" };
+    let signal = if mic_in_use_by_others().is_some() { "microphone in use (CoreAudio) or Zoom process CptHost" } else { "Zoom process CptHost only (macOS 13 fallback)" };
     info!("Call detector started ({}, every {}s, end debounce {} ticks)", signal, POLL_SECONDS, END_DEBOUNCE_TICKS);
     let mut recorded_during_call = false; // spec 4.5
     loop {
@@ -249,7 +254,7 @@ mod tests {
     #[test]
     fn the_mic_signal_wins_and_zoom_is_the_fallback() {
         assert_eq!(choose_signal(Some(true), Some(false)), Some(true));
-        assert_eq!(choose_signal(Some(false), Some(true)), Some(false), "CoreAudio answered: Zoom is not consulted");
+        assert_eq!(choose_signal(Some(false), Some(true)), Some(true), "the Zoom check still counts when CoreAudio sees no foreign input");
         assert_eq!(choose_signal(None, Some(true)), Some(true));
         assert_eq!(choose_signal(None, Some(false)), Some(false));
         assert_eq!(choose_signal(None, None), None);

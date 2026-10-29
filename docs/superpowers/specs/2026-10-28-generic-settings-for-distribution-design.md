@@ -66,7 +66,7 @@ The custom shell command of spec 4.7 ("Custom command", Advanced group) stays as
 
 Signal: another process is reading the microphone. On macOS 14 and later, CoreAudio exposes process objects: `kAudioHardwarePropertyProcessObjectList` on the system object, then `kAudioProcessPropertyIsRunningInput` and `kAudioProcessPropertyPID` per object. `in_call` is true when any object with a PID other than Noesis's own reports running input. This covers Zoom, Teams, Google Meet in a browser, Webex and FaceTime with no per-app table. `coreaudio-sys` (already a transitive dependency through cpal) becomes a direct one; the four-character constants are defined locally if the crate's bindings predate macOS 14.
 
-Fallback: when the property is unavailable (macOS 13, or an error from CoreAudio), the detector uses today's `pgrep -x CptHost` check and logs once which signal it is using.
+The `pgrep -x CptHost` check stays a second signal on every macOS version: a call is on when either signal says so, and on macOS 13 (or after a CoreAudio error) it is the only one. The detector logs once which signals it is using.
 
 The state machine in `call_detector::step` is unchanged: 5 second poll, 20 second end debounce. `zoom_meeting_active()` stays as the fallback; the new function is `mic_in_use_by_others() -> Option<bool>`.
 
@@ -103,7 +103,7 @@ MCP server (`mcp/src/paths.ts`): root order becomes `NOESIS_RECORDINGS`, `MEETIL
 
 ### 5. Distribution hygiene
 
-Migration asks first. Before `migrate_dirs()` at `lib.rs:501`, when the plan holds at least one rename and no `migration.skipped` marker exists in the Noesis app data dir, a blocking `rfd::MessageDialog` (the crate behind `tauri-plugin-dialog`, added as a direct dependency) shows: "Meetily data was found on this Mac. Move it to Noesis now? Nothing is deleted. If you skip, Noesis starts fresh and leaves the Meetily data where it is; you can move it by hand later." Buttons: "Move" and "Skip". Move runs the migration as today. Skip (or closing the dialog) writes the marker and leaves the data in place for good, because the app creates its own dirs at that launch and a later automatic move is no longer possible. A user without Meetily data never sees the dialog.
+- Call detector: a pure `choose_signal(process_objects: Option<bool>, cpthost: Option<bool>) -> Option<bool>` is true when either is true, and `None` only when neither answered.
 
 MCP without a checkout. `mcp/package.json` is published as `@alexandrelaine/noesis-mcp` (`noesis-mcp` is taken on npm), public, with `"bin": { "noesis-mcp": "dist/index.js" }`: `tsc` compiles `src/` to `dist/` at `npm pack` because Node refuses to strip types from files under `node_modules`; the shebang survives compilation; the checkout keeps running `src/index.ts` directly; Node 22.18 or newer stays the floor. Registration is `claude mcp add --scope user noesis -- npx -y @alexandrelaine/noesis-mcp`. The Post-processing card gets a "Register MCP server with Claude Code" button that runs that command through the located `claude` and shows success or the error text, plus a "Copy command" action for Codex and Cursor users. `mcp/README.md` documents both the npx route and the checkout route.
 
@@ -136,7 +136,7 @@ Rust (`cargo test` in `frontend/src-tauri`):
 - `claude_args`: empty allowed or denied lists omit their flags.
 - `recordings_root`: empty or missing `save_folder` falls back to the default.
 - Calendar: `has_link` for each domain and for none.
-- Call detector: a pure `choose_signal(process_objects: Option<bool>, cpthost: Option<bool>) -> Option<bool>` prefers the first when present.
+Migration asks first. Before `migrate_dirs()` at `lib.rs:501`, when the plan holds at least one rename and no `migration.skipped` marker exists in the Noesis app data dir, a blocking `rfd::MessageDialog` (the crate behind `tauri-plugin-dialog`, added as a direct dependency) shows: "Meetily data was found on this Mac. Move it to Noesis now? Nothing is deleted. If you skip, Noesis starts fresh and leaves the Meetily data where it is; you can move it by hand later." Buttons: "Move" and "Skip". Move runs the migration as today. Skip (or closing the dialog) writes the marker and leaves the data in place for good, because the app creates its own dirs at that launch and a later automatic move is no longer possible. A user without Meetily data never sees the dialog. The main window is created by setup after the dialog returns (`"create": false` in `tauri.conf.json`), so no webview call can create the new app data dir while the user reads the dialog.
 - Language derivation: a pure function over a list of locale identifiers (`fr-FR`, `en-US`, `zz`) returns `["fr", "en"]`.
 
 MCP (`npm test`): root resolution reads `save_folder` from an injected data dir path and ignores an unreadable or empty file.

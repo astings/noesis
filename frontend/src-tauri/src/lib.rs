@@ -499,6 +499,9 @@ pub fn run() {
             // spec 5.1: move the Meetily dirs before anything resolves app_data_dir(),
             // opens a store file, sets the model dirs or opens the database
             let migration_outcome = migration::migrate_dirs_after_asking();
+            // The window is created here, not from the config, so the migration dialog above
+            // runs before any webview call can create the new app data dir (spec 5).
+            tauri::WebviewWindowBuilder::from_config(_app.handle(), &_app.config().app.windows[0])?.build()?;
 
             #[cfg(target_os = "windows")]
             match _app.path().resolve(
