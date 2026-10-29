@@ -142,12 +142,12 @@ impl RecordingSaver {
         self.meeting_name = name;
     }
 
-    /// spec 4.2: project folder the meeting is recorded into. Invalid or empty names fall back to `_inbox`.
     /// Generic settings section 4: where the meeting folder is created.
     pub fn set_root(&mut self, root: PathBuf) {
         self.root = Some(root);
     }
 
+    /// spec 4.2: project folder the meeting is recorded into. Invalid or empty names fall back to `_inbox`.
     pub fn set_project(&mut self, project: Option<String>) {
         self.project = project.filter(|p| {
             let ok = super::library::is_valid_project_name(p);
