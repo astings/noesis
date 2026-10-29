@@ -318,11 +318,11 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
         />
       </SettingsGroup>
 
-      {/* spec 4.5: Zoom call detection */}
-      <SettingsGroup title="Zoom">
+      {/* generic settings section 2: call detection (any app using the microphone; Zoom process on macOS 13) */}
+      <SettingsGroup title="Calls">
         <SettingRow
-          label="Start recording when a Zoom call begins"
-          hint="Records into the project selected on the home screen"
+          label="Start recording when a call begins"
+          hint="A call is any app using the microphone (Zoom, Teams, Meet, Webex, FaceTime). Records into the project selected on the home screen. Off by default: check the recording rules where you are."
           control={<Switch checked={preferences.auto_start_on_call} onCheckedChange={handleAutoStartToggle} disabled={saving} />}
         />
         <SettingRow
@@ -331,8 +331,8 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
           control={<Switch checked={preferences.calendar_meeting_name} onCheckedChange={handleCalendarNameToggle} disabled={saving || !preferences.auto_start_on_call} />}
         />
         <SettingRow
-          label="Stop recording when the Zoom call ends"
-          hint="About 20 seconds after you leave the meeting, the recording stops and is saved"
+          label="Stop recording when the call ends"
+          hint="About 20 seconds after the other app releases the microphone, the recording stops and is saved"
           control={<Switch checked={preferences.auto_stop_on_call_end} onCheckedChange={handleAutoStopToggle} disabled={saving} />}
         />
       </SettingsGroup>
