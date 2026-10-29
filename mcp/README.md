@@ -2,9 +2,13 @@
 
 MCP server over the Noesis recordings folder. Filesystem only; works with the app closed.
 
-Run: `node src/index.ts` (Node 22.18 or newer; no build step). Root, first match wins: `NOESIS_RECORDINGS`, `MEETILY_RECORDINGS`, the app's "Recordings folder" setting (`~/Library/Application Support/com.noesis.app/recording_preferences.json`), `~/Movies/noesis-recordings` if it exists, `~/Movies/meetily-recordings` if it exists, else `~/Movies/noesis-recordings`.
+Root, first match wins: `NOESIS_RECORDINGS`, `MEETILY_RECORDINGS`, the app's "Recordings folder" setting (`~/Library/Application Support/com.noesis.app/recording_preferences.json`), `~/Movies/noesis-recordings` if it exists, `~/Movies/meetily-recordings` if it exists, else `~/Movies/noesis-recordings`.
 
-Register for Claude Code (all projects): `claude mcp add --scope user noesis -- node /ABSOLUTE/PATH/noesis/mcp/src/index.ts`
+Run without a checkout: `npx -y @alexandrelaine/noesis-mcp` (Node 22.18 or newer; the package ships TypeScript that Node runs directly).
+
+Register for Claude Code (all projects): `claude mcp add --scope user noesis -- npx -y @alexandrelaine/noesis-mcp`, or click "Register MCP server with Claude Code" in Noesis, Settings, Recordings, Post-processing.
+
+From a checkout instead: `node src/index.ts`, registered with `claude mcp add --scope user noesis -- node /ABSOLUTE/PATH/noesis/mcp/src/index.ts`.
 
 Remove the old entry: `claude mcp remove --scope user meetily`.
 
