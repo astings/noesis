@@ -154,7 +154,6 @@ export function TranscriptPanel({
           <MeetingInfoButton
             tags={extras?.tags ?? []}
             enhanceStatus={status?.enhanceStatus}
-            hookStatus={status?.hookStatus}
             taggingStatus={status?.taggingStatus}
           />
         )}

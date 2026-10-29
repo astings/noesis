@@ -25,7 +25,7 @@ import {
   ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { INBOX, normalizeProjectName } from '@/lib/projects';
-import { PROJECT_FOLDER_PREFIX, runMeetingHook, runMeetingTagging, deleteMeetingAudio } from '@/components/Sidebar/SidebarProvider';
+import { PROJECT_FOLDER_PREFIX, runMeetingTagging, deleteMeetingAudio } from '@/components/Sidebar/SidebarProvider';
 import { startEnhance } from '@/lib/autoEnhance';
 import { groupByDate, parseDate, rowLabel, bucketOf, type SortOrder } from '@/lib/dateBuckets';
 
@@ -35,7 +35,6 @@ interface SidebarItem {
   type: 'folder' | 'file';
   children?: SidebarItem[];
   enhanceStatus?: string;
-  hookStatus?: string;
   taggingStatus?: string;
   startedAt?: string;
 }
@@ -382,7 +381,7 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
 
     const row = (
         <div
-          draggable={isMeetingItem && item.hookStatus !== 'running'}
+          draggable={isMeetingItem}
           onDragStart={isMeetingItem ? (e) => {
             e.dataTransfer.setData(DRAG_TYPE, item.id);
             e.dataTransfer.effectAllowed = 'move';
@@ -485,7 +484,7 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
             <ContextMenuContent>
               <ContextMenuItem onSelect={() => handleEditStart(item.id, item.title)}>Rename</ContextMenuItem>
               <ContextMenuSub>
-                <ContextMenuSubTrigger disabled={item.hookStatus === 'running'}>Move to</ContextMenuSubTrigger>
+                <ContextMenuSubTrigger>Move to</ContextMenuSubTrigger>
                 <ContextMenuSubContent>
                   {projects.map((p) => (
                     <ContextMenuItem key={p} disabled={p === currentProject} onSelect={() => moveMeeting(item.id, p)}>
@@ -501,7 +500,6 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
                 </ContextMenuSubContent>
               </ContextMenuSub>
               <ContextMenuItem onSelect={() => openEnhance(item.id)}>Enhance</ContextMenuItem>
-              <ContextMenuItem disabled={item.hookStatus === 'running'} onSelect={() => runMeetingHook(item.id)}>Run hook</ContextMenuItem>
               <ContextMenuItem disabled={item.taggingStatus === 'running'} onSelect={() => runMeetingTagging(item.id)}>Regenerate title &amp; tags</ContextMenuItem>
               <ContextMenuItem onSelect={() => setAudioDeleteId(item.id)}>Delete audio</ContextMenuItem>
               <ContextMenuSeparator />

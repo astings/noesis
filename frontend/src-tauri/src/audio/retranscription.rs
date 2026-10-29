@@ -254,51 +254,11 @@ pub async fn start_retranscription<R: Runtime>(
                     }
                 }
             }
-            // spec 3.1: a cancel during the title step skips the wiki step
             if jobs::is_cancel_requested(&job_id) {
                 jobs::finish(&job_id, Outcome::Cancelled);
                 return result;
             }
-            // the title may have renamed the folder: the hook reads the current one
-            let folder = match app.try_state::<AppState>() {
-                Some(state) => {
-                    let row: Option<(Option<String>,)> = sqlx::query_as("SELECT folder_path FROM meetings WHERE id = ?")
-                        .bind(&meeting_id)
-                        .fetch_optional(state.db_manager.pool())
-                        .await
-                        .unwrap_or(None);
-                    match row {
-                        Some((Some(p),)) if Path::new(&p).exists() => PathBuf::from(p),
-                        _ => folder.clone(),
-                    }
-                }
-                None => folder.clone(),
-            };
-            // spec 4.7: hand the finished transcript to the user's hook, if configured
-            // the wiki step reports through hook-status-changed (jobs::hook_status), which also
-            // ends the job; every other path ends it here
-            let mut hook_started = false;
-            if res.segments_count > 0 {
-                match prefs {
-                    // spec 8: auto-run is opt-in; otherwise the "Run hook" action starts it
-                    Ok(prefs) if prefs.hook_auto_run => {
-                        let ctx = super::post_enhance_hook::read_context(&folder, &meeting_id);
-                        jobs::await_hook(&job_id);
-                        match super::post_enhance_hook::dispatch(&app, &prefs, &ctx, false) {
-                            Ok(kind) => {
-                                hook_started = true;
-                                info!("Post-enhance hook ({:?}) dispatched for {}", kind, meeting_id)
-                            }
-                            Err(e) => warn!("Post-enhance hook did not start for {}: {}", meeting_id, e),
-                        }
-                    }
-                    Ok(_) => info!("Post-enhance hook not auto-run for {} (hook_auto_run off)", meeting_id),
-                    Err(e) => warn!("Post-enhance hook skipped for {}: could not load preferences: {}", meeting_id, e),
-                }
-            }
-            if !hook_started {
-                jobs::finish(&job_id, Outcome::Done);
-            }
+            jobs::finish(&job_id, Outcome::Done);
         }
         Err(e) => {
             jobs::step(&job_id, STEP_TRANSCRIBE, JobState::Failed, Some(e.to_string()));

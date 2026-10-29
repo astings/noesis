@@ -1,5 +1,5 @@
 //! spec 4.3 / 5.3: the transcript.md contract. One function renders it, one
-//! writes it atomically. Consumers (the wikis, the MCP server) read this file
+//! writes it atomically. Consumers (the MCP server, your own tools) read this file
 //! and ignore frontmatter keys they do not know.
 
 use anyhow::Result;

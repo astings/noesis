@@ -64,11 +64,8 @@ pub mod metadata_file;
 pub mod transcript_md;
 // spec 4.4: speaker labels from per-stream energy
 pub mod speaker_energy;
-// spec 4.7: post-enhance hook
-pub mod post_enhance_hook;
-pub mod hook_status;
-// generic settings section 1: built-in Claude Code run per project (was spec 4.8)
-pub mod post_processing;
+// generic settings section 5: MCP server registration with Claude Code
+pub mod claude_mcp;
 
 pub use devices::{
     default_input_device, default_output_device, get_device_and_config, list_audio_devices,

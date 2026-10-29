@@ -16,7 +16,6 @@ const ETA_ALPHA: f64 = 0.3;
 
 pub const STEP_TRANSCRIBE: &str = "Transcribe";
 pub const STEP_TITLE: &str = "Title/tags";
-pub const STEP_AGENT: &str = "Agent";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -88,14 +87,9 @@ pub struct Job {
     pub control: Control,
     #[serde(skip)]
     pub cancel_requested: bool,
-    #[serde(skip)]
-    pub hook_pid: Option<u32>,
     /// the meeting was deleted: the job leaves the list when it ends instead of joining the recent ones
     #[serde(skip)]
     dropped: bool,
-    /// set when the enhance handed its transcript to the post-enhance hook
-    #[serde(skip)]
-    awaiting_hook: bool,
     #[serde(skip)]
     started: Option<Instant>,
     #[serde(skip)]
@@ -126,9 +120,7 @@ impl Registry {
             error: None,
             control,
             cancel_requested: false,
-            hook_pid: None,
             dropped: false,
-            awaiting_hook: false,
             started: None,
             last: None,
             rate: None,
@@ -146,18 +138,6 @@ impl Registry {
         self.jobs
             .iter_mut()
             .filter(move |j| j.kind == JobKind::Enhance && !j.state.is_terminal() && j.meeting_id.as_deref() == Some(meeting_id))
-    }
-
-    /// The first live enhance job of the meeting that handed its transcript to the hook.
-    fn hook_job<'a>(&'a mut self, meeting_id: &'a str) -> Option<&'a mut Job> {
-        self.live_enhances(meeting_id).find(|j| j.awaiting_hook)
-    }
-
-    /// Marks the job as waiting for the post-enhance hook (called just before dispatch).
-    pub fn await_hook(&mut self, id: &str) {
-        if let Some(j) = self.get(id) {
-            j.awaiting_hook = true;
-        }
     }
 
     pub fn start(&mut self, id: &str, now: Instant) {
@@ -242,7 +222,6 @@ impl Registry {
         };
         j.finished_at = Some(Utc::now());
         j.eta_secs = None;
-        j.hook_pid = None;
         if j.dropped {
             self.jobs.retain(|j| !(j.dropped && j.state.is_terminal()));
         } else {
@@ -253,11 +232,6 @@ impl Registry {
     /// A job that left the list (its meeting was deleted) has nothing left to do: cancelled.
     pub fn is_cancel_requested(&self, id: &str) -> bool {
         self.jobs.iter().find(|j| j.id == id).map_or(true, |j| j.cancel_requested)
-    }
-
-    /// True when the enhance job for this meeting has a cancel request pending.
-    pub fn hook_cancel_requested(&mut self, meeting_id: &str) -> bool {
-        self.hook_job(meeting_id).is_some_and(|j| j.cancel_requested)
     }
 
     /// Marks the cancel; a queued job ends at once. Returns the job as it was before, or
@@ -287,42 +261,6 @@ impl Registry {
         }
         self.jobs.retain(|j| !(j.dropped && j.state.is_terminal()));
         running
-    }
-
-    /// Wiki step of the meeting's live enhance job, driven by `hook-status-changed` values.
-    /// A hook run with no enhance job (the manual "Run hook" action) is ignored.
-    pub fn hook_status(&mut self, meeting_id: &str, status: &str) {
-        let Some(j) = self.hook_job(meeting_id) else { return };
-        let id = j.id.clone();
-        let cancelled = j.cancel_requested;
-        match status {
-            "running" => self.step(&id, STEP_AGENT, JobState::Running, None),
-            // a killed hook can still exit 0, so a cancel request wins over either exit status
-            "done" | "failed" if cancelled => {
-                self.step(&id, STEP_AGENT, JobState::Cancelled, None);
-                self.finish(&id, Outcome::Cancelled);
-            }
-            "done" => {
-                self.step(&id, STEP_AGENT, JobState::Done, None);
-                self.finish(&id, Outcome::Done);
-            }
-            "failed" => {
-                // spec 5: the transcript is the success criterion; the step carries the failure
-                self.step(&id, STEP_AGENT, JobState::Failed, Some("see hook.log".to_string()));
-                self.finish(&id, Outcome::Done);
-            }
-            "cancelled" => {
-                self.step(&id, STEP_AGENT, JobState::Cancelled, None);
-                self.finish(&id, Outcome::Cancelled);
-            }
-            _ => {}
-        }
-    }
-
-    pub fn set_hook_pid(&mut self, meeting_id: &str, pid: Option<u32>) {
-        if let Some(j) = self.hook_job(meeting_id) {
-            j.hook_pid = pid;
-        }
     }
 
     /// Removes a terminal job (retry replaces it with a new one).
@@ -405,24 +343,12 @@ pub fn finish(id: &str, outcome: Outcome) {
 pub fn is_cancel_requested(id: &str) -> bool {
     REGISTRY.lock().unwrap_or_else(|e| e.into_inner()).is_cancel_requested(id)
 }
-pub fn hook_cancel_requested(meeting_id: &str) -> bool {
-    REGISTRY.lock().unwrap_or_else(|e| e.into_inner()).hook_cancel_requested(meeting_id)
-}
 pub fn request_cancel(id: &str) -> Option<Job> {
     update(|r| {
         let j = r.request_cancel(id);
         let changed = j.is_some();
         (j, changed)
     })
-}
-pub fn await_hook(id: &str) {
-    update(|r| (r.await_hook(id), false))
-}
-pub fn hook_status(meeting_id: &str, status: &str) {
-    update(|r| (r.hook_status(meeting_id, status), true))
-}
-pub fn set_hook_pid(meeting_id: &str, pid: Option<u32>) {
-    update(|r| (r.set_hook_pid(meeting_id, pid), false))
 }
 pub fn list() -> Vec<Job> {
     REGISTRY.lock().unwrap_or_else(|e| e.into_inner()).snapshot()
@@ -478,9 +404,7 @@ async fn stop_work<R: Runtime>(app: &AppHandle<R>, job: &Job) -> Result<(), Stri
     match &job.control {
         Control::Enhance { .. } => {
             let running = |name: &str| job.steps.iter().any(|s| s.name == name && s.state == JobState::Running);
-            if let Some(pid) = job.hook_pid {
-                kill_group(pid);
-            } else if running(STEP_TRANSCRIBE) {
+            if running(STEP_TRANSCRIBE) {
                 crate::audio::retranscription::cancel_retranscription(job.meeting_id.as_deref())?;
             }
         }
@@ -503,15 +427,6 @@ async fn stop_work<R: Runtime>(app: &AppHandle<R>, job: &Job) -> Result<(), Stri
         Control::Tagging => {}
     }
     Ok(())
-}
-
-/// Kills the hook's whole process group (Claude Code and its children). The hook is
-/// spawned with `process_group(0)`, so its pid is the group id.
-pub(crate) fn kill_group(pid: u32) {
-    if pid <= 1 {
-        return;
-    }
-    let _ = std::process::Command::new("kill").args(["-TERM", &format!("-{}", pid)]).status();
 }
 
 /// Starts the job again with the arguments it first ran with. Summary needs the meeting
@@ -695,113 +610,11 @@ mod tests {
     }
 
     #[test]
-    fn hook_status_drives_the_wiki_step_of_the_running_enhance() {
-        let mut r = Registry::default();
-        let t = Instant::now();
-        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, t);
-        r.add("b", JobKind::Enhance, Some("m"), "", enhance(), false, t);
-        r.await_hook("a");
-        r.hook_status("m", "running");
-        r.hook_status("m", "failed");
-        let a = &r.snapshot()[0];
-        assert_eq!(a.state, JobState::Done, "a failed wiki step does not fail the enhance");
-        assert_eq!(a.steps[0], Step { name: STEP_AGENT.into(), state: JobState::Failed, error: Some("see hook.log".into()) });
-        assert_eq!(r.snapshot()[1].state, JobState::Queued, "the re-queued job is untouched");
-    }
-
-    #[test]
-    fn hook_cancelled_status_ends_the_job_cancelled() {
-        let mut r = Registry::default();
-        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
-        r.await_hook("a");
-        r.hook_status("m", "running");
-        r.hook_status("m", "cancelled");
-        assert_eq!(r.snapshot()[0].state, JobState::Cancelled);
-    }
-
-    #[test]
-    fn hook_failure_after_cancel_is_cancelled() {
-        let mut r = Registry::default();
-        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
-        r.await_hook("a");
-        r.hook_status("m", "running");
-        r.request_cancel("a");
-        r.hook_status("m", "failed");
-        assert_eq!(r.snapshot()[0].state, JobState::Cancelled);
-    }
-
-    #[test]
-    fn hook_done_after_cancel_is_cancelled() {
-        let mut r = Registry::default();
-        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
-        r.await_hook("a");
-        r.hook_status("m", "running");
-        r.request_cancel("a");
-        r.hook_status("m", "done");
-        assert_eq!(r.snapshot()[0].state, JobState::Cancelled);
-    }
-
-    #[test]
-    fn hook_cancel_requested_follows_the_enhance_job() {
-        let mut r = Registry::default();
-        assert!(!r.hook_cancel_requested("m"));
-        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
-        r.await_hook("a");
-        assert!(!r.hook_cancel_requested("m"));
-        r.request_cancel("a");
-        assert!(r.hook_cancel_requested("m"));
-        assert!(!r.hook_cancel_requested("other"));
-    }
-
-    #[test]
     fn enhance_progress_ignores_queued_jobs() {
         let mut r = Registry::default();
         r.add("a", JobKind::Enhance, Some("m"), "", enhance(), false, Instant::now());
         assert!(!r.enhance_progress("m", 0, Some("Waiting".into()), Instant::now()));
         assert_eq!(r.snapshot()[0].progress, None);
-    }
-
-    #[test]
-    fn hook_done_ends_the_enhance_done() {
-        let mut r = Registry::default();
-        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
-        r.await_hook("a");
-        r.hook_status("m", "running");
-        r.hook_status("m", "done");
-        let a = &r.snapshot()[0];
-        assert_eq!(a.state, JobState::Done);
-        assert_eq!(a.steps[0], Step { name: STEP_AGENT.into(), state: JobState::Done, error: None });
-    }
-
-    #[test]
-    fn hook_and_progress_target_different_jobs_of_one_meeting() {
-        let mut r = Registry::default();
-        let t = Instant::now();
-        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, t);
-        r.await_hook("a");
-        r.add("b", JobKind::Enhance, Some("m"), "", enhance(), true, t);
-        r.step("b", STEP_TRANSCRIBE, JobState::Running, None);
-        assert!(r.enhance_progress("m", 40, None, t));
-        r.hook_status("m", "running");
-        let s = r.snapshot();
-        assert_eq!(s[1].progress, Some(40));
-        assert_eq!(s[0].progress, None);
-        assert_eq!(s[0].steps[0].name, STEP_AGENT);
-        assert!(s[1].steps.iter().all(|x| x.name != STEP_AGENT));
-    }
-
-    #[test]
-    fn hook_lookups_ignore_a_job_not_awaiting_the_hook() {
-        let mut r = Registry::default();
-        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
-        r.step("a", STEP_TRANSCRIBE, JobState::Running, None);
-        r.hook_status("m", "running");
-        r.set_hook_pid("m", Some(42));
-        r.request_cancel("a");
-        assert!(!r.hook_cancel_requested("m"));
-        let a = &r.snapshot()[0];
-        assert_eq!(a.steps.len(), 1);
-        assert_eq!(a.hook_pid, None);
     }
 
     #[test]

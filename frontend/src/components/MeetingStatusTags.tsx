@@ -2,18 +2,16 @@ import { Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 const ENHANCE: Record<string, string> = { done: 'Done', queued: 'Queued', running: 'Running', failed: 'Failed' };
-const HOOK: Record<string, string> = { done: 'Ran', running: 'Running', failed: 'Failed', cancelled: 'Cancelled' };
 const TAGGING: Record<string, string> = { done: 'Done', running: 'Running', failed: 'Failed', cancelled: 'Cancelled' };
 
-/** Info icon on the meeting page; hover shows tags and the enhance, title/tags and hook statuses. */
-export function MeetingInfoButton({ tags, enhanceStatus, hookStatus, taggingStatus }: { tags: string[]; enhanceStatus?: string; hookStatus?: string; taggingStatus?: string }) {
-  const statuses = [enhanceStatus, hookStatus, taggingStatus];
+/** Info icon on the meeting page; hover shows tags and the enhance and title/tags statuses. */
+export function MeetingInfoButton({ tags, enhanceStatus, taggingStatus }: { tags: string[]; enhanceStatus?: string; taggingStatus?: string }) {
+  const statuses = [enhanceStatus, taggingStatus];
   // the icon still signals work in progress and failures without opening the hover
   const tone = statuses.includes('failed') ? 'text-destructive' : statuses.includes('running') ? 'text-primary animate-pulse' : 'text-muted-foreground';
   const rows: [string, string][] = [
     ['Enhanced', (enhanceStatus && ENHANCE[enhanceStatus]) || 'Not run'],
     ['Title and tags', (taggingStatus && TAGGING[taggingStatus]) || 'Not run'],
-    ['Hook', (hookStatus && HOOK[hookStatus]) || 'Not run'],
   ];
   return (
     <Tooltip>

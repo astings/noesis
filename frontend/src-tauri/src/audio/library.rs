@@ -380,9 +380,6 @@ async fn assign_inner(
     if enhance_running && project.is_some() {
         return Err("This meeting is being enhanced right now. Try moving it when it finishes.".to_string());
     }
-    if project.is_some() && crate::audio::hook_status::memory_status(meeting_id) == Some(crate::audio::hook_status::RUNNING) {
-        return Err("The hook is running for this meeting. Try moving it when it finishes.".to_string());
-    }
     if is_live_folder(folder_path.as_deref()).await {
         return Err("This meeting is being recorded right now.".to_string());
     }
