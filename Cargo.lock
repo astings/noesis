@@ -3773,6 +3773,7 @@ dependencies = [
  "cidre",
  "clap 4.6.1",
  "core-graphics 0.23.2",
+ "coreaudio-sys",
  "cpal",
  "criterion",
  "crossbeam",
