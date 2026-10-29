@@ -7,12 +7,12 @@ import { DeviceSelection, SelectedDevices } from '@/components/DeviceSelection';
 import { toast } from 'sonner';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
 import { useConfig } from '@/contexts/ConfigContext';
-import { WikiAutomationSettings } from '@/components/WikiAutomationSettings'; // spec 4.8
+import { PostProcessingSettings } from '@/components/PostProcessingSettings'; // generic settings section 1
 import { Button } from '@/components/ui/button';
 import { SettingsGroup, SettingRow } from '@/components/SettingsGroup';
 import { NotificationsRow } from '@/components/PreferenceSettings';
 
-export interface WikiTarget { project: string; directory: string; skill: string } // spec 4.8
+export interface PostProcessingTarget { project: string; directory: string; instructions: string } // generic settings section 1
 
 export interface RecordingPreferences {
   save_folder: string;
@@ -31,13 +31,17 @@ export interface RecordingPreferences {
   calendar_meeting_name: boolean;
   owner_name: string; // spec 4.4
   post_enhance_command: string; // spec 4.7
-  wiki_automation: boolean; // spec 4.8
+  post_processing: boolean; // generic settings section 1
+  post_processing_targets: PostProcessingTarget[];
+  post_processing_budget_usd: number;
+  agent_path: string;
+  agent_prompt_template: string;
+  agent_allowed_tools: string[];
+  agent_denied_tools: string[];
   hook_auto_run: boolean;
   auto_title_tags: boolean;
   delete_audio_after_enhance: boolean;
   audio_retention_hours: number;
-  wiki_targets: WikiTarget[];
-  wiki_budget_usd: number;
   transcription_languages: string[];
   title_tags_prompt: string;
 }
@@ -62,13 +66,17 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     calendar_meeting_name: false,
     owner_name: 'Me',
     post_enhance_command: '',
-    wiki_automation: false,
+    post_processing: false,
+    post_processing_targets: [],
+    post_processing_budget_usd: 5,
+    agent_path: '',
+    agent_prompt_template: '',
+    agent_allowed_tools: ['mcp__open-knowledge', 'mcp__noesis'],
+    agent_denied_tools: ['mcp__open-knowledge__delete', 'mcp__open-knowledge__move', 'mcp__noesis__assign_meeting'],
     hook_auto_run: false,
     auto_title_tags: true,
     delete_audio_after_enhance: true,
     audio_retention_hours: 24,
-    wiki_targets: [],
-    wiki_budget_usd: 5,
     transcription_languages: ['en', 'fr'],
     title_tags_prompt: '',
   });
@@ -330,8 +338,8 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
         />
       </SettingsGroup>
 
-      {/* spec 4.8: wiki automation */}
-      <WikiAutomationSettings preferences={preferences} onChange={applyPreferences} disabled={saving} />
+      {/* generic settings section 1: post-processing */}
+      <PostProcessingSettings preferences={preferences} onChange={applyPreferences} disabled={saving} />
 
       <SettingsGroup title="Audio files">
         <SettingRow
@@ -367,12 +375,12 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
         />
         <SettingRow
           label="Custom command"
-          hint="Shell command started after an enhance when wiki automation is off or the project has no wiki. It gets NOESIS_FOLDER, NOESIS_PROJECT, NOESIS_TITLE and NOESIS_MEETING_ID (the MEETILY_* names still work); output goes to hook.log in the meeting folder. Empty means off."
+          hint="Shell command started after an enhance when post-processing is off or the project has no row. It gets NOESIS_FOLDER, NOESIS_PROJECT, NOESIS_TITLE and NOESIS_MEETING_ID (the MEETILY_* names still work); output goes to hook.log in the meeting folder. Empty means off."
         >
           <Input
             aria-label="Custom command (advanced)"
             className="h-8 font-mono text-xs"
-            placeholder="~/Code/Perso/noesis/scripts/post-enhance.sh"
+            placeholder="/path/to/post-enhance.sh"
             value={hookDraft ?? preferences.post_enhance_command}
             onChange={(e) => setHookDraft(e.target.value)}
             onBlur={commitHookCommand}
