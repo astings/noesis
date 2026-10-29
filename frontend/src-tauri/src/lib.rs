@@ -913,8 +913,9 @@ pub fn run() {
             audio::audio_cleanup::delete_meeting_audio,
             audio::audio_cleanup::get_meeting_extras,
             audio::library::list_projects_command,
-            audio::wiki_automation::locate_claude_cli,
-            audio::wiki_automation::select_wiki_directory,
+            audio::post_processing::locate_claude_cli,
+            audio::post_processing::select_directory,
+            audio::post_processing::get_default_agent_prompt_template,
             audio::library::assign_meeting,
         ])
         .build(tauri::generate_context!())

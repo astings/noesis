@@ -1,13 +1,13 @@
-//! spec 4.8: the post-enhance hook without a script. The settings table says which wiki
-//! belongs to which project; this module composes the Claude Code run and starts it
-//! through the same logged, detached spawn as the custom hook.
+//! Generic settings section 1 (was spec 4.8): the post-enhance hook without a script. The settings
+//! card says which directory belongs to which project; this module renders the prompt template,
+//! composes the Claude Code run and starts it through the same logged, detached spawn as the custom hook.
 
 use anyhow::{bail, Result};
 use log::warn;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use super::post_enhance_hook::{spawn_logged, write_done_marker, HookContext, OnExit};
-use super::recording_preferences::PostProcessingTarget;
+use super::recording_preferences::{PostProcessingTarget, RecordingPreferences};
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 
@@ -28,27 +28,33 @@ pub fn expand_home(path: &str) -> PathBuf {
     }
 }
 
+/// Defaults for the editable tool lists. The session is unattended and its input is other
+/// people's words, so delete, move and assign stay denied until the user says otherwise.
 pub const ALLOWED_TOOLS: [&str; 2] = ["mcp__open-knowledge", "mcp__noesis"];
 pub const DENIED_TOOLS: [&str; 3] = ["mcp__open-knowledge__delete", "mcp__open-knowledge__move", "mcp__noesis__assign_meeting"];
+
+/// Nobody reads a headless run, so a question would hang until the budget runs out.
+pub const DEFAULT_PROMPT_TEMPLATE: &str = "Process the meeting recording at {folder} (project {project}, meeting id {meeting_id}, title: {title}). {instructions} Draft only: leave everything uncommitted for review. This run is unattended: do not ask questions; if this meeting is already covered, stop without changes.";
 
 pub fn find_target<'a>(targets: &'a [PostProcessingTarget], project: &str) -> Option<&'a PostProcessingTarget> {
     targets.iter().find(|t| t.project == project && !t.directory.trim().is_empty())
 }
 
-/// Nobody reads a headless run, so a question would hang until the budget runs out.
-const UNATTENDED: &str = "This run is unattended: do not ask questions; if the wiki already covers this meeting, stop without changes.";
-
-pub fn build_prompt(target: &PostProcessingTarget, ctx: &HookContext) -> String {
-    let where_ = format!(
-        "the new meeting recording at {} (project {}, meeting id {}, title: {})",
-        ctx.folder.display(), ctx.project, ctx.meeting_id, ctx.title
-    );
-    let skill = target.skill.trim();
-    if skill.is_empty() {
-        format!("Process {}. Draft only: write the transcript document and a draft log entry; leave everything uncommitted for review. {}", where_, UNATTENDED)
-    } else {
-        format!("Use the {} skill to process {}. Draft only: write the transcript document and a draft log entry; do not score, do not update trackers or the Blueprint. Leave everything uncommitted for review. {}", skill, where_, UNATTENDED)
+/// Substitutes the placeholders, collapses runs of spaces, keeps unknown braces as typed.
+/// An empty template, or one that renders empty, uses the built-in template.
+pub fn render_prompt(template: &str, target: &PostProcessingTarget, ctx: &HookContext) -> String {
+    let t = if template.trim().is_empty() { DEFAULT_PROMPT_TEMPLATE } else { template };
+    let out = t
+        .replace("{folder}", &ctx.folder.display().to_string())
+        .replace("{project}", &ctx.project)
+        .replace("{title}", &ctx.title)
+        .replace("{meeting_id}", &ctx.meeting_id)
+        .replace("{instructions}", target.instructions.trim());
+    let out = out.split(' ').filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ");
+    if out.is_empty() && t != DEFAULT_PROMPT_TEMPLATE {
+        return render_prompt(DEFAULT_PROMPT_TEMPLATE, target, ctx);
     }
+    out
 }
 
 pub fn format_budget(usd: f64) -> String {
@@ -56,11 +62,22 @@ pub fn format_budget(usd: f64) -> String {
     s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
-pub fn claude_args(prompt: &str, budget_usd: f64) -> Vec<String> {
-    let mut a: Vec<String> = vec!["-p".into(), prompt.into(), "--permission-mode".into(), "acceptEdits".into(), "--allowedTools".into()];
-    a.extend(ALLOWED_TOOLS.iter().map(|s| s.to_string()));
-    a.push("--disallowedTools".into());
-    a.extend(DENIED_TOOLS.iter().map(|s| s.to_string()));
+fn clean(list: &[String]) -> Vec<String> {
+    list.iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+}
+
+/// An empty allowed list omits `--allowedTools`: in `-p` mode Claude then gets file edits and nothing else.
+pub fn claude_args(prompt: &str, budget_usd: f64, allowed: &[String], denied: &[String]) -> Vec<String> {
+    let mut a: Vec<String> = vec!["-p".into(), prompt.into(), "--permission-mode".into(), "acceptEdits".into()];
+    let (allowed, denied) = (clean(allowed), clean(denied));
+    if !allowed.is_empty() {
+        a.push("--allowedTools".into());
+        a.extend(allowed);
+    }
+    if !denied.is_empty() {
+        a.push("--disallowedTools".into());
+        a.extend(denied);
+    }
     a.push("--max-budget-usd".into());
     a.push(format_budget(budget_usd));
     a
@@ -83,6 +100,16 @@ pub fn locate_claude() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.is_file()).or_else(|| which::which("claude").ok())
 }
 
+/// A configured path must exist; empty means auto-detect. A wrong path is reported, not papered over.
+pub fn resolve_agent(agent_path: &str) -> Option<PathBuf> {
+    let p = agent_path.trim();
+    if p.is_empty() {
+        return locate_claude();
+    }
+    let path = expand_home(p);
+    path.is_file().then_some(path)
+}
+
 fn note(folder: &Path, line: &str) {
     use std::io::Write;
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(folder.join("hook.log")) {
@@ -90,10 +117,10 @@ fn note(folder: &Path, line: &str) {
     }
 }
 
-/// Run Claude Code in the wiki for this meeting. Errors are also noted in hook.log.
+/// Run Claude Code in the target directory for this meeting. Errors are also noted in hook.log.
 /// `Ok(false)` means skipped (`hook.done` exists and `force` is off, or a run is in flight).
 /// `then` runs after the child exits, once the marker is written.
-pub fn run(target: &PostProcessingTarget, ctx: &HookContext, budget_usd: f64, force: bool, then: Option<OnExit>) -> Result<bool> {
+pub fn run(prefs: &RecordingPreferences, target: &PostProcessingTarget, ctx: &HookContext, force: bool, then: Option<OnExit>) -> Result<bool> {
     if !force && ctx.folder.join("hook.done").exists() {
         note(&ctx.folder, "skipped: hook.done exists");
         return Ok(false);
@@ -104,15 +131,20 @@ pub fn run(target: &PostProcessingTarget, ctx: &HookContext, budget_usd: f64, fo
     }
     let dir = expand_home(target.directory.trim());
     if !dir.is_dir() {
-        note(&ctx.folder, &format!("wiki directory {} not found", dir.display()));
-        bail!("wiki directory {} not found", dir.display());
+        note(&ctx.folder, &format!("directory {} not found", dir.display()));
+        bail!("directory {} not found", dir.display());
     }
-    let Some(claude) = locate_claude() else {
-        note(&ctx.folder, "Claude Code (claude) not found in ~/.local/bin, /opt/homebrew/bin, /usr/local/bin or PATH");
-        bail!("claude binary not found");
+    let Some(claude) = resolve_agent(&prefs.agent_path) else {
+        let msg = if prefs.agent_path.trim().is_empty() {
+            "Claude Code (claude) not found in ~/.local/bin, /opt/homebrew/bin, /usr/local/bin or PATH".to_string()
+        } else {
+            format!("agent binary {} not found", prefs.agent_path.trim())
+        };
+        note(&ctx.folder, &msg);
+        bail!("{}", msg);
     };
-    let prompt = build_prompt(target, ctx);
-    let args = claude_args(&prompt, budget_usd);
+    let prompt = render_prompt(&prefs.agent_prompt_template, target, ctx);
+    let args = claude_args(&prompt, prefs.post_processing_budget_usd, &prefs.agent_allowed_tools, &prefs.agent_denied_tools);
     let mut cmd = Command::new(&claude);
     cmd.args(&args)
         .current_dir(&dir)
@@ -142,20 +174,20 @@ pub fn run(target: &PostProcessingTarget, ctx: &HookContext, budget_usd: f64, fo
     spawn_logged(cmd, &header, &ctx.folder, &ctx.meeting_id, Some(on_exit))
         .inspect_err(|e| {
             running().lock().unwrap_or_else(|e| e.into_inner()).remove(&ctx.meeting_id);
-            warn!("Wiki automation failed to start for {}: {}", ctx.meeting_id, e)
+            warn!("Post-processing failed to start for {}: {}", ctx.meeting_id, e)
         })
         .map(|_| true)
 }
 
-/// spec 4.8: where the settings card says Claude Code was found
+/// Where the settings card says Claude Code was found.
 #[tauri::command]
 pub async fn locate_claude_cli() -> Option<String> {
     locate_claude().map(|p| p.display().to_string())
 }
 
-/// spec 4.8: native folder picker for a wiki directory
+/// Native folder picker, used for post-processing directories and the recordings folder.
 #[tauri::command]
-pub async fn select_wiki_directory<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<Option<String>, String> {
+pub async fn select_directory<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     let picked = tauri::async_runtime::spawn_blocking(move || app.dialog().file().blocking_pick_folder())
         .await
@@ -163,32 +195,56 @@ pub async fn select_wiki_directory<R: tauri::Runtime>(app: tauri::AppHandle<R>) 
     Ok(picked.map(|p| p.to_string()))
 }
 
+/// The built-in template, shown when `agent_prompt_template` is empty.
+#[tauri::command]
+pub fn get_default_agent_prompt_template() -> String {
+    DEFAULT_PROMPT_TEMPLATE.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn target(project: &str, dir: &str, skill: &str) -> PostProcessingTarget {
-        PostProcessingTarget { project: project.into(), directory: dir.into(), instructions: String::new(), skill: skill.into() }
+    fn target_with_dir(dir: &str) -> PostProcessingTarget {
+        PostProcessingTarget { project: "dex".into(), directory: dir.into(), instructions: String::new(), skill: String::new() }
     }
+
+    fn prefs() -> RecordingPreferences {
+        RecordingPreferences::default()
+    }
+
     fn ctx(folder: &Path) -> HookContext {
         HookContext { folder: folder.to_path_buf(), project: "dex".into(), title: "Weekly sync".into(), meeting_id: "m-1".into() }
     }
 
     #[test]
     fn find_target_matches_project_and_skips_blank_directories() {
-        let t = vec![target("dex", "  ", "x"), target("dex", "/w/dex", "dex-case-tracking"), target("flo", "/w/flo", "")];
+        let blank = PostProcessingTarget { project: "dex".into(), directory: "  ".into(), instructions: "x".into(), skill: String::new() };
+        let flo = PostProcessingTarget { project: "flo".into(), directory: "/w/flo".into(), instructions: String::new(), skill: String::new() };
+        let t = vec![blank, target_with_dir("/w/dex"), flo];
         assert_eq!(find_target(&t, "dex").map(|t| t.directory.as_str()), Some("/w/dex"));
-        assert_eq!(find_target(&t, "flo").map(|t| t.skill.as_str()), Some(""));
+        assert_eq!(find_target(&t, "flo").map(|t| t.instructions.as_str()), Some(""));
         assert!(find_target(&t, "_inbox").is_none());
     }
 
+    fn target_with(instructions: &str) -> PostProcessingTarget {
+        PostProcessingTarget { project: "dex".into(), directory: "/w/dex".into(), instructions: instructions.into(), skill: String::new() }
+    }
+
     #[test]
-    fn prompt_names_the_skill_when_set_and_asks_for_a_draft() {
+    fn default_template_renders_with_and_without_instructions() {
         let c = ctx(Path::new("/r/dex/2026-10-27_16-18 weekly"));
-        let with = build_prompt(&target("dex", "/w/dex", "dex-case-tracking"), &c);
-        assert_eq!(with, "Use the dex-case-tracking skill to process the new meeting recording at /r/dex/2026-10-27_16-18 weekly (project dex, meeting id m-1, title: Weekly sync). Draft only: write the transcript document and a draft log entry; do not score, do not update trackers or the Blueprint. Leave everything uncommitted for review. This run is unattended: do not ask questions; if the wiki already covers this meeting, stop without changes.");
-        let without = build_prompt(&target("dex", "/w/dex", ""), &c);
-        assert_eq!(without, "Process the new meeting recording at /r/dex/2026-10-27_16-18 weekly (project dex, meeting id m-1, title: Weekly sync). Draft only: write the transcript document and a draft log entry; leave everything uncommitted for review. This run is unattended: do not ask questions; if the wiki already covers this meeting, stop without changes.");
+        let with = render_prompt("", &target_with("Use the dex-case-tracking skill."), &c);
+        assert_eq!(with, "Process the meeting recording at /r/dex/2026-10-27_16-18 weekly (project dex, meeting id m-1, title: Weekly sync). Use the dex-case-tracking skill. Draft only: leave everything uncommitted for review. This run is unattended: do not ask questions; if this meeting is already covered, stop without changes.");
+        let without = render_prompt("", &target_with("  "), &c);
+        assert_eq!(without, "Process the meeting recording at /r/dex/2026-10-27_16-18 weekly (project dex, meeting id m-1, title: Weekly sync). Draft only: leave everything uncommitted for review. This run is unattended: do not ask questions; if this meeting is already covered, stop without changes.");
+    }
+
+    #[test]
+    fn custom_template_keeps_unknown_placeholders_and_falls_back_when_empty() {
+        let c = ctx(Path::new("/r/x"));
+        assert_eq!(render_prompt("Summarize {folder} for {who}: {instructions}", &target_with("be brief"), &c), "Summarize /r/x for {who}: be brief");
+        assert_eq!(render_prompt("{instructions}", &target_with(""), &c), render_prompt("", &target_with(""), &c), "an empty render uses the built-in template");
     }
 
     #[test]
@@ -200,14 +256,26 @@ mod tests {
     }
 
     #[test]
-    fn claude_args_carry_the_safe_flags_in_order() {
-        let a = claude_args("hello", 5.0);
-        assert_eq!(a, vec![
+    fn claude_args_carry_the_flags_and_omit_empty_tool_lists() {
+        let allowed = vec!["mcp__open-knowledge".to_string(), "mcp__noesis".to_string()];
+        let denied = vec!["mcp__open-knowledge__delete".to_string()];
+        assert_eq!(claude_args("hello", 5.0, &allowed, &denied), vec![
             "-p", "hello", "--permission-mode", "acceptEdits",
             "--allowedTools", "mcp__open-knowledge", "mcp__noesis",
-            "--disallowedTools", "mcp__open-knowledge__delete", "mcp__open-knowledge__move", "mcp__noesis__assign_meeting",
+            "--disallowedTools", "mcp__open-knowledge__delete",
             "--max-budget-usd", "5",
         ]);
+        assert_eq!(claude_args("hi", 2.5, &[], &[" ".to_string()]), vec!["-p", "hi", "--permission-mode", "acceptEdits", "--max-budget-usd", "2.5"]);
+    }
+
+    #[test]
+    fn resolve_agent_prefers_an_existing_configured_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("my-agent");
+        std::fs::write(&bin, "").unwrap();
+        assert_eq!(resolve_agent(bin.to_str().unwrap()), Some(bin.clone()));
+        assert_eq!(resolve_agent(dir.path().join("missing").to_str().unwrap()), None, "a wrong path is an error, not a silent fallback");
+        assert_eq!(resolve_agent("   "), locate_claude(), "empty means auto-detect");
     }
 
     #[test]
@@ -231,7 +299,7 @@ mod tests {
         let mut c = ctx(dir.path());
         c.meeting_id = "m-running".into();
         running().lock().unwrap().insert("m-running".into());
-        assert!(!run(&target("dex", dir.path().to_str().unwrap(), ""), &c, 5.0, false, None).unwrap());
+        assert!(!run(&prefs(), &target_with_dir(dir.path().to_str().unwrap()), &c, false, None).unwrap());
         running().lock().unwrap().remove("m-running");
         let log = std::fs::read_to_string(dir.path().join("hook.log")).unwrap();
         assert!(log.contains("still in progress"), "{}", log);
@@ -242,7 +310,7 @@ mod tests {
     fn run_skips_when_hook_done_exists() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("hook.done"), "x").unwrap();
-        assert!(!run(&target("dex", dir.path().to_str().unwrap(), ""), &ctx(dir.path()), 5.0, false, None).unwrap());
+        assert!(!run(&prefs(), &target_with_dir(dir.path().to_str().unwrap()), &ctx(dir.path()), false, None).unwrap());
         let log = std::fs::read_to_string(dir.path().join("hook.log")).unwrap();
         assert!(log.contains("skipped: hook.done exists"), "{}", log);
     }
@@ -252,7 +320,7 @@ mod tests {
         // Gets past the marker check and fails on the missing wiki, so no claude is started.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("hook.done"), "x").unwrap();
-        let err = run(&target("dex", "/nonexistent/wiki", ""), &ctx(dir.path()), 5.0, true, None).unwrap_err();
+        let err = run(&prefs(), &target_with_dir("/nonexistent/wiki"), &ctx(dir.path()), true, None).unwrap_err();
         assert!(err.to_string().contains("/nonexistent/wiki"), "{}", err);
         let log = std::fs::read_to_string(dir.path().join("hook.log")).unwrap();
         assert!(!log.contains("skipped"), "{}", log);
@@ -261,7 +329,7 @@ mod tests {
     #[test]
     fn run_fails_cleanly_when_the_wiki_directory_is_missing() {
         let dir = tempfile::tempdir().unwrap();
-        let err = run(&target("dex", "/nonexistent/wiki", ""), &ctx(dir.path()), 5.0, false, None).unwrap_err();
+        let err = run(&prefs(), &target_with_dir("/nonexistent/wiki"), &ctx(dir.path()), false, None).unwrap_err();
         assert!(err.to_string().contains("/nonexistent/wiki"), "{}", err);
         let log = std::fs::read_to_string(dir.path().join("hook.log")).unwrap();
         assert!(log.contains("/nonexistent/wiki"), "{}", log);

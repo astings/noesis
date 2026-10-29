@@ -16,7 +16,7 @@ const ETA_ALPHA: f64 = 0.3;
 
 pub const STEP_TRANSCRIBE: &str = "Transcribe";
 pub const STEP_TITLE: &str = "Title/tags";
-pub const STEP_WIKI: &str = "Wiki";
+pub const STEP_AGENT: &str = "Agent";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -270,23 +270,23 @@ impl Registry {
         let id = j.id.clone();
         let cancelled = j.cancel_requested;
         match status {
-            "running" => self.step(&id, STEP_WIKI, JobState::Running, None),
+            "running" => self.step(&id, STEP_AGENT, JobState::Running, None),
             // a killed hook can still exit 0, so a cancel request wins over either exit status
             "done" | "failed" if cancelled => {
-                self.step(&id, STEP_WIKI, JobState::Cancelled, None);
+                self.step(&id, STEP_AGENT, JobState::Cancelled, None);
                 self.finish(&id, Outcome::Cancelled);
             }
             "done" => {
-                self.step(&id, STEP_WIKI, JobState::Done, None);
+                self.step(&id, STEP_AGENT, JobState::Done, None);
                 self.finish(&id, Outcome::Done);
             }
             "failed" => {
                 // spec 5: the transcript is the success criterion; the step carries the failure
-                self.step(&id, STEP_WIKI, JobState::Failed, Some("see hook.log".to_string()));
+                self.step(&id, STEP_AGENT, JobState::Failed, Some("see hook.log".to_string()));
                 self.finish(&id, Outcome::Done);
             }
             "cancelled" => {
-                self.step(&id, STEP_WIKI, JobState::Cancelled, None);
+                self.step(&id, STEP_AGENT, JobState::Cancelled, None);
                 self.finish(&id, Outcome::Cancelled);
             }
             _ => {}
@@ -638,7 +638,7 @@ mod tests {
         r.hook_status("m", "failed");
         let a = &r.snapshot()[0];
         assert_eq!(a.state, JobState::Done, "a failed wiki step does not fail the enhance");
-        assert_eq!(a.steps[0], Step { name: STEP_WIKI.into(), state: JobState::Failed, error: Some("see hook.log".into()) });
+        assert_eq!(a.steps[0], Step { name: STEP_AGENT.into(), state: JobState::Failed, error: Some("see hook.log".into()) });
         assert_eq!(r.snapshot()[1].state, JobState::Queued, "the re-queued job is untouched");
     }
 
@@ -703,7 +703,7 @@ mod tests {
         r.hook_status("m", "done");
         let a = &r.snapshot()[0];
         assert_eq!(a.state, JobState::Done);
-        assert_eq!(a.steps[0], Step { name: STEP_WIKI.into(), state: JobState::Done, error: None });
+        assert_eq!(a.steps[0], Step { name: STEP_AGENT.into(), state: JobState::Done, error: None });
     }
 
     #[test]
@@ -719,8 +719,8 @@ mod tests {
         let s = r.snapshot();
         assert_eq!(s[1].progress, Some(40));
         assert_eq!(s[0].progress, None);
-        assert_eq!(s[0].steps[0].name, STEP_WIKI);
-        assert!(s[1].steps.iter().all(|x| x.name != STEP_WIKI));
+        assert_eq!(s[0].steps[0].name, STEP_AGENT);
+        assert!(s[1].steps.iter().all(|x| x.name != STEP_AGENT));
     }
 
     #[test]

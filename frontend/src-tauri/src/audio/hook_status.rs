@@ -95,7 +95,7 @@ pub async fn run_meeting_hook<R: tauri::Runtime>(
         .map_err(|e| format!("Could not load preferences: {}", e))?;
     let ctx = super::post_enhance_hook::read_context(&folder, &meeting_id);
     match super::post_enhance_hook::dispatch(&app, &prefs, &ctx, true)? {
-        super::post_enhance_hook::HookKind::Wiki => Ok("Wiki automation started".to_string()),
+        super::post_enhance_hook::HookKind::Agent => Ok("Post-processing started".to_string()),
         super::post_enhance_hook::HookKind::Command => Ok("Hook started".to_string()),
     }
 }
