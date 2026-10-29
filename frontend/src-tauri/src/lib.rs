@@ -916,6 +916,8 @@ pub fn run() {
             audio::post_processing::locate_claude_cli,
             audio::post_processing::select_directory,
             audio::post_processing::get_default_agent_prompt_template,
+            audio::post_processing::get_mcp_register_command,
+            audio::post_processing::register_mcp_with_claude,
             audio::library::assign_meeting,
         ])
         .build(tauri::generate_context!())

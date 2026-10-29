@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { toast } from 'sonner';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -28,9 +29,12 @@ export function PostProcessingSettings({ preferences, onChange, disabled }: Prop
   const [templateDraft, setTemplateDraft] = useState<string | null>(null);
   const [allowedDraft, setAllowedDraft] = useState<string | null>(null);
   const [deniedDraft, setDeniedDraft] = useState<string | null>(null);
+  const [registerCommand, setRegisterCommand] = useState('');
+  const [registering, setRegistering] = useState(false);
 
   useEffect(() => {
     invoke<string>('get_default_agent_prompt_template').then(setDefaultTemplate).catch(() => setDefaultTemplate(''));
+    invoke<string>('get_mcp_register_command').then(setRegisterCommand).catch(() => setRegisterCommand(''));
   }, []);
   useEffect(() => {
     invoke<string | null>('locate_claude_cli', { agentPath: preferences.agent_path }).then(setClaudePath).catch(() => setClaudePath(null));
@@ -66,6 +70,25 @@ export function PostProcessingSettings({ preferences, onChange, disabled }: Prop
     const list = splitTools(text);
     if (list.join(' ') === preferences[key].join(' ')) return;
     await onChange({ ...preferences, [key]: list });
+  };
+  const registerMcp = async () => {
+    setRegistering(true);
+    try {
+      const message = await invoke<string>('register_mcp_with_claude', { agentPath: preferences.agent_path });
+      toast.success('MCP server registered', { description: message });
+    } catch (error) {
+      toast.error('Could not register the MCP server', { description: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setRegistering(false);
+    }
+  };
+  const copyRegisterCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(registerCommand);
+      toast.success('Command copied');
+    } catch {
+      toast.error('Could not copy', { description: registerCommand });
+    }
   };
   const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') e.currentTarget.blur();
@@ -215,6 +238,25 @@ export function PostProcessingSettings({ preferences, onChange, disabled }: Prop
         />
       </SettingRow>
 
+      <SettingRow
+        label="MCP server"
+        hint={
+          <>
+            Lets Claude Code read your meetings from any project. Needs Node 22.18 or newer.
+            <span className="block mt-1 font-mono break-all">{registerCommand}</span>
+          </>
+        }
+        control={
+          <div className="flex gap-1">
+            <Button type="button" variant="outline" size="sm" onClick={registerMcp} disabled={disabled || registering || (!claudePath && !preferences.agent_path)}>
+              {registering ? 'Registering…' : 'Register with Claude Code'}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={copyRegisterCommand} disabled={!registerCommand}>
+              Copy command
+            </Button>
+          </div>
+        }
+      />
       <SettingRow
         label="Cost cap per run"
         hint="In US dollars, per Claude Code run"
