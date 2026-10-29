@@ -77,6 +77,8 @@ export interface CurrentMeeting {
   project?: string;
   // Sidebar dates: meeting start, RFC 3339
   startedAt?: string;
+  // From metadata.json; absent for legacy meetings
+  durationSeconds?: number;
 }
 
 // Search result type for transcript search
@@ -167,6 +169,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
           title: meeting.title,
           project: meeting.project || INBOX,
           startedAt: meeting.started_at,
+          durationSeconds: meeting.duration_seconds ?? undefined,
           enhanceStatus: statusById.get(meeting.id),
           hookStatus: hookById.get(meeting.id),
           taggingStatus: taggingById.get(meeting.id),
