@@ -174,7 +174,7 @@ async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title
     write_tags(&folder, &tags)?;
 
     if force_title || title.trim().is_empty() || super::library::is_auto_title(&title) {
-        match super::library::assign(pool, &super::get_default_recordings_folder(), meeting_id, None, Some(&new_title)).await {
+        match super::library::assign(pool, &super::recording_preferences::recordings_root(app), meeting_id, None, Some(&new_title)).await {
             // the meeting page refetches its folder on this event
             Ok(_) => {
                 let _ = app.emit("meeting-moved", serde_json::json!({ "meeting_id": meeting_id }));

@@ -75,6 +75,8 @@ pub struct RecordingSaver {
     is_saving: Arc<Mutex<bool>>,
     // spec 4.2
     project: Option<String>,
+    /// Generic settings section 4: set from the preference at record start; None means the default folder.
+    root: Option<PathBuf>,
     meeting_id: Option<String>,
     live_transcription: Option<(String, String)>,
     ended_by: Option<String>, // spec 4.5
@@ -93,6 +95,7 @@ impl RecordingSaver {
             transcript_segments: Arc::new(Mutex::new(Vec::new())),
             is_saving: Arc::new(Mutex::new(false)),
             project: None,
+            root: None,
             meeting_id: None,
             live_transcription: None,
             ended_by: None,
@@ -140,6 +143,11 @@ impl RecordingSaver {
     }
 
     /// spec 4.2: project folder the meeting is recorded into. Invalid or empty names fall back to `_inbox`.
+    /// Generic settings section 4: where the meeting folder is created.
+    pub fn set_root(&mut self, root: PathBuf) {
+        self.root = Some(root);
+    }
+
     pub fn set_project(&mut self, project: Option<String>) {
         self.project = project.filter(|p| {
             let ok = super::library::is_valid_project_name(p);
@@ -319,7 +327,7 @@ impl RecordingSaver {
     /// * `create_checkpoints` - Whether to create .checkpoints/ directory and IncrementalAudioSaver
     fn initialize_meeting_folder(&mut self, meeting_name: &str, create_checkpoints: bool) -> Result<()> {
         // Load preferences to get base recordings folder
-        let base_folder = super::recording_preferences::get_default_recordings_folder();
+        let base_folder = self.root.clone().unwrap_or_else(super::recording_preferences::get_default_recordings_folder);
 
         // spec 4.2: <root>/<project>/<stamp slug>/
         let project = self.project.clone().unwrap_or_else(|| super::library::INBOX.to_string());

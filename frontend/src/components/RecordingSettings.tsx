@@ -208,6 +208,12 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     await savePreferences(newPreferences);
   };
 
+  // generic settings section 4: the folder new recordings go into
+  const handleChangeFolder = async () => {
+    const picked = await invoke<string | null>('select_directory').catch(() => null);
+    if (picked && picked !== preferences.save_folder) await applyPreferences({ ...preferences, save_folder: picked });
+  };
+
   const handleOpenFolder = async () => {
     try {
       await invoke('open_recordings_folder');
@@ -275,13 +281,19 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
             hint={
               <span className="font-mono break-all">
                 {preferences.save_folder || 'Default folder'} · {preferences.file_format.toUpperCase()}
+                <span className="block font-sans mt-1">New recordings go here. Existing recordings stay where they are.</span>
               </span>
             }
             control={
-              <Button variant="outline" size="sm" onClick={handleOpenFolder}>
-                <FolderOpen />
-                Open folder
-              </Button>
+              <div className="flex gap-1">
+                <Button variant="outline" size="sm" onClick={handleChangeFolder} disabled={saving || isRecording}>
+                  Change
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleOpenFolder}>
+                  <FolderOpen />
+                  Open folder
+                </Button>
+              </div>
             }
           />
         ) : (

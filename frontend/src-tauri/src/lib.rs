@@ -618,7 +618,7 @@ pub fn run() {
             }
 
             // no enhance job survives a restart: a queued/running status on disk is stale
-            let interrupted = audio::enhance_status::mark_interrupted(&audio::get_default_recordings_folder());
+            let interrupted = audio::enhance_status::mark_interrupted(&audio::recording_preferences::recordings_root(&_app.handle()));
             if interrupted > 0 {
                 log::info!("Marked {} interrupted enhance job(s) failed", interrupted);
             }
@@ -626,7 +626,7 @@ pub fn run() {
             // spec 4.2: repair the meeting index from disk once at startup
             if let Some(state) = _app.handle().try_state::<state::AppState>() {
                 let pool = state.db_manager.pool();
-                match tauri::async_runtime::block_on(audio::library::reconcile(pool, &audio::get_default_recordings_folder())) {
+                match tauri::async_runtime::block_on(audio::library::reconcile(pool, &audio::recording_preferences::recordings_root(&_app.handle()))) {
                     Ok(n) => log::info!("Library reconcile at startup: {} rows updated", n),
                     Err(e) => log::warn!("Library reconcile at startup failed: {}", e),
                 }

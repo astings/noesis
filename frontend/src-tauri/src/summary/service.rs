@@ -548,7 +548,7 @@ impl SummaryService {
                                 .filter(|name| !name.is_empty())
                         {
                             // spec 4.2: title changes go through the library so metadata.json and the folder follow
-                            let root = crate::audio::get_default_recordings_folder();
+                            let root = crate::audio::recording_preferences::recordings_root(&_app);
                             match crate::audio::library::assign(&pool, &root, &meeting_id, None, Some(&name)).await {
                                 Ok(_) => {}
                                 Err(error) if error.starts_with("Folder not found on disk") => {

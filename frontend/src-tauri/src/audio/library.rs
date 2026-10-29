@@ -454,18 +454,19 @@ async fn assign_inner(
 }
 
 #[tauri::command]
-pub async fn list_projects_command() -> Result<Vec<String>, String> {
-    Ok(list_projects(&super::recording_preferences::get_default_recordings_folder()))
+pub async fn list_projects_command<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Result<Vec<String>, String> {
+    Ok(list_projects(&super::recording_preferences::recordings_root(&app)))
 }
 
 #[tauri::command]
-pub async fn assign_meeting(
+pub async fn assign_meeting<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     state: tauri::State<'_, crate::state::AppState>,
     meeting_id: String,
     project: Option<String>,
     title: Option<String>,
 ) -> Result<String, String> {
-    let root = super::recording_preferences::get_default_recordings_folder();
+    let root = super::recording_preferences::recordings_root(&app);
     assign(state.db_manager.pool(), &root, &meeting_id, project.as_deref(), title.as_deref())
         .await
         .map(|p| p.to_string_lossy().to_string())

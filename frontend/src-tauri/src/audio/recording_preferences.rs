@@ -223,6 +223,26 @@ pub fn get_default_recordings_folder() -> PathBuf {
     recordings_base_dir().join(crate::app_names::RECORDINGS_DIR_NAME)
 }
 
+/// `save_folder` from a stored preferences object; None when absent or blank.
+pub fn root_from_preferences_value(value: Option<&serde_json::Value>) -> Option<PathBuf> {
+    value?
+        .get("save_folder")?
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Generic settings section 4: the recordings root the app records into, lists and reconciles.
+/// The `save_folder` preference when set, else the platform default. Reads the store directly
+/// so callers without async context can use it.
+pub fn recordings_root<R: Runtime>(app: &AppHandle<R>) -> PathBuf {
+    app.store("recording_preferences.json")
+        .ok()
+        .and_then(|store| root_from_preferences_value(store.get("preferences").as_ref()))
+        .unwrap_or_else(get_default_recordings_folder)
+}
+
 /// Parent of the default recordings folder: Music on Windows, Movies on macOS,
 /// Documents elsewhere (Documents is also the fallback). The migration reuses it.
 pub fn recordings_base_dir() -> PathBuf {
@@ -573,6 +593,15 @@ mod tests {
         let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
         let p: RecordingPreferences = serde_json::from_str(old).unwrap();
         assert_eq!(p.title_tags_prompt, "");
+    }
+
+    #[test]
+    fn root_from_preferences_falls_back_when_missing_or_empty() {
+        let v = serde_json::json!({"save_folder": "/Volumes/Work/recordings", "auto_save": true});
+        assert_eq!(root_from_preferences_value(Some(&v)), Some(PathBuf::from("/Volumes/Work/recordings")));
+        assert_eq!(root_from_preferences_value(Some(&serde_json::json!({"save_folder": "  "}))), None);
+        assert_eq!(root_from_preferences_value(Some(&serde_json::json!({"auto_save": true}))), None);
+        assert_eq!(root_from_preferences_value(None), None);
     }
 
     #[test]
