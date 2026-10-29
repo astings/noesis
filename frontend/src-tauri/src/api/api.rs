@@ -798,6 +798,10 @@ pub async fn api_delete_meeting<R: Runtime>(
             .flatten()
             .flatten();
 
+    // Stop its enhance, summary or tagging first, so nothing keeps writing into the folder
+    // and no failed job is left behind for a meeting that no longer exists.
+    crate::jobs::cancel_meeting_jobs(&_app, &meeting_id).await;
+
     // Trash the folder first: if that fails keep the row, so the list matches the disk.
     if let Some(folder) = folder_path.filter(|f| !f.trim().is_empty()) {
         let root = crate::audio::recording_preferences::recordings_root(&_app);

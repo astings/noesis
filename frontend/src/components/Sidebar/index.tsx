@@ -53,6 +53,7 @@ const Sidebar: React.FC = () => {
     isCollapsed,
     toggleCollapse,
     handleRecordingToggle,
+    goHome,
     meetings,
     setMeetings,
     refetchMeetings
@@ -298,7 +299,7 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
       <TooltipProvider>
         {/* Fixed w-12 so content never reflows while the container animates; icon column sits at x=16 in both states */}
         <div className="flex w-12 flex-1 flex-col items-center gap-1 py-2.5">
-          <button onClick={() => router.push('/')} aria-label="Home" className="grid h-10 w-10 place-items-center rounded-md">
+          <button onClick={goHome} aria-label="Home" className="grid h-10 w-10 place-items-center rounded-md">
 
             <img src="/logo.png" alt="" className="w-7 h-7" />
           </button>
@@ -324,9 +325,8 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
             <TooltipTrigger asChild>
               <button
                 onClick={handleRecordingToggle}
-                disabled={isRecording}
                 aria-label={isRecording ? 'Recording in progress' : 'New recording'}
-                className="grid h-8 w-8 place-items-center rounded-md bg-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+                className="grid h-8 w-8 place-items-center rounded-md bg-foreground transition-opacity hover:opacity-90"
               >
                 <span className={`h-2 w-2 rounded-full bg-recording ${isRecording ? 'animate-pulse' : ''}`} />
               </button>
@@ -538,7 +538,7 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
           <div className="flex w-[260px] flex-1 min-h-0 flex-col px-2 py-2.5">
             {/* Logo routes home; the separate Home entry is gone */}
             <div className="mb-1 flex h-10 items-center">
-              <button onClick={() => router.push('/')} className="flex items-center gap-2 rounded-md pl-0.5 text-sm font-semibold text-foreground">
+              <button onClick={goHome} className="flex items-center gap-2 rounded-md pl-0.5 text-sm font-semibold text-foreground">
                 <img src="/logo.png" alt="" className="w-7 h-7" />
                 <span className={hideOnCollapse}>Noesis</span>
               </button>
@@ -574,8 +574,7 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
                   On collapse the bar shrinks to the rail's 32px square in step with the edge. */}
               <button
                 onClick={handleRecordingToggle}
-                disabled={isRecording}
-                className={`flex h-8 items-center gap-2 overflow-hidden whitespace-nowrap rounded-md bg-foreground px-3 text-[13px] font-medium text-background transition-[width,opacity] duration-300 hover:opacity-90 disabled:opacity-50 ${isCollapsed ? 'w-8' : 'w-full'}`}
+                className={`flex h-8 items-center gap-2 overflow-hidden whitespace-nowrap rounded-md bg-foreground px-3 text-[13px] font-medium text-background transition-[width,opacity] duration-300 hover:opacity-90 ${isCollapsed ? 'w-8' : 'w-full'}`}
               >
                 <span className={`h-2 w-2 shrink-0 rounded-full bg-recording ${isRecording ? 'animate-pulse' : ''}`} />
                 <span className={hideOnCollapse}>{isRecording ? 'Recording in progress...' : 'New recording'}</span>
