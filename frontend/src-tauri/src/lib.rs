@@ -907,8 +907,6 @@ pub fn run() {
             audio::retranscription::cancel_retranscription_command,
             audio::retranscription::is_retranscription_in_progress_command,
             audio::enhance_status::list_enhance_statuses,
-            audio::hook_status::list_hook_statuses,
-            audio::hook_status::run_meeting_hook,
             audio::meeting_tagging::run_meeting_tagging,
             audio::meeting_tagging::tag_untagged_meetings,
             audio::meeting_tagging::list_tagging_statuses,
@@ -916,11 +914,9 @@ pub fn run() {
             audio::audio_cleanup::delete_meeting_audio,
             audio::audio_cleanup::get_meeting_extras,
             audio::library::list_projects_command,
-            audio::post_processing::locate_claude_cli,
-            audio::post_processing::select_directory,
-            audio::post_processing::get_default_agent_prompt_template,
-            audio::post_processing::get_mcp_register_command,
-            audio::post_processing::register_mcp_with_claude,
+            audio::recording_preferences::select_directory,
+            audio::claude_mcp::get_mcp_register_command,
+            audio::claude_mcp::register_mcp_with_claude,
             audio::library::assign_meeting,
         ])
         .build(tauri::generate_context!())

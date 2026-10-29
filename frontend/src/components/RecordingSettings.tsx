@@ -7,12 +7,10 @@ import { DeviceSelection, SelectedDevices } from '@/components/DeviceSelection';
 import { toast } from 'sonner';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
 import { useConfig } from '@/contexts/ConfigContext';
-import { PostProcessingSettings } from '@/components/PostProcessingSettings'; // generic settings section 1
+import { McpServerSettings } from '@/components/McpServerSettings';
 import { Button } from '@/components/ui/button';
 import { SettingsGroup, SettingRow } from '@/components/SettingsGroup';
 import { NotificationsRow } from '@/components/PreferenceSettings';
-
-export interface PostProcessingTarget { project: string; directory: string; instructions: string } // generic settings section 1
 
 export interface RecordingPreferences {
   save_folder: string;
@@ -30,15 +28,6 @@ export interface RecordingPreferences {
   auto_start_on_call: boolean;
   calendar_meeting_name: boolean;
   owner_name: string; // spec 4.4
-  post_enhance_command: string; // spec 4.7
-  post_processing: boolean; // generic settings section 1
-  post_processing_targets: PostProcessingTarget[];
-  post_processing_budget_usd: number;
-  agent_path: string;
-  agent_prompt_template: string;
-  agent_allowed_tools: string[];
-  agent_denied_tools: string[];
-  hook_auto_run: boolean;
   auto_title_tags: boolean;
   delete_audio_after_enhance: boolean;
   audio_retention_hours: number;
@@ -65,15 +54,6 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     auto_start_on_call: false,
     calendar_meeting_name: false,
     owner_name: 'Me',
-    post_enhance_command: '',
-    post_processing: false,
-    post_processing_targets: [],
-    post_processing_budget_usd: 5,
-    agent_path: '',
-    agent_prompt_template: '',
-    agent_allowed_tools: ['mcp__open-knowledge', 'mcp__noesis'],
-    agent_denied_tools: ['mcp__open-knowledge__delete', 'mcp__open-knowledge__move', 'mcp__noesis__assign_meeting'],
-    hook_auto_run: false,
     auto_title_tags: true,
     delete_audio_after_enhance: false,
     audio_retention_hours: 24,
@@ -124,9 +104,6 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     await savePreferences(next);
   };
 
-  // spec 4.7
-  const [hookDraft, setHookDraft] = useState<string | null>(null);
-  // spec 4.8
   const applyPreferences = async (next: RecordingPreferences) => {
     setPreferences(next);
     await savePreferences(next);
@@ -138,15 +115,6 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     setRetentionDraft(null);
     if (hours === preferences.audio_retention_hours) return;
     await applyPreferences({ ...preferences, audio_retention_hours: hours });
-  };
-
-  const commitHookCommand = async () => {
-    const command = (hookDraft ?? preferences.post_enhance_command).trim();
-    setHookDraft(null);
-    if (command === preferences.post_enhance_command) return;
-    const next = { ...preferences, post_enhance_command: command };
-    setPreferences(next);
-    await savePreferences(next);
   };
 
   // Load recording preferences on component mount
@@ -356,8 +324,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
         />
       </SettingsGroup>
 
-      {/* generic settings section 1: post-processing */}
-      <PostProcessingSettings preferences={preferences} onChange={applyPreferences} disabled={saving} />
+      <McpServerSettings disabled={saving} />
 
       <SettingsGroup title="Audio files">
         <SettingRow
@@ -382,30 +349,6 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
             />
           }
         />
-      </SettingsGroup>
-
-      {/* spec 4.7: post-enhance hook */}
-      <SettingsGroup title="Advanced">
-        <SettingRow
-          label="Run hook automatically after enhance"
-          hint="Off: run it from the meeting page or the right-click menu."
-          control={<Switch aria-label="Run hook automatically after enhance" checked={preferences.hook_auto_run} onCheckedChange={(on) => applyPreferences({ ...preferences, hook_auto_run: on })} disabled={saving} />}
-        />
-        <SettingRow
-          label="Custom command"
-          hint="Shell command started after an enhance when post-processing is off or the project has no row. It gets NOESIS_FOLDER, NOESIS_PROJECT, NOESIS_TITLE and NOESIS_MEETING_ID (the MEETILY_* names still work); output goes to hook.log in the meeting folder. Empty means off."
-        >
-          <Input
-            aria-label="Custom command (advanced)"
-            className="h-8 font-mono text-xs"
-            placeholder="/path/to/post-enhance.sh"
-            value={hookDraft ?? preferences.post_enhance_command}
-            onChange={(e) => setHookDraft(e.target.value)}
-            onBlur={commitHookCommand}
-            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-            disabled={saving}
-          />
-        </SettingRow>
       </SettingsGroup>
 
       {/* Device Preferences */}

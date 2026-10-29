@@ -16,32 +16,11 @@ interface SidebarItem {
   type: 'folder' | 'file';
   children?: SidebarItem[];
   enhanceStatus?: string;
-  hookStatus?: string;
   taggingStatus?: string;
   startedAt?: string;
 }
 
 export const PROJECT_FOLDER_PREFIX = 'project:';
-
-// Meetings whose manual hook start is awaiting its reply. A start failure emits a failed
-// status event and then returns Err; the caller toasts the Err, so the listener stays quiet.
-const startingHooks = new Set<string>();
-// Failed events swallowed while starting: a child can fail before the invoke reply arrives.
-const failedWhileStarting = new Set<string>();
-
-export async function runMeetingHook(meetingId: string) {
-  startingHooks.add(meetingId);
-  try {
-    const msg = await invoke<string>('run_meeting_hook', { meetingId });
-    if (failedWhileStarting.has(meetingId)) toast.error('Hook failed', { description: 'See hook.log in the meeting folder.' });
-    else toast.success(msg);
-  } catch (error) {
-    toast.error(String(error));
-  } finally {
-    startingHooks.delete(meetingId);
-    failedWhileStarting.delete(meetingId);
-  }
-}
 
 // Title and tags run: the status events drive the badge, and the failed event carries
 // the error and toasts it, so the Err is only logged here.
@@ -70,8 +49,6 @@ export interface CurrentMeeting {
   title: string;
   // spec 4.1: "queued" | "running" | "done" | "failed", absent for legacy meetings
   enhanceStatus?: string;
-  // "running" | "done" | "failed", absent when the hook never ran
-  hookStatus?: string;
   taggingStatus?: string;
   // spec 4.2: project folder name, `_inbox` for legacy meetings
   project?: string;
@@ -169,9 +146,6 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
         const statuses = await invoke<Array<{ meeting_id: string; status: string }>>('list_enhance_statuses')
           .catch((error) => { console.warn('list_enhance_statuses failed:', error); return []; });
         const statusById = new Map(statuses.map((s) => [s.meeting_id, s.status]));
-        const hookStatuses = await invoke<Array<{ meeting_id: string; status: string }>>('list_hook_statuses')
-          .catch((error) => { console.warn('list_hook_statuses failed:', error); return []; });
-        const hookById = new Map(hookStatuses.map((s) => [s.meeting_id, s.status]));
         const taggingStatuses = await invoke<Array<{ meeting_id: string; status: string }>>('list_tagging_statuses')
           .catch((error) => { console.warn('list_tagging_statuses failed:', error); return []; });
         const taggingById = new Map(taggingStatuses.map((s) => [s.meeting_id, s.status]));
@@ -182,7 +156,6 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
           startedAt: meeting.started_at,
           durationSeconds: meeting.duration_seconds ?? undefined,
           enhanceStatus: statusById.get(meeting.id),
-          hookStatus: hookById.get(meeting.id),
           taggingStatus: taggingById.get(meeting.id),
         }));
         setMeetings(transformedMeetings);
@@ -209,7 +182,6 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let unlistenError: (() => void) | undefined;
-    let unlistenHook: (() => void) | undefined;
     let unlistenTagging: (() => void) | undefined;
     let cancelled = false;
     listen<{ meeting_id: string; status: string }>('enhance-status-changed', (event) => {
@@ -219,18 +191,6 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     }).then((fn) => {
       if (cancelled) fn();
       else unlisten = fn;
-    });
-    listen<{ meeting_id: string; status: string }>('hook-status-changed', (event) => {
-      setMeetings((prev) =>
-        prev.map((m) => (m.id === event.payload.meeting_id ? { ...m, hookStatus: event.payload.status } : m)),
-      );
-      if (event.payload.status === 'failed') {
-        if (startingHooks.has(event.payload.meeting_id)) failedWhileStarting.add(event.payload.meeting_id);
-        else toast.error('Hook failed', { description: 'See hook.log in the meeting folder.' });
-      }
-    }).then((fn) => {
-      if (cancelled) fn();
-      else unlistenHook = fn;
     });
     listen<{ meeting_id: string; status: string; error?: string | null }>('tagging-status-changed', (event) => {
       setMeetings((prev) =>
@@ -255,7 +215,6 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       unlisten?.();
       unlistenError?.();
-      unlistenHook?.();
       unlistenTagging?.();
     };
   }, [fetchMeetings]);
@@ -285,7 +244,6 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
           type: 'file' as const,
           startedAt: meeting.startedAt,
           enhanceStatus: meeting.enhanceStatus,
-          hookStatus: meeting.hookStatus,
           taggingStatus: meeting.taggingStatus,
         })),
       })),

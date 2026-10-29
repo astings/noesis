@@ -5,9 +5,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { ProjectSelect } from '@/components/ProjectSelect';
 import { INBOX, projectOfFolder } from '@/lib/projects';
-import { useSidebar, runMeetingHook, runMeetingTagging, deleteMeetingAudio } from '@/components/Sidebar/SidebarProvider';
+import { useSidebar, runMeetingTagging, deleteMeetingAudio } from '@/components/Sidebar/SidebarProvider';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, FolderOpen, RefreshCw, Tags, Trash2, Webhook } from 'lucide-react';
+import { ChevronDown, FolderOpen, RefreshCw, Tags, Trash2 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ConfirmationModal } from '@/components/ConfirmationModel/confirmation-modal';
 import { startEnhance } from '@/lib/autoEnhance';
@@ -32,7 +32,6 @@ export function TranscriptButtonGroup({
 
   // spec 4.2: move the meeting to another project folder
   const { refetchMeetings, meetings } = useSidebar();
-  const hookRunning = meetings.find((m) => m.id === meetingId)?.hookStatus === 'running';
   const taggingRunning = meetings.find((m) => m.id === meetingId)?.taggingStatus === 'running';
   const [root, setRoot] = useState<string>('');
   const [moving, setMoving] = useState(false);
@@ -89,10 +88,6 @@ export function TranscriptButtonGroup({
               <DropdownMenuItem disabled={audioDeleted} title={audioGone} onSelect={() => startEnhance(meetingId, meetingFolderPath)}>
                 <RefreshCw />
                 Enhance
-              </DropdownMenuItem>
-              <DropdownMenuItem disabled={hookRunning} onSelect={() => runMeetingHook(meetingId)}>
-                <Webhook />
-                Run hook
               </DropdownMenuItem>
               <DropdownMenuItem disabled={taggingRunning} onSelect={() => runMeetingTagging(meetingId)}>
                 <Tags />

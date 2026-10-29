@@ -6,7 +6,7 @@ Root, first match wins: `NOESIS_RECORDINGS`, `MEETILY_RECORDINGS`, the app's "Re
 
 Run without a checkout: `npx -y @noesis-app/noesis-mcp` (Node 22.18 or newer).
 
-Register for Claude Code (all projects): `claude mcp add --scope user noesis -- npx -y @noesis-app/noesis-mcp`, or click "Register with Claude Code" (row "MCP server") in Noesis, Settings, Recordings, Post-processing.
+Register for Claude Code (all projects): `claude mcp add --scope user noesis -- npx -y @noesis-app/noesis-mcp`, or click "Register with Claude Code" (row "MCP server") in Noesis, Settings, Recordings, Claude Code.
 
 From a checkout instead: `node src/index.ts`, registered with `claude mcp add --scope user noesis -- node /ABSOLUTE/PATH/noesis/mcp/src/index.ts`.
 

@@ -173,6 +173,8 @@ Lazier alternative: no server, just `transcript.md` plus the root path written i
 
 ### 4.7 Post-enhance hook
 
+> Removed 2026-10-29: the hook was dropped as too niche. This section is history; see CLAUDE.md.
+
 What: let the app kick off a wiki workflow when a transcript is ready.
 
 How: one preference `post_enhance_command: String` (empty means off). When an enhance job finishes, run it through `sh -c` detached, with `NOESIS_FOLDER`, `NOESIS_PROJECT`, `NOESIS_TITLE` and `NOESIS_MEETING_ID` in the environment (the `MEETILY_*` equivalents are still set), output appended to `hook.log` in the meeting folder. About 15 lines in `retranscription.rs`. The log is the only record of the hook; `metadata.json` does not track it.
@@ -182,6 +184,8 @@ The wiki automation itself is a user script outside the app. The reference scrip
 Lazier alternative: a `launchd` folder watcher outside the app. Rejected: the in-app hook fires exactly once with the right arguments and is fewer moving parts.
 
 ### 4.8 Wiki automation settings
+
+> Removed 2026-10-29: the hook was dropped as too niche. This section is history; see CLAUDE.md.
 
 Superseded for the settings shape by [generic settings for distribution](2026-10-28-generic-settings-for-distribution-design.md), section 1: the card is "Post-processing", the prompt is a template, the tool lists are editable and `skill` became per-project instructions.
 

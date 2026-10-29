@@ -26,6 +26,8 @@ Out of scope: Windows and Linux (every fork feature is already `cfg(target_os = 
 
 ### 1. Post-processing card (replaces "Wiki automation")
 
+> Removed 2026-10-29: the hook was dropped as too niche. This section is history; see CLAUDE.md.
+
 The card in Settings, Recordings is renamed "Post-processing" and reads: "After each enhance, run Claude Code in the project's folder with the prompt below." Same spawn, same `hook.log`, same `hook.done`, same one-run-per-meeting rule, same job row.
 
 Preferences (`recording_preferences.json`). Keys are renamed with `#[serde(alias = "...")]` on the old name, so an existing file loads unchanged and the next save writes the new names. The module `audio/wiki_automation.rs` becomes `audio/post_processing.rs` (`git mv`), and `WikiTarget` becomes `PostProcessingTarget`.
