@@ -34,6 +34,8 @@ pub struct Meeting {
     pub project: String,
     /// Sidebar dates: meeting start, RFC 3339 (folder stamp, else created_at)
     pub started_at: String,
+    /// From metadata.json; None for legacy meetings or unreadable files
+    pub duration_seconds: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -363,6 +365,10 @@ pub async fn api_get_meetings<R: Runtime>(
                     id: m.id,
                     title: m.title,
                     started_at: crate::audio::library::started_at_of(m.folder_path.as_deref(), m.created_at.0),
+                    duration_seconds: m
+                        .folder_path
+                        .as_deref()
+                        .and_then(|f| crate::audio::library::duration_of(std::path::Path::new(f))),
                     project: m
                         .folder_path
                         .as_deref()
