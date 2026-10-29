@@ -63,6 +63,13 @@ pub fn started_at_of(folder_path: Option<&str>, created_at: chrono::DateTime<chr
         .unwrap_or_else(|| created_at.with_timezone(&chrono::Local).to_rfc3339())
 }
 
+/// `duration_seconds` from `<folder>/metadata.json`; None when absent or unreadable.
+// ponytail: one file read per meeting per list refresh; cache in SQLite if the library gets large
+pub fn duration_of(folder: &Path) -> Option<f64> {
+    let raw = std::fs::read_to_string(folder.join("metadata.json")).ok()?;
+    serde_json::from_str::<serde_json::Value>(&raw).ok()?.get("duration_seconds")?.as_f64()
+}
+
 /// `<stamp>` or `<stamp> <slug>` (spec 5.1).
 pub fn meeting_folder_name(stamp: &str, title: Option<&str>) -> String {
     match title.filter(|t| !is_auto_title(t)).map(slug).filter(|s| !s.is_empty()) {
@@ -540,6 +547,24 @@ mod tests {
     fn write_meta(dir: &Path, json: &str) {
         std::fs::create_dir_all(dir).unwrap();
         std::fs::write(dir.join("metadata.json"), json).unwrap();
+    }
+
+    #[test]
+    fn duration_of_reads_metadata_and_tolerates_bad_input() {
+        let root = tempfile::tempdir().unwrap();
+        let ok = root.path().join("ok");
+        write_meta(&ok, r#"{"version":"2.0","duration_seconds":2555.2}"#);
+        assert_eq!(duration_of(&ok), Some(2555.2));
+
+        let no_key = root.path().join("no-key");
+        write_meta(&no_key, r#"{"version":"2.0"}"#);
+        assert_eq!(duration_of(&no_key), None);
+
+        let bad = root.path().join("bad");
+        write_meta(&bad, "not json");
+        assert_eq!(duration_of(&bad), None);
+
+        assert_eq!(duration_of(&root.path().join("missing")), None);
     }
 
     #[test]
