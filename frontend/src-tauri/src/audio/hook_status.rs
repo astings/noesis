@@ -9,6 +9,7 @@ use std::sync::{Mutex, OnceLock};
 pub const RUNNING: &str = "running";
 pub const DONE: &str = "done";
 pub const FAILED: &str = "failed";
+pub const CANCELLED: &str = "cancelled";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HookStatusEntry {
@@ -29,6 +30,16 @@ pub fn set(meeting_id: &str, status: &'static str) {
     } else {
         memory().insert(meeting_id.to_string(), status);
     }
+}
+
+/// Atomically reserve the RUNNING slot; false when a run already holds it.
+pub fn try_start(meeting_id: &str) -> bool {
+    let mut m = memory();
+    if m.get(meeting_id) == Some(&RUNNING) {
+        return false;
+    }
+    m.insert(meeting_id.to_string(), RUNNING);
+    true
 }
 
 pub fn memory_status(meeting_id: &str) -> Option<&'static str> {

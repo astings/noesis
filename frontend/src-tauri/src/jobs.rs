@@ -285,6 +285,10 @@ impl Registry {
                 self.step(&id, STEP_WIKI, JobState::Failed, Some("see hook.log".to_string()));
                 self.finish(&id, Outcome::Done);
             }
+            "cancelled" => {
+                self.step(&id, STEP_WIKI, JobState::Cancelled, None);
+                self.finish(&id, Outcome::Cancelled);
+            }
             _ => {}
         }
     }
@@ -434,7 +438,6 @@ pub async fn cancel_job(app: AppHandle, id: String) -> Result<(), String> {
             } else if running(STEP_TRANSCRIBE) {
                 crate::audio::retranscription::cancel_retranscription(job.meeting_id.as_deref())?;
             }
-            // title step: not interruptible; start_retranscription skips the wiki step after it
         }
         Control::Summary { started_at } => {
             let process_id = started_at.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
@@ -451,7 +454,7 @@ pub async fn cancel_job(app: AppHandle, id: String) -> Result<(), String> {
             crate::summary::summary_engine::commands::builtin_ai_cancel_download(app.clone(), app.state(), job.title.clone()).await?;
             finish(&id, Outcome::Cancelled); // its download error path is silent on cancel
         }
-        // the batch checks the flag between meetings; one LLM call is not interruptible
+        // the batch checks the flag between meetings; each call is aborted while waiting for the model
         Control::Tagging => {}
     }
     Ok(())
@@ -503,6 +506,27 @@ pub async fn retry_job(app: AppHandle, id: String) -> Result<(), String> {
         }
     });
     Ok(())
+}
+
+/// Fails the job if dropped while armed: a panic unwinding through the work ends the
+/// row instead of leaving it Running. `finish` is idempotent, so an ended job is untouched.
+pub struct FailOnDrop(Option<String>);
+
+impl FailOnDrop {
+    pub fn new(id: &str) -> Self {
+        Self(Some(id.to_string()))
+    }
+    pub fn disarm(mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for FailOnDrop {
+    fn drop(&mut self) {
+        if let Some(id) = self.0.take() {
+            finish(&id, Outcome::Failed("Enhance stopped unexpectedly. See the app log.".to_string()));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -619,6 +643,16 @@ mod tests {
     }
 
     #[test]
+    fn hook_cancelled_status_ends_the_job_cancelled() {
+        let mut r = Registry::default();
+        r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
+        r.await_hook("a");
+        r.hook_status("m", "running");
+        r.hook_status("m", "cancelled");
+        assert_eq!(r.snapshot()[0].state, JobState::Cancelled);
+    }
+
+    #[test]
     fn hook_failure_after_cancel_is_cancelled() {
         let mut r = Registry::default();
         r.add("a", JobKind::Enhance, Some("m"), "", enhance(), true, Instant::now());
@@ -701,5 +735,21 @@ mod tests {
         let a = &r.snapshot()[0];
         assert_eq!(a.steps.len(), 1);
         assert_eq!(a.hook_pid, None);
+    }
+
+    #[test]
+    fn fail_on_drop_fails_the_job_unless_disarmed() {
+        add("fod-a", JobKind::Download, None, "m", Control::WhisperDownload, true);
+        add("fod-b", JobKind::Download, None, "m", Control::WhisperDownload, true);
+        let a = FailOnDrop::new("fod-a");
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _guard = a;
+            panic!("engine blew up");
+        }));
+        FailOnDrop::new("fod-b").disarm();
+        let state = |id: &str| list().into_iter().find(|j| j.id == id).unwrap().state;
+        assert_eq!(state("fod-a"), JobState::Failed);
+        assert_eq!(state("fod-b"), JobState::Running);
+        finish("fod-b", Outcome::Done);
     }
 }

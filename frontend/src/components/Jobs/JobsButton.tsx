@@ -67,8 +67,7 @@ export function JobsButton() {
       <span className="min-w-0 truncate font-medium">{name(j)}</span>
     );
 
-  // one meeting's title/tags is a single LLM call that cannot be interrupted, so it gets no Cancel
-  const cancel = (j: Job) => j.kind === 'tagging' && j.meeting_id ? null : (
+  const cancel = (j: Job) => (
     <button type="button" aria-label={`Cancel ${KIND[j.kind]} of ${name(j)}`} title="Cancel" onClick={() => call('cancel_job', j.id)}
       className="flex h-6 w-6 flex-none items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground">
       <X className="h-3.5 w-3.5" />

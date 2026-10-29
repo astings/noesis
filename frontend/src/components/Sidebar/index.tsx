@@ -390,13 +390,13 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
             setDragSource(currentProject);
           } : undefined}
           onDragEnd={isMeetingItem ? () => { setDragSource(null); setDropTarget(null); } : undefined}
-          className={`group flex items-center gap-1.5 px-2 py-1 rounded-md text-sm cursor-pointer transition-colors ${isActive
+          className={`group relative flex items-center gap-1.5 px-2 py-1 rounded-md text-sm cursor-pointer transition-colors ${isActive
             ? 'bg-accent text-foreground'
             : isProject
                 ? 'text-foreground hover:bg-accent/60'
                 : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
             }`}
-          style={isProject ? undefined : { paddingLeft: '22px' }}
+          style={isProject ? undefined : { paddingLeft: '14px' }}
           onClick={() => {
             if (item.type === 'folder') {
               toggleFolder(item.id);
@@ -424,7 +424,7 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
                 )}
                 <span className="flex-1 truncate" title={started ? `${item.title}\n${fullDateFmt.format(started)}` : item.title}>{item.title}</span>
                 {isMeetingItem && (
-                  <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                  <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center rounded bg-accent px-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

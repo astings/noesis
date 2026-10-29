@@ -200,7 +200,9 @@ pub async fn start_retranscription<R: Runtime>(
         RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
         set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_RUNNING, None);
 
+        let crash_guard = jobs::FailOnDrop::new(&job_id);
         let result = run_retranscription(app.clone(), meeting_id.clone(), meeting_folder_path, language, model, provider).await;
+        crash_guard.disarm();
         // Terminal status before the guard drops: a project move cannot slip in and leave
         // the moved metadata at `running`.
         match &result {
@@ -237,10 +239,14 @@ pub async fn start_retranscription<R: Runtime>(
             // phase 9: name and tag the meeting; a failure is logged and never changes the enhance result
             if res.segments_count > 0 && matches!(&prefs, Ok(p) if p.auto_title_tags) {
                 jobs::step(&job_id, STEP_TITLE, JobState::Running, None);
-                match super::meeting_tagging::run_after_enhance(&app, &meeting_id).await {
+                match super::meeting_tagging::run_after_enhance(&app, &meeting_id, Some(&job_id)).await {
                     Ok(msg) => {
                         info!("Title and tags for {}: {}", meeting_id, msg);
                         jobs::step(&job_id, STEP_TITLE, JobState::Done, None);
+                    }
+                    Err(e) if e == super::meeting_tagging::CANCELLED_MSG => {
+                        info!("Title and tags cancelled for {}", meeting_id);
+                        jobs::step(&job_id, STEP_TITLE, JobState::Cancelled, None);
                     }
                     Err(e) => {
                         warn!("Title and tags skipped for {}: {}", meeting_id, e);
