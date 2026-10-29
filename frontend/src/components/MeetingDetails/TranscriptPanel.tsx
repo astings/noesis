@@ -11,6 +11,7 @@ import { useSidebar, MEETING_EXTRAS_CHANGED } from '@/components/Sidebar/Sidebar
 import { MeetingInfoButton } from '@/components/MeetingStatusTags';
 import { toast } from 'sonner';
 import { format, isValid, parseISO } from 'date-fns';
+import { formatDuration } from '@/lib/duration';
 
 interface TranscriptPanelProps {
   title: string;
@@ -95,6 +96,7 @@ export function TranscriptPanel({
     return () => { cancelled = true; unlisten?.(); window.removeEventListener(MEETING_EXTRAS_CHANGED, load); };
   }, [meetingId]);
   const created = createdAt ? parseISO(createdAt) : null;
+  const length = formatDuration(status?.durationSeconds);
 
   // Click the title to rename in place; Enter or blur saves, Escape cancels.
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
@@ -142,7 +144,9 @@ export function TranscriptPanel({
               </button>
             )}
             {created && isValid(created) && (
-              <span className="ml-1 flex-none font-normal text-muted-foreground">· {format(created, 'd MMM, HH:mm')}</span>
+              <span className="ml-1 flex-none font-normal text-muted-foreground">
+                · {format(created, 'd MMM, HH:mm')}{length && ` · ${length}`}
+              </span>
             )}
           </h1>
         </div>

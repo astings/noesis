@@ -4,6 +4,8 @@ import { useTranscripts } from '@/contexts/TranscriptContext';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
 import { usePermissionCheck } from '@/hooks/usePermissionCheck';
 import { useIsLinux } from '@/hooks/usePlatform';
+import { RecentMeetings } from '@/components/RecentMeetings';
+import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { useMemo } from 'react';
 
 /**
@@ -28,6 +30,7 @@ export function TranscriptPanel({
   const { isRecording, isPaused } = useRecordingState();
   const { checkPermissions, isChecking, hasSystemAudio, hasMicrophone } = usePermissionCheck();
   const isLinux = useIsLinux();
+  const { meetings } = useSidebar();
 
   // Convert transcripts to segments for virtualized view
   const segments = useMemo(() =>
@@ -41,6 +44,7 @@ export function TranscriptPanel({
     })),
     [transcripts]
   );
+  const showRecent = !isRecording && !isStopping && !isProcessingStop && segments.length === 0 && meetings.length > 0;
 
   return (
     <div ref={transcriptContainerRef} className="flex-1 min-h-0 bg-background flex flex-col overflow-y-auto">
@@ -56,15 +60,19 @@ export function TranscriptPanel({
         </div>
       )}
 
-      <VirtualizedTranscriptView
-        segments={segments}
-        isRecording={isRecording}
-        isPaused={isPaused}
-        isProcessing={isProcessingStop}
-        isStopping={isStopping}
-        enableStreaming={isRecording}
-        showConfidence={true}
-      />
+      {showRecent ? (
+        <RecentMeetings />
+      ) : (
+        <VirtualizedTranscriptView
+          segments={segments}
+          isRecording={isRecording}
+          isPaused={isPaused}
+          isProcessing={isProcessingStop}
+          isStopping={isStopping}
+          enableStreaming={isRecording}
+          showConfidence={true}
+        />
+      )}
     </div>
   );
 }
