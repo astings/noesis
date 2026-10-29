@@ -16,9 +16,9 @@ Rejected: the ready-state screen (devices, model, mic meter) and the "needs you"
 
 ### Home page (`app/page.tsx`)
 
-- When the app is not recording and there is no transcript, show "Recent" with the 5 newest meetings by `startedAt`. This replaces the "No transcript yet / Start recording to see live transcription" block in `components/VirtualizedTranscriptView.tsx` (around line 267).
+- When the app is not recording and there is no transcript, show "Recent" with the 5 newest meetings by `startedAt`. It takes the place of the "No transcript yet" empty state (see Components).
 - Each row shows the title, a project tag (`Inbox` for `_inbox`), a relative date and the duration:
-  - Date: "Today 14:00", "Yesterday", then the weekday ("Mon") within the last 7 days, otherwise "12 Oct".
+  - Date: reuse the sidebar format from `lib/dateBuckets.ts` with the day name in front: "Today 14:00", "Yesterday 09:30", "Mon 14:00" (this or last week), otherwise "Oct 12".
   - Duration: under 1 hour "42m", otherwise "1h05". If `durationSeconds` is missing, show no duration.
 - Clicking a row goes to `/meeting-details?id=<id>`.
 - With zero meetings, the existing "No transcript yet" message stays.
@@ -45,8 +45,8 @@ Rejected: the ready-state screen (devices, model, mic meter) and the "needs you"
 
 ## Components
 
-- New `components/RecentMeetings.tsx` (about 60 lines). It takes no props and reads `meetings` from `useSidebar()`. Date and duration formatting live in this file and are exported for the meeting header.
-- `VirtualizedTranscriptView.tsx`: the non-recording empty branch renders `<RecentMeetings />` when `meetings.length > 0`.
+- New `components/RecentMeetings.tsx` (about 50 lines). It takes no props and reads `meetings` from `useSidebar()`. Duration formatting goes in `lib/duration.ts` (pure, tested with `pnpm test`) and is shared with the meeting header.
+- `app/_components/TranscriptPanel.tsx` (home only): renders `<RecentMeetings />` instead of `VirtualizedTranscriptView` when not recording, there are no segments and `meetings.length > 0`. `VirtualizedTranscriptView` is untouched because the meeting view uses it too.
 - `TranscriptPanel.tsx` (meeting details): adds `· {formatDuration(status.durationSeconds)}` after the date.
 
 ## Testing
