@@ -62,7 +62,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     enhance_model: 'large-v3',
     enhance_language: null,
     auto_stop_on_call_end: true,
-    auto_start_on_call: true,
+    auto_start_on_call: false,
     calendar_meeting_name: false,
     owner_name: 'Me',
     post_enhance_command: '',
@@ -75,9 +75,9 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     agent_denied_tools: ['mcp__open-knowledge__delete', 'mcp__open-knowledge__move', 'mcp__noesis__assign_meeting'],
     hook_auto_run: false,
     auto_title_tags: true,
-    delete_audio_after_enhance: true,
+    delete_audio_after_enhance: false,
     audio_retention_hours: 24,
-    transcription_languages: ['en', 'fr'],
+    transcription_languages: ['en'],
     title_tags_prompt: '',
   });
   const [loading, setLoading] = useState(true);

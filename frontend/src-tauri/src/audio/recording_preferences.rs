@@ -70,8 +70,8 @@ pub struct RecordingPreferences {
     /// Stop the recording about 20 seconds after the Zoom meeting ends.
     #[serde(default = "default_true")]
     pub auto_stop_on_call_end: bool,
-    /// Start a recording when a Zoom meeting begins.
-    #[serde(default = "default_true")]
+    /// Start a recording when a Zoom meeting begins. Off by default: recording consent rules differ by country.
+    #[serde(default)]
     pub auto_start_on_call: bool,
     /// Name an auto-started recording after the calendar event in progress.
     #[serde(default)]
@@ -105,8 +105,8 @@ pub struct RecordingPreferences {
     // spec phase 9 section 1: the summary model names and tags meetings after enhance
     #[serde(default = "default_true")]
     pub auto_title_tags: bool,
-    // spec phase 9 section 3: delete audio once the enhanced transcript is on disk
-    #[serde(default = "default_true")]
+    // phase 9 section 3: delete audio once the enhanced transcript is on disk. Off by default: destructive.
+    #[serde(default)]
     pub delete_audio_after_enhance: bool,
     #[serde(default = "default_audio_retention_hours")]
     pub audio_retention_hours: u32,
@@ -118,8 +118,36 @@ pub struct RecordingPreferences {
     pub title_tags_prompt: String,
 }
 
+/// The languages the Models tab offers; keep in sync with `LANGUAGES` in `components/ModelsSettings.tsx`.
+pub const KNOWN_LANGUAGES: [&str; 7] = ["en", "fr", "de", "es", "it", "nl", "pt"];
+
+/// ISO 639-1 codes of the given locales (`fr-FR`, `en_US`), deduplicated, known ones only; English when nothing is known.
+pub fn languages_from_locales(locales: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for l in locales {
+        let code = l.split(['-', '_']).next().unwrap_or("").to_lowercase();
+        if KNOWN_LANGUAGES.contains(&code.as_str()) && !out.contains(&code) {
+            out.push(code);
+        }
+    }
+    if out.is_empty() {
+        out.push("en".to_string());
+    }
+    out
+}
+
+#[cfg(target_os = "macos")]
+fn preferred_locales() -> Vec<String> {
+    objc2_foundation::NSLocale::preferredLanguages().iter().map(|s| s.to_string()).collect()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn preferred_locales() -> Vec<String> {
+    Vec::new()
+}
+
 fn default_transcription_languages() -> Vec<String> {
-    vec!["en".to_string(), "fr".to_string()]
+    languages_from_locales(&preferred_locales())
 }
 
 fn default_true() -> bool {
@@ -134,7 +162,15 @@ fn default_wiki_budget_usd() -> f64 {
     5.0
 }
 
+/// The macOS account's full name; "Me" when it is blank or on other platforms.
 fn default_owner_name() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        let name = objc2_foundation::NSFullUserName().to_string();
+        if !name.trim().is_empty() {
+            return name.trim().to_string();
+        }
+    }
     "Me".to_string()
 }
 
@@ -161,7 +197,7 @@ impl Default for RecordingPreferences {
             enhance_model: default_enhance_model(),
             enhance_language: None,
             auto_stop_on_call_end: true,
-            auto_start_on_call: true,
+            auto_start_on_call: false,
             calendar_meeting_name: false,
             owner_name: default_owner_name(),
             post_enhance_command: String::new(),
@@ -174,7 +210,7 @@ impl Default for RecordingPreferences {
             agent_denied_tools: default_denied_tools(),
             hook_auto_run: false,
             auto_title_tags: default_true(),
-            delete_audio_after_enhance: default_true(),
+            delete_audio_after_enhance: false,
             audio_retention_hours: default_audio_retention_hours(),
             transcription_languages: default_transcription_languages(),
             title_tags_prompt: String::new(),
@@ -528,12 +564,15 @@ mod tests {
     }
 
     #[test]
-    fn old_preferences_get_transcription_languages_and_builtin_prompt() {
+    fn languages_come_from_the_locales_the_app_knows() {
+        let l = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(languages_from_locales(&l(&["fr-FR", "en-US", "zz", "FR_CA"])), vec!["fr", "en"]);
+        assert_eq!(languages_from_locales(&l(&["ja-JP"])), vec!["en"], "nothing known falls back to English");
+        assert_eq!(languages_from_locales(&[]), vec!["en"]);
+        assert!(!RecordingPreferences::default().transcription_languages.is_empty());
         let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
         let p: RecordingPreferences = serde_json::from_str(old).unwrap();
-        assert_eq!(p.transcription_languages, vec!["en", "fr"]);
         assert_eq!(p.title_tags_prompt, "");
-        assert_eq!(RecordingPreferences::default().transcription_languages, vec!["en", "fr"]);
     }
 
     #[test]
@@ -561,15 +600,17 @@ mod tests {
     }
 
     #[test]
-    fn call_detection_defaults_stop_on_and_start_on() {
+    fn call_detection_defaults_stop_on_and_start_off() {
         let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
         let p: RecordingPreferences = serde_json::from_str(old).unwrap();
         assert!(p.auto_stop_on_call_end);
-        assert!(p.auto_start_on_call);
+        assert!(!p.auto_start_on_call, "a stranger opts in to auto-start");
         let d = RecordingPreferences::default();
         assert!(d.auto_stop_on_call_end);
-        assert!(d.auto_start_on_call);
+        assert!(!d.auto_start_on_call);
         assert!(!p.calendar_meeting_name && !d.calendar_meeting_name);
+        let stored = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4","auto_start_on_call":true}"#;
+        assert!(serde_json::from_str::<RecordingPreferences>(stored).unwrap().auto_start_on_call, "a stored value is kept");
     }
 
     #[test]
@@ -627,19 +668,13 @@ mod tests {
     }
 
     #[test]
-    fn audio_cleanup_defaults_on_with_24_hours() {
+    fn audio_deletion_defaults_off_and_owner_name_is_never_blank() {
         let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
         let p: RecordingPreferences = serde_json::from_str(old).unwrap();
-        assert!(p.delete_audio_after_enhance);
+        assert!(!p.delete_audio_after_enhance);
+        assert!(!RecordingPreferences::default().delete_audio_after_enhance);
         assert_eq!(p.audio_retention_hours, 24);
-        assert!(RecordingPreferences::default().delete_audio_after_enhance);
-        assert_eq!(RecordingPreferences::default().audio_retention_hours, 24);
-    }
-
-    #[test]
-    fn owner_name_defaults_to_me() {
-        let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
-        let p: RecordingPreferences = serde_json::from_str(old).unwrap();
-        assert_eq!(p.owner_name, "Me");
+        assert!(!RecordingPreferences::default().owner_name.trim().is_empty());
+        assert!(!p.owner_name.trim().is_empty());
     }
 }

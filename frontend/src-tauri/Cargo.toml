@@ -174,7 +174,7 @@ dasp = "0.11.0"
 futures-channel = "0.3.31"
 objc2 = "0.6"
 block2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSDate", "NSString", "NSURL", "NSError", "NSArray", "NSPredicate"] }
+objc2-foundation = { version = "0.3", features = ["NSDate", "NSString", "NSURL", "NSError", "NSArray", "NSPredicate", "NSLocale", "NSPathUtilities"] }
 objc2-event-kit = { version = "0.3", features = ["EKEventStore", "EKEvent", "EKCalendarItem", "EKObject", "EKParticipant", "EKTypes", "block2"] }
 
 # PERFORMANCE: Enable Metal GPU + CoreML acceleration automatically on macOS
