@@ -252,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn the_mic_signal_wins_and_zoom_is_the_fallback() {
+    fn either_signal_counts_and_none_means_no_answer() {
         assert_eq!(choose_signal(Some(true), Some(false)), Some(true));
         assert_eq!(choose_signal(Some(false), Some(true)), Some(true), "the Zoom check still counts when CoreAudio sees no foreign input");
         assert_eq!(choose_signal(None, Some(true)), Some(true));
