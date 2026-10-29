@@ -11,6 +11,7 @@ use anyhow::{anyhow, Context, Result};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::{Mutex, RwLock};
+use tokio_util::sync::CancellationToken;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -52,6 +53,14 @@ pub struct SidecarManager {
 
     /// Idle timeout in seconds (configurable via env var)
     idle_timeout_secs: u64,
+
+    /// Held for a whole request/reply exchange: the helper answers in order on one pipe,
+    /// so two requests in flight at once could read each other's replies.
+    request_lock: Arc<Mutex<()>>,
+
+    /// A request was written and its reply not yet read. Set when an exchange was abandoned
+    /// mid-way; the next request restarts the helper so it cannot read the leftover reply.
+    in_flight: Arc<AtomicBool>,
 }
 
 /// RAII guard for tracking active requests
@@ -101,6 +110,8 @@ impl SidecarManager {
             helper_binary_path,
             current_model_path: Arc::new(RwLock::new(None)),
             idle_timeout_secs,
+            request_lock: Arc::new(Mutex::new(())),
+            in_flight: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -348,10 +359,36 @@ impl SidecarManager {
         Ok(())
     }
 
-    /// Send a request to the sidecar and wait for response
-    pub async fn send_request(&self, request_json: String, timeout: Duration) -> Result<String> {
+    /// Send a request to the sidecar and wait for its reply, one exchange at a time.
+    /// Starts (or restarts) the helper on `model_path` under the same lock, so a model switch
+    /// never kills another caller's generation. Cancelling while queued just leaves the queue;
+    /// cancelling mid-generation stops the helper, which only ever runs this request.
+    pub async fn send_request(
+        &self,
+        model_path: PathBuf,
+        request_json: String,
+        timeout: Duration,
+        cancel: Option<&CancellationToken>,
+    ) -> Result<String> {
         // Track active request
         let _guard = RequestGuard::new(self.active_request_count.clone());
+
+        let _exchange = match cancel {
+            Some(token) => tokio::select! {
+                lock = self.request_lock.lock() => lock,
+                _ = token.cancelled() => return Err(anyhow!("Generation cancelled by user")),
+            },
+            None => self.request_lock.lock().await,
+        };
+
+        if self.in_flight.load(Ordering::SeqCst) {
+            log::warn!("Previous sidecar request was abandoned mid-reply, restarting the helper");
+            self.shutdown().await?;
+        }
+        self.ensure_running(model_path).await?;
+        if cancel.is_some_and(|t| t.is_cancelled()) {
+            return Err(anyhow!("Generation cancelled by user"));
+        }
 
         // Write request to stdin
         {
@@ -360,6 +397,7 @@ impl SidecarManager {
                 .as_mut()
                 .ok_or_else(|| anyhow!("Sidecar not running"))?;
 
+            self.in_flight.store(true, Ordering::SeqCst);
             stdin
                 .write_all(request_json.as_bytes())
                 .await
@@ -372,8 +410,23 @@ impl SidecarManager {
         }
 
         // Read response from stdout with timeout
-        match tokio::time::timeout(timeout, self.read_response()).await {
+        let read = tokio::time::timeout(timeout, self.read_response());
+        let result = match cancel {
+            Some(token) => tokio::select! {
+                r = read => r,
+                _ = token.cancelled() => {
+                    log::warn!("Generation cancelled by user, shutting down sidecar");
+                    if let Err(e) = self.shutdown().await {
+                        log::error!("Failed to shutdown sidecar during cancellation: {}", e);
+                    }
+                    return Err(anyhow!("Generation cancelled by user"));
+                }
+            },
+            None => read.await,
+        };
+        match result {
             Ok(Ok(response)) => {
+                self.in_flight.store(false, Ordering::SeqCst);
                 self.update_activity().await;
                 Ok(response)
             }
@@ -415,7 +468,9 @@ impl SidecarManager {
         let timeout = Duration::from_secs(5);
 
         // Note: We don't use send_request here to avoid incrementing active_request_count
-        // for internal health checks, as that would prevent graceful shutdown
+        // for internal health checks, as that would prevent graceful shutdown.
+        // A request owns the pipe: skip the ping rather than interleave with it.
+        let Ok(_exchange) = self.request_lock.try_lock() else { return Ok(()) };
         
         // Write request
         {
@@ -531,6 +586,7 @@ impl SidecarManager {
         }
 
         self.is_healthy.store(false, Ordering::SeqCst);
+        self.in_flight.store(false, Ordering::SeqCst);
 
         log::info!("Sidecar shutdown complete");
         Ok(())
@@ -566,6 +622,8 @@ impl SidecarManager {
             helper_binary_path: self.helper_binary_path.clone(),
             current_model_path: self.current_model_path.clone(),
             idle_timeout_secs: self.idle_timeout_secs,
+            request_lock: self.request_lock.clone(),
+            in_flight: self.in_flight.clone(),
         };
 
         tokio::spawn(async move {
@@ -614,6 +672,8 @@ impl SidecarManager {
             helper_binary_path: self.helper_binary_path.clone(),
             current_model_path: self.current_model_path.clone(),
             idle_timeout_secs: self.idle_timeout_secs,
+            request_lock: self.request_lock.clone(),
+            in_flight: self.in_flight.clone(),
         };
 
         tokio::spawn(async move {
@@ -639,6 +699,7 @@ impl SidecarManager {
                 log::debug!("Idle check: {}s since last activity", idle_secs);
 
                 if idle_secs > manager.idle_timeout_secs {
+                    let Ok(_exchange) = manager.request_lock.try_lock() else { continue };
                     log::info!(
                         "Sidecar idle for {}s (timeout: {}s), shutting down",
                         idle_secs,
@@ -666,5 +727,77 @@ impl Drop for SidecarManager {
         // Note: Actual cleanup happens in shutdown() method
         // We can't do async work in Drop, so this is best-effort
         log::debug!("SidecarManager dropped");
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    /// A fake helper that answers each line with the same line after `delay` seconds.
+    fn echo_manager(dir: &tempfile::TempDir, delay: &str) -> SidecarManager {
+        let script = dir.path().join("echo.sh");
+        std::fs::write(&script, format!("#!/bin/sh\nwhile read l; do sleep {}; echo \"$l\"; done\n", delay)).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        SidecarManager {
+            child_process: Arc::new(Mutex::new(None)),
+            stdin_writer: Arc::new(Mutex::new(None)),
+            stdout_reader: Arc::new(Mutex::new(None)),
+            last_activity: Arc::new(RwLock::new(Instant::now())),
+            is_healthy: Arc::new(AtomicBool::new(false)),
+            should_shutdown: Arc::new(AtomicBool::new(false)),
+            active_request_count: Arc::new(AtomicUsize::new(0)),
+            helper_binary_path: script,
+            current_model_path: Arc::new(RwLock::new(None)),
+            idle_timeout_secs: 600,
+            request_lock: Arc::new(Mutex::new(())),
+            in_flight: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    const T: Duration = Duration::from_secs(10);
+
+    #[tokio::test]
+    async fn concurrent_requests_each_get_their_own_reply() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = echo_manager(&dir, "0.2");
+        let model = PathBuf::from("m");
+        let (a, b, c) = tokio::join!(
+            m.send_request(model.clone(), "a".into(), T, None),
+            m.send_request(model.clone(), "b".into(), T, None),
+            m.send_request(model.clone(), "c".into(), T, None),
+        );
+        assert_eq!((a.unwrap(), b.unwrap(), c.unwrap()), ("a".into(), "b".into(), "c".into()));
+        m.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn abandoned_request_leaves_no_reply_for_the_next() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = echo_manager(&dir, "0.3");
+        let model = PathBuf::from("m");
+        // caller gives up mid-reply by dropping the future
+        let _ = tokio::time::timeout(Duration::from_millis(100), m.send_request(model.clone(), "old".into(), T, None)).await;
+        tokio::time::sleep(Duration::from_millis(400)).await; // "old" reply is now sitting in the pipe
+        assert_eq!(m.send_request(model, "new".into(), T, None).await.unwrap(), "new");
+        m.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_queued_request_leaves_the_running_one_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = echo_manager(&dir, "0.3");
+        let model = PathBuf::from("m");
+        let token = CancellationToken::new();
+        let t2 = token.clone();
+        tokio::spawn(async move { tokio::time::sleep(Duration::from_millis(100)).await; t2.cancel(); });
+        let (a, b) = tokio::join!(
+            m.send_request(model.clone(), "a".into(), T, None),
+            async { tokio::time::sleep(Duration::from_millis(20)).await; m.send_request(model.clone(), "b".into(), T, Some(&token)).await },
+        );
+        assert_eq!(a.unwrap(), "a");
+        assert!(b.unwrap_err().to_string().contains("cancelled"));
+        m.shutdown().await.unwrap();
     }
 }
