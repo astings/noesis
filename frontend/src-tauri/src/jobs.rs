@@ -7,7 +7,7 @@ use once_cell::sync::{Lazy, OnceCell};
 use serde::Serialize;
 use std::sync::Mutex as StdMutex;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Runtime};
 
 const RECENT_CAP: usize = 10;
 const ETA_MIN_ELAPSED: Duration = Duration::from_secs(15);
@@ -90,6 +90,9 @@ pub struct Job {
     pub cancel_requested: bool,
     #[serde(skip)]
     pub hook_pid: Option<u32>,
+    /// the meeting was deleted: the job leaves the list when it ends instead of joining the recent ones
+    #[serde(skip)]
+    dropped: bool,
     /// set when the enhance handed its transcript to the post-enhance hook
     #[serde(skip)]
     awaiting_hook: bool,
@@ -124,6 +127,7 @@ impl Registry {
             control,
             cancel_requested: false,
             hook_pid: None,
+            dropped: false,
             awaiting_hook: false,
             started: None,
             last: None,
@@ -239,11 +243,16 @@ impl Registry {
         j.finished_at = Some(Utc::now());
         j.eta_secs = None;
         j.hook_pid = None;
-        self.trim();
+        if j.dropped {
+            self.jobs.retain(|j| !(j.dropped && j.state.is_terminal()));
+        } else {
+            self.trim();
+        }
     }
 
+    /// A job that left the list (its meeting was deleted) has nothing left to do: cancelled.
     pub fn is_cancel_requested(&self, id: &str) -> bool {
-        self.jobs.iter().any(|j| j.id == id && j.cancel_requested)
+        self.jobs.iter().find(|j| j.id == id).map_or(true, |j| j.cancel_requested)
     }
 
     /// True when the enhance job for this meeting has a cancel request pending.
@@ -261,6 +270,23 @@ impl Registry {
             self.finish(id, Outcome::Cancelled);
         }
         Some(before)
+    }
+
+    /// The meeting was deleted: its jobs cancel and leave the list, the running ones once
+    /// their work has ended. Returns those running jobs so the caller can stop the work.
+    pub fn drop_meeting(&mut self, meeting_id: &str) -> Vec<Job> {
+        let ids: Vec<String> = self.jobs.iter().filter(|j| j.meeting_id.as_deref() == Some(meeting_id)).map(|j| j.id.clone()).collect();
+        let mut running = Vec::new();
+        for id in &ids {
+            if let Some(before) = self.request_cancel(id).filter(|b| b.state != JobState::Queued) {
+                running.push(before);
+            }
+        }
+        for j in self.jobs.iter_mut().filter(|j| ids.contains(&j.id)) {
+            j.dropped = true;
+        }
+        self.jobs.retain(|j| !(j.dropped && j.state.is_terminal()));
+        running
     }
 
     /// Wiki step of the meeting's live enhance job, driven by `hook-status-changed` values.
@@ -411,6 +437,19 @@ pub fn take(id: &str) -> Option<Job> {
 pub fn clear_recent() {
     update(|r| (r.clear_recent(), true))
 }
+pub fn drop_meeting(meeting_id: &str) -> Vec<Job> {
+    update(|r| (r.drop_meeting(meeting_id), true))
+}
+
+/// Deleting a meeting: its jobs leave the list and their work stops. A failure to stop the
+/// work is logged, not returned; the meeting goes away either way.
+pub async fn cancel_meeting_jobs<R: Runtime>(app: &AppHandle<R>, meeting_id: &str) {
+    for job in drop_meeting(meeting_id) {
+        if let Err(e) = stop_work(app, &job).await {
+            log::warn!("jobs: could not stop {} of deleted meeting {}: {}", job.id, meeting_id, e);
+        }
+    }
+}
 
 #[tauri::command]
 pub fn list_jobs() -> Vec<Job> {
@@ -425,11 +464,17 @@ pub fn clear_recent_jobs() {
 /// spec 3.1. Unknown or finished jobs: nothing to stop, so Ok.
 #[tauri::command]
 pub async fn cancel_job(app: AppHandle, id: String) -> Result<(), String> {
-    use tauri::Manager;
     let Some(job) = request_cancel(&id) else { return Ok(()) };
     if job.state == JobState::Queued {
         return Ok(()); // already ended by request_cancel; start_retranscription checks the flag
     }
+    stop_work(&app, &job).await
+}
+
+/// Stops the work behind a running job once its cancel is recorded.
+async fn stop_work<R: Runtime>(app: &AppHandle<R>, job: &Job) -> Result<(), String> {
+    use tauri::Manager;
+    let id = &job.id;
     match &job.control {
         Control::Enhance { .. } => {
             let running = |name: &str| job.steps.iter().any(|s| s.name == name && s.state == JobState::Running);
@@ -452,7 +497,7 @@ pub async fn cancel_job(app: AppHandle, id: String) -> Result<(), String> {
         }
         Control::BuiltinDownload => {
             crate::summary::summary_engine::commands::builtin_ai_cancel_download(app.clone(), app.state(), job.title.clone()).await?;
-            finish(&id, Outcome::Cancelled); // its download error path is silent on cancel
+            finish(id, Outcome::Cancelled); // its download error path is silent on cancel
         }
         // the batch checks the flag between meetings; each call is aborted while waiting for the model
         Control::Tagging => {}
@@ -559,6 +604,28 @@ mod tests {
         assert_eq!(r.snapshot()[0].state, JobState::Cancelled);
         assert!(r.request_cancel("a").is_none());
         assert!(r.request_cancel("unknown").is_none());
+    }
+
+    #[test]
+    fn deleted_meeting_jobs_leave_the_list() {
+        let mut r = Registry::default();
+        let t = Instant::now();
+        r.add("done", JobKind::Enhance, Some("m"), "", enhance(), true, t);
+        r.finish("done", Outcome::Done);
+        r.add("queued", JobKind::Enhance, Some("m"), "", enhance(), false, t);
+        r.add("running", JobKind::Summary, Some("m"), "", Control::Summary { started_at: Utc::now() }, true, t);
+        r.add("other", JobKind::Enhance, Some("n"), "", enhance(), false, t);
+
+        let running = r.drop_meeting("m");
+        assert_eq!(running.iter().map(|j| j.id.as_str()).collect::<Vec<_>>(), ["running"]);
+        let ids = |r: &Registry| r.snapshot().iter().map(|j| j.id.clone()).collect::<Vec<_>>();
+        assert_eq!(ids(&r), ["running", "other"], "finished and queued jobs of the meeting are gone");
+        assert!(r.is_cancel_requested("running"));
+        assert!(r.is_cancel_requested("queued"), "a job that left the list counts as cancelled");
+        assert!(!r.is_cancel_requested("other"));
+
+        r.finish("running", Outcome::Failed("Summary generation was cancelled".into()));
+        assert_eq!(ids(&r), ["other"], "the running job leaves once its work ends");
     }
 
     #[test]
