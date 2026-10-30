@@ -150,8 +150,8 @@ Tauri commands, registered in `lib.rs`:
 - Set in both record-start paths of `recording_commands.rs` (`start_recording_with_meeting_name`
   and the device-specific start around line 517) once `manager.start_recording` has returned Ok, from
   `project_settings::resolve_language(root, project)`. Updated in `set_recording_project` from the
-  normalized new project (the folder moves later, the language applies now). Cleared at the top of
-  `stop_recording`, which the tray, the UI and auto-stop all go through.
+  normalized new project (the folder moves later, the language applies now). Cleared in
+  `stop_recording` once the transcription worker has drained the last chunks (after the force flush), so the tail of the live transcript keeps the project language. The tray, the UI and auto-stop all go through it.
 - `metadata.json` `transcription.live` gains `language`: the effective value at start, that is the
   project override or else the global preference. `set_live_transcription` carries a third element.
 - With Parakeet as the Live model the override cannot translate; the live text stays in the spoken

@@ -732,8 +732,6 @@ pub async fn stop_recording<R: Runtime>(
     info!(
         "🛑 Starting optimized recording shutdown - ensuring ALL transcript chunks are preserved"
     );
-    // spec 2026-10-30 section 3.3: the project language override ends with the recording
-    crate::set_recording_language(None);
 
     // Check if recording is active
     if !IS_RECORDING.load(Ordering::SeqCst) {
@@ -860,6 +858,10 @@ pub async fn stop_recording<R: Runtime>(
 
         // Stop progress monitoring
         progress_task.abort();
+
+        // spec 2026-10-30 section 3.3: the project language override ends once the worker has
+        // drained the last chunks, so the tail of the live transcript keeps the project language
+        crate::set_recording_language(None);
     } else {
         info!("ℹ️ No transcription task found to wait for");
     }
