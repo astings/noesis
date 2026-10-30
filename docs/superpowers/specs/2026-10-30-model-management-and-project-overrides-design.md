@@ -59,7 +59,7 @@ Spanish meetings on one case, English transcripts for the wiki.
   `transcription` object of `metadata.json`, or null when absent.
 - `TranscriptPanel` passes it to `MeetingInfoButton` and also reloads the extras on
   `enhance-status-changed` for the current meeting, so the model appears when a job finishes.
-- A pure helper `src/lib/transcriptionLabel.ts` formats the rows:
+- A pure helper `src/lib/languages.ts` formats the rows:
   - `liveLabel(t)`: `Parakeet parakeet-tdt-0.6b-v3-int8`, or `Unknown` when `transcription.live` is
     missing (meetings recorded before the key existed).
   - `enhancedLabel(status, t)`: `Done · Whisper large-v3 · to English`. The status word comes from
@@ -68,6 +68,7 @@ Spanish meetings on one case, English transcripts for the wiki.
     forced: `to English` for `auto-translate`, the language name for a code (`Spanish`), nothing for
     `auto` or absent.
   - Provider names are capitalized (`whisper` becomes `Whisper`, `parakeet` becomes `Parakeet`).
+  - The file also holds the shared language list and select options, so it stays import-free for the Node test runner.
 - The bubble rows become Live, Enhanced, Title and tags. Width grows from `w-56` to `w-72`.
 
 ## 3. Per-project settings and the one-off picker
@@ -234,7 +235,7 @@ Rust, next to the code:
 
 Frontend, `node --test src/lib/*.test.ts` as the existing tests:
 
-- `transcriptionLabel.test.ts`: live label, enhanced label with and without model, each language
+- `languages.test.ts`: live label, enhanced label with and without model, each language
   suffix, `Unknown` for an old meeting.
 
 Manual pass before merge: delete and re-download a model; record in a project set to translate and
