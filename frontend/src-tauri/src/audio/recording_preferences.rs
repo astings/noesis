@@ -42,6 +42,12 @@ pub struct RecordingPreferences {
     /// Start a recording when a Zoom meeting begins. Off by default: recording consent rules differ by country.
     #[serde(default)]
     pub auto_start_on_call: bool,
+    /// Show the menu bar (tray) icon. The Dock icon stays either way.
+    #[serde(default = "default_true")]
+    pub show_tray_icon: bool,
+    /// Show the always-on-top call overlay while recording (spec 2026-10-30 tray-toggle-and-call-overlay).
+    #[serde(default)]
+    pub show_call_overlay: bool,
     /// Name an auto-started recording after the calendar event in progress.
     #[serde(default)]
     pub calendar_meeting_name: bool,
@@ -147,6 +153,8 @@ impl Default for RecordingPreferences {
             enhance_language: None,
             auto_stop_on_call_end: true,
             auto_start_on_call: false,
+            show_tray_icon: true,
+            show_call_overlay: false,
             calendar_meeting_name: false,
             owner_name: default_owner_name(),
             auto_title_tags: default_true(),
@@ -320,7 +328,9 @@ pub async fn set_recording_preferences<R: Runtime>(
 ) -> Result<(), String> {
     save_recording_preferences(&app, &preferences)
         .await
-        .map_err(|e| format!("Failed to save recording preferences: {}", e))
+        .map_err(|e| format!("Failed to save recording preferences: {}", e))?;
+    crate::tray::apply_tray_visibility(&app, preferences.show_tray_icon);
+    Ok(())
 }
 
 #[tauri::command]
@@ -568,6 +578,16 @@ mod tests {
         let p = RecordingPreferences::default();
         assert!(p.auto_enhance);
         assert_eq!(p.enhance_model, "large-v3");
+    }
+
+    #[test]
+    fn tray_icon_defaults_on_and_overlay_off() {
+        let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
+        let p: RecordingPreferences = serde_json::from_str(old).unwrap();
+        assert!(p.show_tray_icon);
+        assert!(!p.show_call_overlay);
+        let d = RecordingPreferences::default();
+        assert!(d.show_tray_icon && !d.show_call_overlay);
     }
 
     #[test]

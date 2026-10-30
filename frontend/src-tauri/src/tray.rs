@@ -199,6 +199,15 @@ fn stop_recording_handler<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
+/// Shows or hides the menu bar icon (preference `show_tray_icon`).
+pub fn apply_tray_visibility<R: Runtime>(app: &AppHandle<R>, visible: bool) {
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        if let Err(e) = tray.set_visible(visible) {
+            log::error!("Failed to set tray visibility: {}", e);
+        }
+    }
+}
+
 pub fn update_tray_menu<R: Runtime>(app: &AppHandle<R>) {
     // For sync update, spawn async task to get current state
     let app_clone = app.clone();

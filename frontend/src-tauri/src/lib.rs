@@ -567,6 +567,12 @@ pub fn run() {
             if let Err(e) = tray::create_tray(_app.handle()) {
                 log::error!("Failed to create system tray: {}", e);
             }
+            let app_for_tray = _app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(p) = audio::recording_preferences::load_recording_preferences(&app_for_tray).await {
+                    tray::apply_tray_visibility(&app_for_tray, p.show_tray_icon);
+                }
+            });
 
             // Initialize notification system with proper defaults
             log::info!("Initializing notification system...");

@@ -25,6 +25,8 @@ export interface RecordingPreferences {
   enhance_language: string | null;
   // spec 4.5
   auto_stop_on_call_end: boolean;
+  show_tray_icon: boolean;
+  show_call_overlay: boolean;
   auto_start_on_call: boolean;
   calendar_meeting_name: boolean;
   owner_name: string; // spec 4.4
@@ -54,6 +56,8 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     enhance_model: 'large-v3',
     enhance_language: null,
     auto_stop_on_call_end: true,
+    show_tray_icon: true,
+    show_call_overlay: false,
     auto_start_on_call: false,
     calendar_meeting_name: false,
     owner_name: 'Me',
@@ -74,6 +78,18 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
   // spec 4.5
   const handleAutoStopToggle = async (enabled: boolean) => {
     const next = { ...preferences, auto_stop_on_call_end: enabled };
+    setPreferences(next);
+    await savePreferences(next);
+  };
+
+  const handleTrayIconToggle = async (enabled: boolean) => {
+    const next = { ...preferences, show_tray_icon: enabled };
+    setPreferences(next);
+    await savePreferences(next);
+  };
+
+  const handleCallOverlayToggle = async (enabled: boolean) => {
+    const next = { ...preferences, show_call_overlay: enabled };
     setPreferences(next);
     await savePreferences(next);
   };
@@ -307,6 +323,16 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
           label="Stop recording when the call ends"
           hint="About 20 seconds after the other app releases the microphone, the recording stops and is saved"
           control={<Switch checked={preferences.auto_stop_on_call_end} onCheckedChange={handleAutoStopToggle} disabled={saving} />}
+        />
+        <SettingRow
+          label="Show menu bar icon"
+          hint="Hidden, the app stays reachable from the Dock"
+          control={<Switch checked={preferences.show_tray_icon} onCheckedChange={handleTrayIconToggle} disabled={saving} />}
+        />
+        <SettingRow
+          label="Show call overlay while recording"
+          hint="A small always-on-top bar with timer, pause, stop, project and a quick question"
+          control={<Switch checked={preferences.show_call_overlay} onCheckedChange={handleCallOverlayToggle} disabled={saving} />}
         />
       </SettingsGroup>
 
