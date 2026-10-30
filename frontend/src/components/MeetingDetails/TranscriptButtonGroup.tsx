@@ -7,14 +7,13 @@ import { ProjectSelect } from '@/components/ProjectSelect';
 import { INBOX, projectOfFolder } from '@/lib/projects';
 import { useSidebar, runMeetingTagging, deleteMeetingAudio } from '@/components/Sidebar/SidebarProvider';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, FolderOpen, RefreshCw, SlidersHorizontal, Tags, Trash2 } from 'lucide-react';
+import { ChevronDown, RefreshCw, SlidersHorizontal, Tags, Trash2 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ConfirmationModal } from '@/components/ConfirmationModel/confirmation-modal';
 import { startEnhance } from '@/lib/autoEnhance';
 import { EnhanceWithDialog } from './EnhanceWithDialog';
 
 interface TranscriptButtonGroupProps {
-  onOpenMeetingFolder: () => Promise<void>;
   meetingId?: string;
   meetingFolderPath?: string | null;
   onRefetchTranscripts?: () => Promise<void>;
@@ -22,7 +21,6 @@ interface TranscriptButtonGroupProps {
 }
 
 export function TranscriptButtonGroup({
-  onOpenMeetingFolder,
   meetingId,
   meetingFolderPath,
   onRefetchTranscripts,
@@ -59,17 +57,6 @@ export function TranscriptButtonGroup({
 
   return (
     <>
-      <Button
-        size="sm"
-        variant="outline"
-        className="px-2.5 text-[13px] shadow-none"
-        onClick={onOpenMeetingFolder}
-        title="Open the meeting folder"
-      >
-        <FolderOpen />
-        Open folder
-      </Button>
-
       {meetingId && meetingFolderPath && (
         <>
           <ProjectSelect

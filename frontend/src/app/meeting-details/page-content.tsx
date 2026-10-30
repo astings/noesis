@@ -6,7 +6,6 @@ import { AskPanel } from '@/components/AskPanel'; // live ask spec 3.2
 
 // Custom hooks
 import { useMeetingData } from '@/hooks/meeting-details/useMeetingData';
-import { useMeetingOperations } from '@/hooks/meeting-details/useMeetingOperations';
 
 export default function PageContent({
   meeting,
@@ -34,10 +33,6 @@ export default function PageContent({
   // Custom hooks
   const meetingData = useMeetingData({ meeting });
 
-  const meetingOperations = useMeetingOperations({
-    meeting,
-  });
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -52,7 +47,6 @@ export default function PageContent({
               title={meetingData.meetingTitle}
               createdAt={meeting.created_at}
               transcripts={meetingData.transcripts}
-              onOpenMeetingFolder={meetingOperations.handleOpenMeetingFolder}
               isRecording={isRecording}
               disableAutoScroll={true}
               usePagination={true}

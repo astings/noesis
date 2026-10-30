@@ -20,6 +20,11 @@ pub const SYSTEM_PROMPT: &str = "You name and tag meeting transcripts. Reply wit
 Give 3 to 6 tags naming topics, companies, roles or decisions. Use the transcript's language.";
 
 pub fn normalize_tags(raw: &[String]) -> Vec<String> {
+    normalize_tags_up_to(raw, MAX_TAGS)
+}
+
+/// Lowercase, dashes for spaces, deduped; `cap` keeps the first ones.
+pub fn normalize_tags_up_to(raw: &[String], cap: usize) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for t in raw {
         let t: String = t.trim().to_lowercase().chars()
@@ -28,7 +33,7 @@ pub fn normalize_tags(raw: &[String]) -> Vec<String> {
             .collect();
         let t = t.trim_matches('-').to_string();
         if !t.is_empty() && !out.contains(&t) { out.push(t); }
-        if out.len() == MAX_TAGS { break; }
+        if out.len() == cap { break; }
     }
     out
 }
@@ -125,6 +130,12 @@ async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title
         return Err("This meeting is being recorded right now.".to_string());
     }
     let folder = folder_path.map(PathBuf::from).filter(|p| p.is_dir()).ok_or("Folder not found on disk")?;
+    // automatic runs keep hand-edited tags; the explicit action (force_title) regenerates them
+    let keep_tags = !force_title && tags_edited(&folder);
+    let needs_title = force_title || title.trim().is_empty() || super::library::is_auto_title(&title);
+    if keep_tags && !needs_title {
+        return Ok("Kept the hand-edited tags".to_string());
+    }
 
     let lines: Vec<(String,)> = sqlx::query_as("SELECT transcript FROM transcripts WHERE meeting_id = ? ORDER BY audio_start_time, timestamp")
         .bind(meeting_id)
@@ -171,9 +182,11 @@ async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title
     };
     let (new_title, tags) = parse_reply(&completion.content)?;
 
-    write_tags(&folder, &tags)?;
+    if !keep_tags {
+        write_tags(&folder, &tags, false)?;
+    }
 
-    if force_title || title.trim().is_empty() || super::library::is_auto_title(&title) {
+    if needs_title {
         match super::library::assign(pool, &super::recording_preferences::recordings_root(app), meeting_id, None, Some(&new_title)).await {
             // the meeting page refetches its folder on this event
             Ok(_) => {
@@ -189,11 +202,25 @@ async fn run_inner<R: Runtime>(app: &AppHandle<R>, meeting_id: &str, force_title
     Ok("Title and tags updated".to_string())
 }
 
+/// True once the user edited the tags on the meeting page (`tags_edited_at` in metadata.json).
+pub fn tags_edited(folder: &Path) -> bool {
+    std::fs::read_to_string(folder.join("metadata.json")).ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .is_some_and(|v| v.get("tags_edited_at").is_some_and(|t| t.is_string()))
+}
+
 /// `tags` and `tagged_at` into metadata.json, and the tags line into transcript.md when it exists.
-fn write_tags(folder: &Path, tags: &[String]) -> Result<(), String> {
+/// `by_hand` sets `tags_edited_at`; a model write clears it.
+fn write_tags(folder: &Path, tags: &[String], by_hand: bool) -> Result<(), String> {
     super::metadata_file::update_metadata(folder, |obj| {
+        let now = serde_json::json!(chrono::Utc::now().to_rfc3339());
         obj.insert("tags".into(), serde_json::json!(tags));
-        obj.insert("tagged_at".into(), serde_json::json!(chrono::Utc::now().to_rfc3339()));
+        if by_hand {
+            obj.insert("tags_edited_at".into(), now);
+        } else {
+            obj.insert("tagged_at".into(), now);
+            obj.remove("tags_edited_at");
+        }
         Ok(())
     })
     .map_err(|e| format!("Could not update metadata.json: {}", e))?;
@@ -248,6 +275,28 @@ pub async fn run_meeting_tagging<R: Runtime>(app: AppHandle<R>, meeting_id: Stri
     result
 }
 
+/// Hand-edited tags from the meeting page: normalized like the model's, no count cap.
+#[tauri::command]
+pub async fn set_meeting_tags(state: tauri::State<'_, crate::state::AppState>, meeting_id: String, tags: Vec<String>) -> Result<Vec<String>, String> {
+    let pool = state.db_manager.pool();
+    let folder: Option<(Option<String>,)> = sqlx::query_as("SELECT folder_path FROM meetings WHERE id = ?")
+        .bind(&meeting_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("Database error: {}", e))?;
+    let folder_path = folder.and_then(|(f,)| f);
+    if super::library::is_live_folder(folder_path.as_deref()).await {
+        return Err("This meeting is being recorded right now.".to_string());
+    }
+    let folder = folder_path.map(PathBuf::from).filter(|p| p.is_dir()).ok_or("Folder not found on disk")?;
+    let tags = normalize_tags_up_to(&tags, usize::MAX);
+    write_tags(&folder, &tags, true)?;
+    if let Err(e) = super::search_index::reindex_meeting(pool, &meeting_id).await {
+        log::warn!("search index: reindex after tag edit failed for {}: {}", meeting_id, e);
+    }
+    Ok(tags)
+}
+
 /// Tag every meeting that has a transcript but no tags yet, one after the other.
 #[tauri::command]
 pub async fn tag_untagged_meetings<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
@@ -275,7 +324,7 @@ async fn tag_untagged<R: Runtime>(app: &AppHandle<R>, job_id: &str) -> Result<St
     .map_err(|e| format!("Database error: {}", e))?;
     let todo: Vec<String> = rows
         .into_iter()
-        .filter(|(_, f)| f.as_deref().is_some_and(|f| super::search_index::metadata_tags(Path::new(f)).is_empty()))
+        .filter(|(_, f)| f.as_deref().map(Path::new).is_some_and(|f| super::search_index::metadata_tags(f).is_empty() && !tags_edited(f)))
         .map(|(id, _)| id)
         .collect();
     let mut ok = 0;
@@ -332,6 +381,7 @@ mod tests {
         let raw: Vec<String> = ["Western Digital", "western_digital", " Q3 Budget! ", "", "a", "b", "c", "d", "e"].iter().map(|s| s.to_string()).collect();
         assert_eq!(normalize_tags(&raw), vec!["western-digital", "q3-budget", "a", "b", "c", "d"]);
         assert_eq!(normalize_tags(&["Réunion".to_string()]), vec!["réunion"]);
+        assert_eq!(normalize_tags_up_to(&raw, usize::MAX).len(), 7);
     }
 
     #[test]
@@ -339,7 +389,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("metadata.json"), r#"{"title":"T","version":2,"tags":["old"]}"#).unwrap();
         std::fs::write(dir.path().join("transcript.md"), "---\ntitle: \"T\"\n---\n[00:00] hi\n").unwrap();
-        write_tags(dir.path(), &["a".into(), "b".into()]).unwrap();
+        write_tags(dir.path(), &["a".into(), "b".into()], false).unwrap();
         let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("metadata.json")).unwrap()).unwrap();
         assert_eq!(v["title"], "T");
         assert_eq!(v["version"], 2);
@@ -356,18 +406,27 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("metadata.json");
         std::fs::write(&p, "{ not json").unwrap();
-        assert!(write_tags(dir.path(), &["a".into()]).is_err());
+        assert!(write_tags(dir.path(), &["a".into()], false).is_err());
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "{ not json");
         std::fs::write(&p, [0xff, 0xfe, 0xfd]).unwrap();
-        assert!(write_tags(dir.path(), &["a".into()]).is_err());
+        assert!(write_tags(dir.path(), &["a".into()], false).is_err());
         assert_eq!(std::fs::read(&p).unwrap(), vec![0xff, 0xfe, 0xfd]);
     }
 
     #[test]
     fn write_tags_creates_metadata_when_missing() {
         let dir = tempfile::tempdir().unwrap();
-        write_tags(dir.path(), &["a".into()]).unwrap();
+        write_tags(dir.path(), &["a".into()], false).unwrap();
         assert!(dir.path().join("metadata.json").exists());
+    }
+
+    #[test]
+    fn hand_edits_are_marked_and_a_model_write_clears_the_mark() {
+        let dir = tempfile::tempdir().unwrap();
+        write_tags(dir.path(), &["mine".into()], true).unwrap();
+        assert!(tags_edited(dir.path()));
+        write_tags(dir.path(), &["model".into()], false).unwrap();
+        assert!(!tags_edited(dir.path()));
     }
 
     #[test]

@@ -938,6 +938,7 @@ pub fn run() {
             audio::retranscription::is_retranscription_in_progress_command,
             audio::enhance_status::list_enhance_statuses,
             audio::meeting_tagging::run_meeting_tagging,
+            audio::meeting_tagging::set_meeting_tags,
             audio::meeting_tagging::tag_untagged_meetings,
             audio::meeting_tagging::list_tagging_statuses,
             audio::meeting_tagging::get_default_title_tags_prompt,

@@ -25,6 +25,7 @@ import {
   ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { INBOX, normalizeProjectName } from '@/lib/projects';
+import { ProjectSettingsDialog } from '@/components/ProjectSettingsDialog';
 import { PROJECT_FOLDER_PREFIX, runMeetingTagging, deleteMeetingAudio } from '@/components/Sidebar/SidebarProvider';
 import { startEnhance } from '@/lib/autoEnhance';
 import { groupByDate, parseDate, rowLabel, bucketOf, type SortOrder } from '@/lib/dateBuckets';
@@ -141,6 +142,7 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
 
   // Right-click "Move to": project list is fetched when a menu opens. moveMeeting is the single move path (reused by drag-and-drop).
   const [projects, setProjects] = useState<string[]>([INBOX]);
+  const [settingsProject, setSettingsProject] = useState<string | null>(null);
   const loadProjects = (open: boolean) => {
     if (!open) return;
     invoke<string[]>('list_projects_command')
@@ -506,6 +508,13 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
               <ContextMenuItem destructive onSelect={() => setDeleteModalState({ isOpen: true, itemId: item.id })}>Delete</ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
+        ) : item.id.startsWith(PROJECT_FOLDER_PREFIX) ? (
+          <ContextMenu>
+            <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem onSelect={() => setSettingsProject(projectName)}>Project settings...</ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
         ) : row}
         {item.type === 'folder' && isExpanded && item.children && (
           <div className="space-y-px">
@@ -704,6 +713,7 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ProjectSettingsDialog project={settingsProject} onOpenChange={(open) => { if (!open) setSettingsProject(null); }} />
     </div>
   );
 };

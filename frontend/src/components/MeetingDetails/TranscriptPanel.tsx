@@ -3,6 +3,7 @@
 import { Transcript, TranscriptSegmentData } from '@/types';
 import { VirtualizedTranscriptView } from '@/components/VirtualizedTranscriptView';
 import { TranscriptButtonGroup } from './TranscriptButtonGroup';
+import { MeetingTags } from './MeetingTags';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { invoke } from '@tauri-apps/api/core';
@@ -18,7 +19,6 @@ interface TranscriptPanelProps {
   title: string;
   createdAt?: string;
   transcripts: Transcript[];
-  onOpenMeetingFolder: () => Promise<void>;
   isRecording: boolean;
   disableAutoScroll?: boolean;
 
@@ -41,7 +41,6 @@ export function TranscriptPanel({
   title,
   createdAt,
   transcripts,
-  onOpenMeetingFolder,
   isRecording,
   disableAutoScroll = false,
   usePagination = false,
@@ -154,17 +153,16 @@ export function TranscriptPanel({
               </span>
             )}
           </h1>
+          {meetingId && extras && <MeetingTags meetingId={meetingId} tags={extras.tags} />}
         </div>
         {meetingId && (
           <MeetingInfoButton
-            tags={extras?.tags ?? []}
             enhanceStatus={status?.enhanceStatus}
             taggingStatus={status?.taggingStatus}
             transcription={extras?.transcription}
           />
         )}
         <TranscriptButtonGroup
-          onOpenMeetingFolder={onOpenMeetingFolder}
           meetingId={meetingId}
           meetingFolderPath={meetingFolderPath}
           onRefetchTranscripts={onRefetchTranscripts}

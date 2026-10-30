@@ -4,14 +4,12 @@ import { enhancedLabel, liveLabel, type TranscriptionInfo } from '@/lib/language
 
 const TAGGING: Record<string, string> = { done: 'Done', running: 'Running', failed: 'Failed', cancelled: 'Cancelled' };
 
-/** Info icon on the meeting page; hover shows the live and enhance engines, the statuses and the tags. */
+/** Info icon on the meeting page; hover shows the live and enhance engines and the statuses. */
 export function MeetingInfoButton({
-  tags,
   enhanceStatus,
   taggingStatus,
   transcription,
 }: {
-  tags: string[];
   enhanceStatus?: string;
   taggingStatus?: string;
   transcription?: TranscriptionInfo | null;
@@ -40,9 +38,6 @@ export function MeetingInfoButton({
             </div>
           ))}
         </dl>
-        <div className="flex flex-wrap gap-1 border-t border-border pt-2">
-          {tags.length ? tags.map((tag) => <span key={tag} className="rounded border border-border px-1.5">{tag}</span>) : <span className="text-muted-foreground">No tags</span>}
-        </div>
       </TooltipContent>
     </Tooltip>
   );

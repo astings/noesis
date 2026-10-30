@@ -233,7 +233,7 @@ A project folder may hold an optional `project.json` with `language`, `enhance_p
 }
 ```
 
-`tags` (lowercase-kebab slugs), `tagged_at` and `audio_deleted_at` are optional and set after enhance; `audio_deleted_at` means `audio.mp4` was removed and `audio_file` is `""`. `retranscribed_at`, `created_at`, `completed_at` and `status` keep their v1 meaning so the current wiki scripts keep working. `project` and `title` in metadata win over the database when they disagree; the reconcile scan updates the index and leaves folders where they are. `transcription.live.language` and `transcription.enhanced.language` are optional (2026-10-30 spec); absent means the global setting of the time applied.
+`tags` (lowercase-kebab slugs), `tagged_at` and `audio_deleted_at` are optional and set after enhance; `tags_edited_at` is set when the user edits the tags on the meeting page, automatic tagging then leaves the tags alone and the explicit "Regenerate title & tags" overwrites them and removes the key; `audio_deleted_at` means `audio.mp4` was removed and `audio_file` is `""`. `retranscribed_at`, `created_at`, `completed_at` and `status` keep their v1 meaning so the current wiki scripts keep working. `project` and `title` in metadata win over the database when they disagree; the reconcile scan updates the index and leaves folders where they are. `transcription.live.language` and `transcription.enhanced.language` are optional (2026-10-30 spec); absent means the global setting of the time applied.
 
 ### 5.3 transcript.md
 
