@@ -7,10 +7,11 @@ import { ProjectSelect } from '@/components/ProjectSelect';
 import { INBOX, projectOfFolder } from '@/lib/projects';
 import { useSidebar, runMeetingTagging, deleteMeetingAudio } from '@/components/Sidebar/SidebarProvider';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, FolderOpen, RefreshCw, Tags, Trash2 } from 'lucide-react';
+import { ChevronDown, FolderOpen, RefreshCw, SlidersHorizontal, Tags, Trash2 } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ConfirmationModal } from '@/components/ConfirmationModel/confirmation-modal';
 import { startEnhance } from '@/lib/autoEnhance';
+import { EnhanceWithDialog } from './EnhanceWithDialog';
 
 interface TranscriptButtonGroupProps {
   onOpenMeetingFolder: () => Promise<void>;
@@ -28,6 +29,7 @@ export function TranscriptButtonGroup({
   audioDeleted,
 }: TranscriptButtonGroupProps) {
   const [showDeleteAudio, setShowDeleteAudio] = useState(false);
+  const [showEnhanceWith, setShowEnhanceWith] = useState(false);
   const audioGone = audioDeleted ? 'Audio removed after enhance' : undefined;
 
   // spec 4.2: move the meeting to another project folder
@@ -89,6 +91,15 @@ export function TranscriptButtonGroup({
                 <RefreshCw />
                 Enhance
               </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={audioDeleted}
+                title={audioGone}
+                // deferred: the menu must finish closing before a Radix dialog takes focus
+                onSelect={() => setTimeout(() => setShowEnhanceWith(true), 0)}
+              >
+                <SlidersHorizontal />
+                Enhance with...
+              </DropdownMenuItem>
               <DropdownMenuItem disabled={taggingRunning} onSelect={() => runMeetingTagging(meetingId)}>
                 <Tags />
                 Title &amp; tags
@@ -110,6 +121,7 @@ export function TranscriptButtonGroup({
             onConfirm={() => { setShowDeleteAudio(false); deleteMeetingAudio(meetingId); }}
             onCancel={() => setShowDeleteAudio(false)}
           />
+          <EnhanceWithDialog open={showEnhanceWith} onOpenChange={setShowEnhanceWith} meetingId={meetingId} folderPath={meetingFolderPath} />
         </>
       )}
     </>
