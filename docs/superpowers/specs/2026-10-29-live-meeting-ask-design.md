@@ -65,7 +65,7 @@ States:
 - **Idle.** One row: an `Input` with placeholder "Ask about this meeting… ⌘K" and two chip buttons, "Recap so far" and "Last 10 min". Chips are disabled until at least one segment exists (home: `transcripts.length`, details: `totalCount`). A `keydown` listener on `window` focuses the input on Cmd+K.
 - **Asking.** Enter or a chip calls `ask_meeting`. Input and chips are disabled; the row shows a spinner and "Thinking…". No cancel button; the 90-second timeout is the cancel.
 - **Answer.** A card above the row: a muted header with the coverage ("Last 10 min, 14:02 to 14:12" or "Whole meeting, 48 segments", built from `from_seconds`, `to_seconds` and `segments`), the answer as plain text with `whitespace-pre-wrap`, a Copy button, a close button. Only the latest answer is kept. Esc clears the card and blurs the input. The question stays in the input.
-- **Error.** The Rust message shown inside the card, not a toast, so it stays readable mid-call. Two messages get a hint: the no-model error adds "pick one in Settings", the timeout adds "try Last 10 min".
+- **Error.** The Rust message shown inside the card, not a toast, so it stays readable mid-call. Two messages get a hint: the missing-API-key error adds "Pick one in Settings, Models.", the timeout adds "Try Last 10 min." The no-model message already names where to set it.
 
 Styling uses existing tokens (`bg-card`, `border-border`, `text-muted-foreground`), so dark mode needs nothing. No Markdown renderer; the prompt asks for short sentences or bullets, which read fine as text.
 
