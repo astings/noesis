@@ -7,6 +7,7 @@ import MainContent from '@/components/MainContent'
 import { Toaster, toast } from 'sonner'
 import "sonner/dist/styles.css"
 import { useState, useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -27,6 +28,7 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
+  const pathname = usePathname()
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [onboardingCompleted, setOnboardingCompleted] = useState(false)
 
@@ -80,6 +82,16 @@ export default function RootLayout({
       unlisten.then(fn => fn());
     };
   }, [showOnboarding]);
+
+  if (pathname?.startsWith('/overlay')) {
+    return (
+      <html lang="en" style={{ background: 'transparent' }}>
+        <body className="font-sans" style={{ background: 'transparent' }}>
+          <TooltipProvider delayDuration={150}>{children}</TooltipProvider>
+        </body>
+      </html>
+    )
+  }
 
   return (
     <html lang="en">
