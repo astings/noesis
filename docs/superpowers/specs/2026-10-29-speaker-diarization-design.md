@@ -1,6 +1,8 @@
 # Speaker diarization
 
-Date: 2026-10-29. Status: approved in brainstorming.
+Date: 2026-10-29. Status: abandoned (see below); approved in brainstorming on the same day.
+
+> **Abandoned on 2026-10-29.** Built and measured on branch `feature/speaker-diarization` (deleted, 14 commits). sherpa-onnx's pipeline could not separate the participants of real Zoom recordings with any of the embedding models tried (3D-Speaker CAM++ en and zh-en, NeMo TitaNet-small, WeSpeaker ResNet34-LM): CAM++ gave 12 to 15 clusters for 4 people at every threshold; with WeSpeaker no threshold fit two meetings at once (0.7: standup 3 right, DEX 7; 0.75: DEX 5 right, standup 2) and a user-supplied count still merged two people (DEX, N=4: 436/228/174/23 s) or returned fewer clusters than asked (standup, N=3: 2). WeSpeaker ResNet152-LM was accurate on the standup but ran at real time (16 min for 18 min of audio). Next candidate if speaker labels matter: pyannote 3.1 as a Python sidecar, tested on the same recordings first. Facts worth keeping: Tauri copies `externalBin` sidecars without the target-triple suffix; sherpa's `cluster-threshold` is a cosine-distance cut (larger means fewer clusters); sherpa's bundled two-speaker samples collapse to one cluster with WeSpeaker, so they are useless as a regression test for it.
 
 ## Problem
 
