@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { RecordingControls } from '@/components/RecordingControls';
 import { ProjectSelect } from '@/components/ProjectSelect'; // spec 4.2
 import { INBOX, getLastProject, setLastProject } from '@/lib/projects'; // spec 4.2
@@ -26,6 +27,12 @@ export default function Home() {
   // Local page state (not moved to contexts)
   const [isRecording, setIsRecordingState] = useState(false);
   const [project, setProject] = useState<string>(() => (typeof window === 'undefined' ? INBOX : getLastProject())); // spec 4.2
+
+  // The call overlay can change the project of the live recording
+  useEffect(() => {
+    const unlisten = listen<string>('recording-project-changed', (e) => { setProject(e.payload); setLastProject(e.payload); });
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
 
   // Use contexts for state management
   const { meetingTitle, transcripts, copyTranscript } = useTranscripts();

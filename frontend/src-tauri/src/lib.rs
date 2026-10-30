@@ -57,6 +57,7 @@ pub mod parakeet_engine;
 pub mod state;
 pub mod summary;
 pub mod tray;
+pub mod overlay;
 pub mod utils;
 pub mod whisper_engine;
 
@@ -567,6 +568,13 @@ pub fn run() {
             if let Err(e) = tray::create_tray(_app.handle()) {
                 log::error!("Failed to create system tray: {}", e);
             }
+            let app_for_tray = _app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(p) = audio::recording_preferences::load_recording_preferences(&app_for_tray).await {
+                    tray::apply_tray_visibility(&app_for_tray, p.show_tray_icon);
+                }
+            });
+            overlay::init(_app.handle());
 
             // Initialize notification system with proper defaults
             log::info!("Initializing notification system...");
@@ -715,6 +723,9 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            overlay::overlay_resize,
+            overlay::overlay_stop_recording,
+            audio::recording_commands::get_recording_project,
             calendar_lookup::calendar_request_access,
             start_recording,
             stop_recording,
@@ -952,6 +963,7 @@ pub fn run() {
             audio::claude_mcp::get_mcp_register_command,
             audio::claude_mcp::register_mcp_with_claude,
             audio::library::assign_meeting,
+            audio::library::discard_empty_recording,
             audio::ask::ask_meeting, // live meeting ask (spec 2026-10-29)
         ])
         .build(tauri::generate_context!())

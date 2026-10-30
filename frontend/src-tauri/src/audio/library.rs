@@ -520,9 +520,49 @@ pub fn trash_meeting_folder(root: &Path, folder: &Path) -> Result<()> {
     ctx.delete(folder).map_err(|e| anyhow::anyhow!("{}", e))
 }
 
+/// True when the folder's transcripts.json has no segments, or is missing.
+/// An unreadable or unparsable file counts as not empty: never trash a recording on a doubt.
+pub fn has_no_transcript(folder: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(folder.join("transcripts.json")) else {
+        return !folder.join("transcripts.json").exists();
+    };
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| v.get("segments").and_then(|s| s.as_array()).map(|a| a.is_empty()))
+        .unwrap_or(false)
+}
+
+/// After a stop with nothing transcribed: trashes the meeting folder (no DB row exists yet).
+/// Returns false and keeps the folder when transcripts.json holds segments.
+#[tauri::command]
+pub async fn discard_empty_recording<R: tauri::Runtime>(app: tauri::AppHandle<R>, folder_path: String) -> Result<bool, String> {
+    let folder = PathBuf::from(&folder_path);
+    if !has_no_transcript(&folder) {
+        log::info!("discard_empty_recording: {} has segments, kept", folder.display());
+        return Ok(false);
+    }
+    let root = crate::audio::recording_preferences::recordings_root(&app);
+    trash_meeting_folder(&root, &folder).map_err(|e| e.to_string())?;
+    log::info!("discard_empty_recording: trashed {}", folder.display());
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn has_no_transcript_only_for_empty_or_missing() {
+        let t = tempfile::tempdir().unwrap();
+        let f = t.path();
+        assert!(has_no_transcript(f), "missing file");
+        std::fs::write(f.join("transcripts.json"), r#"{"version":"1.0","segments":[],"total_segments":0}"#).unwrap();
+        assert!(has_no_transcript(f));
+        std::fs::write(f.join("transcripts.json"), r#"{"segments":[{"text":"hi"}]}"#).unwrap();
+        assert!(!has_no_transcript(f));
+        std::fs::write(f.join("transcripts.json"), "{not json").unwrap();
+        assert!(!has_no_transcript(f), "corrupt file is kept");
+    }
+
 
     #[test]
     fn started_at_prefers_folder_stamp_then_created_at() {

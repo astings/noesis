@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { useTranscripts } from '@/contexts/TranscriptContext';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
@@ -252,6 +253,28 @@ export function useRecordingStop(
           sample_text: freshTranscripts.length > 0 ? freshTranscripts[0].text.substring(0, 50) + '...' : 'none',
           last_transcript: freshTranscripts.length > 0 ? freshTranscripts[freshTranscripts.length - 1].text.substring(0, 30) + '...' : 'none',
         });
+
+        // Nothing was transcribed: no meeting to keep, no enhance. Rust trashes the folder
+        // only if its transcripts.json is empty too, so a lost frontend state never deletes a real one.
+        if (freshTranscripts.length === 0) {
+          const discarded = !folderPath || await invoke<boolean>('discard_empty_recording', { folderPath }).catch((e) => {
+            console.error('Failed to discard empty recording:', e);
+            return false;
+          });
+          if (discarded) {
+            await markMeetingAsSaved();
+            sessionStorage.removeItem('last_recording_folder_path');
+            sessionStorage.removeItem('last_recording_meeting_name');
+            sessionStorage.removeItem('last_recording_meeting_id');
+            sessionStorage.removeItem('indexeddb_current_meeting_id');
+            clearTranscripts();
+            toast.info('Nothing was transcribed', { description: 'The recording was discarded.' });
+            setStatus(RecordingStatus.IDLE);
+            setIsMeetingActive(false);
+            setIsRecordingDisabled(false);
+            return;
+          }
+        }
 
         try {
           const responseData = await storageService.saveMeeting(
