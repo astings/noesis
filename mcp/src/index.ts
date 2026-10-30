@@ -27,7 +27,7 @@ server.registerTool(
 server.registerTool(
   'list_meetings',
   {
-    description: 'Meetings recorded by Noesis, newest first. Filter by project folder and/or ISO date range. quality is live, enhanced, enhancing or failed.',
+    description: 'Meetings recorded by Noesis, newest first. Filter by project folder and/or ISO date range. quality is recording, live, enhanced, enhancing or failed. recording means the meeting is in progress right now; it is the newest, so it sorts first.',
     inputSchema: {
       project: z.string().optional().describe('Project folder name, e.g. "dex". "_inbox" for untagged and legacy meetings.'),
       since: z.string().optional().describe('ISO 8601: YYYY-MM-DD (whole local day) or a datetime; only meetings started at or after it.'),
@@ -76,7 +76,7 @@ server.registerTool(
 server.registerTool(
   'get_transcript',
   {
-    description: 'Transcript of one meeting. "md" is transcript.md (rendered from transcripts.json for legacy folders), "text" strips timestamps, "json" is the raw segments. Optional time range in seconds. While a meeting is being enhanced, only format "json" (live segments) is available.',
+    description: 'Transcript of one meeting. "md" is transcript.md (rendered from transcripts.json for legacy folders), "text" strips timestamps, "json" is the raw segments. Optional time range in seconds. On a meeting being recorded, returns the transcript so far; call again for new lines. While a meeting is being enhanced, only format "json" (live segments) is available.',
     inputSchema: {
       meeting_id: z.string().optional(),
       path: z.string().optional().describe('Absolute folder path or folder name, when the meeting has no id (legacy).'),

@@ -4,7 +4,7 @@ import {
   INBOX, isValidProjectName, localStamp, stampOfFolder, meetingFolderName, formatMmss, toLocalIso,
 } from './paths.ts';
 
-export type Quality = 'live' | 'enhanced' | 'enhancing' | 'failed';
+export type Quality = 'recording' | 'live' | 'enhanced' | 'enhancing' | 'failed';
 
 export type MeetingInfo = {
   meeting_id: string | null;
@@ -50,6 +50,7 @@ export function listProjects(root: string): string[] {
 }
 
 function qualityOf(meta: Json): Quality {
+  if (meta.status === 'recording') return 'recording'; // live ask spec 3.3: the recorder writes this at record start
   const enhanced = (meta.transcription as Json | undefined)?.enhanced as Json | undefined;
   const status = enhanced?.status;
   if (status === 'done') return 'enhanced';

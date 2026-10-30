@@ -16,6 +16,8 @@ If you used Meetily, remove the old entry: `claude mcp remove --scope user meeti
 
 Tools: `list_projects`, `list_meetings`, `search_meetings`, `get_transcript`, `assign_meeting`. See the design spec, section 5.4.
 
+A meeting being recorded right now is listed with quality `recording`; `get_transcript` returns its transcript so far, call again for new lines.
+
 `search_meetings` is keyword search (not semantic) over titles, tags and transcript text. It builds an in-memory SQLite FTS5 index per call with `node:sqlite`, which needs Node 22.13 or later (the 22.18 floor above covers it).
 
 Legacy flat folders (recorded before projects existed) can be read and filed through the tools, but the Noesis app does not follow those moves; it keeps their old row.

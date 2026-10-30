@@ -1,6 +1,6 @@
 {
   "name": "@noesis-app/noesis-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "MCP server exposing the Noesis recordings library (projects, meetings, transcripts).",
   "license": "MIT",
