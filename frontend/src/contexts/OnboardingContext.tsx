@@ -380,7 +380,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     console.log('[OnboardingContext] Starting background downloads:', { includeParakeet });
 
     try {
-      const shouldStartParakeet = includeParakeet && !parakeetDownloaded;
+      const shouldStartParakeet = includeParakeet && !parakeetDownloaded && !isBackgroundDownloading;
 
       if (!shouldStartParakeet) {
         return;
