@@ -11,6 +11,8 @@
 
 Noesis records your calls, transcribes them on your Mac, and writes a plain `transcript.md` into a folder per project. An MCP server exposes that folder to Claude Code, so any wiki or repo can list, search and read your meetings without symlinks or copy-paste.
 
+<p align="center"><img src="docs/readme/demo.gif" width="800" alt="Search the library, open a hit, ask the meeting a question" /></p>
+
 It is a fork of [Meetily](https://github.com/Zackriya-Solutions/meetily) v0.4.1, reshaped into a dumb, accurate recorder. Audio and transcripts never leave the machine unless you pick a cloud model.
 
 ## What it does
@@ -22,6 +24,15 @@ It is a fork of [Meetily](https://github.com/Zackriya-Solutions/meetily) v0.4.1,
 - **Titles and tags** are generated after enhance with the configured model. Edit them by hand and they stay.
 - **Per-project overrides** in `project.json`: language, enhance provider, enhance model.
 - **Ask the meeting.** A box on the home and meeting pages answers questions over the live or saved transcript with a local model (Qwen built in, or Ollama, Claude, OpenAI, Groq, OpenRouter).
+
+## Screens
+
+| | |
+|---|---|
+| ![Home: recent meetings and projects](docs/readme/home.png) | ![Meeting: transcript with speaker labels and tags](docs/readme/meeting.png) |
+| ![Search across every transcript](docs/readme/search.png) | ![Ask the meeting](docs/readme/ask.png) |
+
+Shots use invented demo data. Regenerate them with `npm --prefix scripts/readme-media run capture` ([how](scripts/readme-media/README.md)).
 
 ## Use it from Claude Code
 
