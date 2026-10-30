@@ -15,12 +15,11 @@ interface ProjectSelectProps {
   onChange: (project: string) => void;
   disabled?: boolean;
   compact?: boolean;
-  onOpenChange?: (open: boolean) => void;
   className?: string;
 }
 
 /** spec 4.2: pick a project folder. Projects are folders under the recordings root; "New project" creates one by name. */
-export function ProjectSelect({ value, onChange, disabled, compact, onOpenChange, className }: ProjectSelectProps) {
+export function ProjectSelect({ value, onChange, disabled, compact, className }: ProjectSelectProps) {
   const [projects, setProjects] = useState<string[]>([INBOX]);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState('');
@@ -65,7 +64,6 @@ export function ProjectSelect({ value, onChange, disabled, compact, onOpenChange
     <Select
       value={value}
       disabled={disabled}
-      onOpenChange={onOpenChange}
       onValueChange={(v) => {
         if (v === NEW_PROJECT) { setCreating(true); return; }
         onChange(v);

@@ -21,6 +21,7 @@ pub fn show<R: Runtime>(app: &AppHandle<R>) {
         .skip_taskbar(true)
         .resizable(false)
         .focused(false)
+        .accept_first_mouse(true)
         .shadow(false);
     if let Ok(Some(m)) = app.primary_monitor() {
         let scale = m.scale_factor();
@@ -59,7 +60,7 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) {
         let a = a.clone();
         tauri::async_runtime::spawn(async move {
             if let Ok(p) = crate::audio::recording_preferences::load_recording_preferences(&a).await {
-                if p.show_call_overlay {
+                if p.show_call_overlay && crate::is_recording().await {
                     show(&a);
                 }
             }

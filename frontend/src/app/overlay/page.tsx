@@ -3,14 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalPosition } from '@tauri-apps/api/dpi';
 import { Pause, Play, Square, X } from 'lucide-react';
-import { ProjectSelect } from '@/components/ProjectSelect';
+import { INBOX } from '@/lib/projects';
 
 const PILL_HEIGHT = 48;
 const ASK_HEIGHT = 360;
-const SELECT_HEIGHT = 240; // room for the project dropdown, which portals inside the window
 
 interface AskAnswer { answer: string }
 
@@ -29,6 +28,8 @@ export default function OverlayPage() {
   const [seconds, setSeconds] = useState(0);
   const [paused, setPaused] = useState(false);
   const [project, setProject] = useState('');
+  const [projects, setProjects] = useState<string[]>([INBOX]);
+  const [stopping, setStopping] = useState(false);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
@@ -43,6 +44,7 @@ export default function OverlayPage() {
       .then((s) => { setPaused(s.is_paused); setSeconds(Math.floor(s.active_duration ?? 0)); })
       .catch(fail);
     invoke<string>('get_recording_project').then(setProject).catch(fail);
+    invoke<string[]>('list_projects_command').then((l) => l.length && setProjects(l)).catch(() => {});
 
     const unlisten = [
       listen('recording-paused', () => setPaused(true)),
@@ -52,7 +54,17 @@ export default function OverlayPage() {
 
     try {
       const saved = JSON.parse(localStorage.getItem('overlayPos') ?? 'null');
-      if (saved) getCurrentWindow().setPosition(new LogicalPosition(saved.x, saved.y)).catch(() => {});
+      if (saved) {
+        // skip a saved point on a monitor that was unplugged since
+        availableMonitors().then((ms) => {
+          const onScreen = ms.some((m) => {
+            const x = m.position.x / m.scaleFactor, y = m.position.y / m.scaleFactor;
+            return saved.x >= x && saved.x < x + m.size.width / m.scaleFactor
+              && saved.y >= y && saved.y < y + m.size.height / m.scaleFactor;
+          });
+          if (onScreen) return getCurrentWindow().setPosition(new LogicalPosition(saved.x, saved.y));
+        }).catch(() => {});
+      }
     } catch { /* no saved position */ }
     const moved = getCurrentWindow().onMoved(async ({ payload }) => {
       try {
@@ -113,6 +125,13 @@ export default function OverlayPage() {
   const changeProject = (p: string) =>
     invoke<string>('set_recording_project', { project: p }).then(setProject).catch(fail);
 
+  const stop = () => {
+    setStopping(true);
+    invoke('overlay_stop_recording').catch((e) => { setStopping(false); fail(e); });
+  };
+
+  const options = !project || projects.includes(project) ? projects : [...projects, project];
+
   const iconBtn = 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full hover:bg-white/15';
   const showPanel = loading || answer !== null || error !== null;
 
@@ -127,16 +146,17 @@ export default function OverlayPage() {
         <button className={iconBtn} onClick={togglePause} title={paused ? 'Resume' : 'Pause'}>
           {paused ? <Play size={14} /> : <Pause size={14} />}
         </button>
-        <button className={`${iconBtn} text-red-400`} onClick={() => invoke('overlay_stop_recording').catch(fail)} title="Stop recording">
+        <button className={`${iconBtn} text-red-400 disabled:opacity-50`} disabled={stopping} onClick={stop} title="Stop recording">
           <Square size={14} fill="currentColor" />
         </button>
-        <ProjectSelect
-          compact
+        <select
           value={project}
-          onChange={changeProject}
-          onOpenChange={(open) => { if (!answerOpen.current) resize(open ? SELECT_HEIGHT : PILL_HEIGHT); }}
-          className="h-7 w-28 border-white/20 bg-transparent text-white"
-        />
+          onChange={(e) => changeProject(e.target.value)}
+          title="Project folder for this meeting"
+          className="h-7 w-28 shrink-0 rounded-full border border-white/20 bg-transparent px-2 text-xs text-white outline-none [&>option]:text-black"
+        >
+          {options.map((p) => <option key={p} value={p}>{p === INBOX ? 'Inbox' : p}</option>)}
+        </select>
         <input
           value={question}
           onChange={(e) => setQuestion(e.target.value)}

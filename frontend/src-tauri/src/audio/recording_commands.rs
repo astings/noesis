@@ -1322,10 +1322,12 @@ static PENDING_PROJECT: Mutex<Option<(String, String)>> = Mutex::new(None);
 /// Returns the normalized project name.
 #[tauri::command]
 pub async fn set_recording_project<R: Runtime>(app: AppHandle<R>, project: String) -> Result<String, String> {
-    let guard = RECORDING_MANAGER.lock().unwrap();
-    let Some(manager) = guard.as_ref() else { return Err("No recording in progress.".to_string()) };
-    let Some(meeting_id) = manager.get_meeting_id() else { return Err("No recording in progress.".to_string()) };
-    let started = manager.get_project().unwrap_or_else(|| super::library::INBOX.to_string());
+    let (meeting_id, started) = {
+        let guard = RECORDING_MANAGER.lock().unwrap();
+        let Some(manager) = guard.as_ref() else { return Err("No recording in progress.".to_string()) };
+        let Some(meeting_id) = manager.get_meeting_id() else { return Err("No recording in progress.".to_string()) };
+        (meeting_id, manager.get_project().unwrap_or_else(|| super::library::INBOX.to_string()))
+    };
     let normalized = super::library::normalize_project(&project);
     let pending = super::library::pending_move(&started, Some(&project));
     info!("Recording {} project change: {:?} -> pending {:?}", meeting_id, started, pending);
