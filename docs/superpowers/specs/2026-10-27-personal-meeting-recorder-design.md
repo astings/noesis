@@ -261,9 +261,9 @@ One segment per line, `[mm:ss]` start time, speaker name when known, text verbat
 list_projects() -> [{name, meeting_count, last_meeting_at}]
 
 list_meetings({project?: string, tag?: string, since?: ISO date, until?: ISO date, limit?: number = 20})
-  -> [{meeting_id, project, title, started_at, duration_seconds, quality: "live"|"enhanced"|"enhancing"|"failed", path, tags: string[]}]
+  -> [{meeting_id, project, title, started_at, duration_seconds, quality: "recording"|"live"|"enhanced"|"enhancing"|"failed", path, tags: string[]}]
   Sorted newest first. `_inbox` includes legacy root-level folders.
-  quality "enhancing" covers both queued and running jobs.
+  quality "enhancing" covers both queued and running jobs. "recording" means the meeting is being recorded right now (see 2026-10-29-live-meeting-ask-design.md).
 
 search_meetings({query: string, project?: string, tags?: string[], since?: ISO date, until?: ISO date, limit?: number = 10})
   -> [{meeting_id, project, title, started_at, tags, path, score,
