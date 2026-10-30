@@ -106,7 +106,7 @@ export default function Home() {
 
         {/* live ask spec 3.2: while recording, or while live segments are still on screen */}
         {(recordingState.isRecording || transcripts.length > 0) && (
-          <AskPanel hasSegments={transcripts.length > 0} disabled={isProcessingStop || status === RecordingStatus.SAVING} />
+          <AskPanel hasSegments={transcripts.length > 0} disabled={isStopping || isProcessingStop || status === RecordingStatus.SAVING || !recordingState.isRecording} />
         )}
 
         {/* Recording controls - only show when permissions are granted or already recording and not showing status messages */}

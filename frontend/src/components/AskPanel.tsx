@@ -20,7 +20,7 @@ function mmss(seconds: number): string {
 }
 
 function errorHint(error: string): string {
-  if (error.startsWith('No summary model') || error.includes('API key not found')) return ' Pick one in Settings, Models.';
+  if (error.includes('API key not found')) return ' Pick one in Settings, Models.';
   if (error.startsWith('The model took too long')) return ' Try Last 10 min.';
   return '';
 }
@@ -61,7 +61,7 @@ export function AskPanel({ meetingId, hasSegments, disabled }: { meetingId?: str
   const coverage = result?.answer
     ? result.lastMinutes
       ? `Last ${result.lastMinutes} min, ${mmss(result.answer.from_seconds)} to ${mmss(result.answer.to_seconds)}`
-      : `Whole meeting, ${result.answer.segments} segments`
+      : `Whole meeting, ${mmss(result.answer.from_seconds)} to ${mmss(result.answer.to_seconds)}, ${result.answer.segments} segments`
     : '';
 
   return (
