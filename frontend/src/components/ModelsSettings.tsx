@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useConfig } from '@/contexts/ConfigContext';
 import { MODEL_CONFIGS } from '@/lib/whisper';
 import { getModelDisplayInfo } from '@/lib/parakeet';
+import { LANGUAGES } from '@/lib/languages';
 import type { RecordingPreferences } from '@/components/RecordingSettings';
 
 type Engine = 'whisper' | 'parakeet' | 'builtin';
@@ -34,16 +35,6 @@ function toState(status: any): ModelState {
 function formatSize(mb: number) {
   return mb >= 1000 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
 }
-
-const LANGUAGES = [
-  { code: 'en', label: 'English' },
-  { code: 'fr', label: 'French' },
-  { code: 'de', label: 'German' },
-  { code: 'es', label: 'Spanish' },
-  { code: 'it', label: 'Italian' },
-  { code: 'nl', label: 'Dutch' },
-  { code: 'pt', label: 'Portuguese' },
-];
 
 const SUMMARY_PROVIDERS: { value: string; label: string; placeholder: string }[] = [
   { value: 'ollama', label: 'Ollama', placeholder: 'llama3.2' },
