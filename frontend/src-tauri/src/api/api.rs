@@ -629,6 +629,21 @@ pub async fn api_get_api_key<R: Runtime>(
     }
 }
 
+/// live ask spec 3.4: save a provider key on its own. Until now a key could only be saved
+/// together with the summary model through `api_save_model_config`.
+#[tauri::command]
+pub async fn api_save_api_key<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    provider: String,
+    api_key: String,
+) -> Result<(), String> {
+    log_info!("api_save_api_key called (native) for provider '{}'", &provider);
+    SettingsRepository::save_api_key(&state.db_manager.pool(), &provider, &api_key)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn api_get_transcript_config<R: Runtime>(
     _app: AppHandle<R>,

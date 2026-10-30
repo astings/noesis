@@ -27,7 +27,7 @@ pub async fn load_for(pool: &SqlitePool, provider: &str, model: &str) -> Result<
     } else {
         match SettingsRepository::get_api_key(pool, provider).await {
             Ok(Some(key)) if !key.is_empty() => key,
-            Ok(None) | Ok(Some(_)) => return Err(format!("API key not found for {}", provider)),
+            Ok(None) | Ok(Some(_)) => return Err(format!("API key not found for {}", provider)), // the Ask panel matches "API key not found" (components/AskPanel.tsx errorHint)
             Err(e) => return Err(format!("Failed to retrieve API key for {}: {}", provider, e)),
         }
     };
@@ -74,7 +74,8 @@ pub async fn load_for(pool: &SqlitePool, provider: &str, model: &str) -> Result<
     Ok(cfg)
 }
 
-pub const NO_SUMMARY_MODEL: &str = "No summary model configured. Set one in Settings, Recordings, Summary model.";
+// the Ask panel matches this prefix (components/AskPanel.tsx errorHint)
+pub const NO_SUMMARY_MODEL: &str = "No summary model configured. Set one in Settings, Models, Summarization.";
 
 /// The summary model configured in Settings.
 pub async fn load(pool: &SqlitePool) -> Result<LlmConfig, String> {

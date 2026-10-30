@@ -13,6 +13,7 @@ import { useConfig } from '@/contexts/ConfigContext';
 import { StatusOverlays } from '@/app/_components/StatusOverlays';
 import { SettingsModals } from './_components/SettingsModal';
 import { TranscriptPanel } from './_components/TranscriptPanel';
+import { AskPanel } from '@/components/AskPanel'; // live ask spec 3.2
 import { useModalState } from '@/hooks/useModalState';
 import { useRecordingStateSync } from '@/hooks/useRecordingStateSync';
 import { useRecordingStart } from '@/hooks/useRecordingStart';
@@ -102,6 +103,11 @@ export default function Home() {
           isProcessingStop={isProcessingStop}
           isStopping={isStopping}
         />
+
+        {/* live ask spec 3.2: while recording, or while live segments are still on screen */}
+        {(recordingState.isRecording || transcripts.length > 0) && (
+          <AskPanel hasSegments={transcripts.length > 0} disabled={isStopping || isProcessingStop || status === RecordingStatus.SAVING || !recordingState.isRecording} />
+        )}
 
         {/* Recording controls - only show when permissions are granted or already recording and not showing status messages */}
         {(hasMicrophone || isRecording) &&

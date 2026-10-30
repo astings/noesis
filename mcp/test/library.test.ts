@@ -164,3 +164,30 @@ test('scanMeetings skips an unreadable project folder', (t) => {
     fs.chmodSync(locked, 0o755);
   }
 });
+
+test('a recording folder untouched for an hour is quality live (crashed recording)', () => {
+  const dir = path.join(root, 'dex', '2026-10-27_09-00 crashed');
+  write(dir, {
+    'metadata.json': JSON.stringify({ ...v2Meta('meeting-crashed', 'dex', 'Crashed'), status: 'recording' }),
+    'transcripts.json': JSON.stringify(segments),
+  });
+  const old = new Date(Date.now() - 60 * 60 * 1000);
+  for (const f of ['metadata.json', 'transcripts.json']) fs.utimesSync(path.join(dir, f), old, old);
+  assert.equal(findMeeting(root, { meeting_id: 'meeting-crashed' })!.quality, 'live');
+});
+
+test('a meeting being recorded lists as quality recording and its transcript so far is readable', () => {
+  const dir = path.join(root, 'dex', '2026-10-29_09-00 live');
+  write(dir, {
+    'metadata.json': JSON.stringify({ ...v2Meta('meeting-live', 'dex', 'Live call'), status: 'recording', created_at: '2026-10-29T09:00:00+00:00', completed_at: null, duration_seconds: null }),
+    'transcripts.json': JSON.stringify(segments),
+  });
+  const info = findMeeting(root, { meeting_id: 'meeting-live' });
+  assert.ok(info);
+  assert.equal(info.quality, 'recording');
+  const md = readTranscript(info, 'md');
+  assert.match(md, /^quality: recording$/m);
+  assert.match(md, /\[00:00\] Hello there\./);
+  assert.match(md, /\[01:05\] Second line\./);
+  assert.equal(scanMeetings(root)[0].meeting_id, 'meeting-live', 'the newest meeting sorts first');
+});

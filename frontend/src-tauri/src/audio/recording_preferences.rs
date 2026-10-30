@@ -62,6 +62,13 @@ pub struct RecordingPreferences {
     // system prompt for titles and tags; empty means the built-in one
     #[serde(default)]
     pub title_tags_prompt: String,
+    // live meeting ask (spec 2026-10-29-live-meeting-ask-design.md, 3.4): provider and model for the
+    // Ask panel. Empty means the summary model. Values follow the summary setting: "builtin-ai",
+    // "ollama", "claude", "openai", "groq", "openrouter".
+    #[serde(default)]
+    pub ask_provider: String,
+    #[serde(default)]
+    pub ask_model: String,
 }
 
 /// The languages the Models tab offers; keep in sync with `LANGUAGES` in `components/ModelsSettings.tsx`.
@@ -147,6 +154,8 @@ impl Default for RecordingPreferences {
             audio_retention_hours: default_audio_retention_hours(),
             transcription_languages: default_transcription_languages(),
             title_tags_prompt: String::new(),
+            ask_provider: String::new(),
+            ask_model: String::new(),
         }
     }
 }
@@ -592,5 +601,19 @@ mod tests {
         assert_eq!(p.audio_retention_hours, 24);
         assert!(!RecordingPreferences::default().owner_name.trim().is_empty());
         assert!(!p.owner_name.trim().is_empty());
+    }
+
+    #[test]
+    fn ask_model_defaults_to_the_summary_model() {
+        let p = RecordingPreferences::default();
+        assert_eq!(p.ask_provider, "");
+        assert_eq!(p.ask_model, "");
+        // a preferences file written before this feature still loads
+        let old: RecordingPreferences = serde_json::from_str(
+            r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#,
+        )
+        .unwrap();
+        assert_eq!(old.ask_provider, "");
+        assert_eq!(old.ask_model, "");
     }
 }

@@ -798,6 +798,7 @@ pub fn run() {
             api::api_get_model_config,
             api::api_save_model_config,
             api::api_get_api_key,
+            api::api_save_api_key, // live ask spec 3.4
             // api::api_get_auto_generate_setting,
             // api::api_save_auto_generate_setting,
             api::api_get_transcript_config,
@@ -918,6 +919,7 @@ pub fn run() {
             audio::claude_mcp::get_mcp_register_command,
             audio::claude_mcp::register_mcp_with_claude,
             audio::library::assign_meeting,
+            audio::ask::ask_meeting, // live meeting ask (spec 2026-10-29)
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

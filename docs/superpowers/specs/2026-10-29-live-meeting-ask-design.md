@@ -51,7 +51,7 @@ System prompt (fixed, not a preference):
 
 Not a job in the job queue, nothing written to disk. The preset questions are sent by the UI as ordinary text: "Recap what has been discussed so far." and "What was said in the last 10 minutes?" (the latter with `last_minutes: 10`).
 
-Known ceiling: `llama-helper` has no prompt cache, so each ask re-reads the whole prompt. Upgrade path: keep the KV cache across requests in `llama-helper/src/main.rs` so a growing transcript only pays for the new lines.
+Known ceiling: `llama-helper` has no prompt cache, so each ask re-reads the whole prompt. Upgrade path: keep the KV cache across requests in `llama-helper/src/main.rs` so a growing transcript only pays for the new lines. With the built-in provider, a timed-out ask takes the sidecar's cancel path, which kills the helper, so the next title/tags job or ask pays a model reload.
 
 ### 3.2 Ask panel
 
@@ -65,7 +65,7 @@ States:
 - **Idle.** One row: an `Input` with placeholder "Ask about this meeting… ⌘K" and two chip buttons, "Recap so far" and "Last 10 min". Chips are disabled until at least one segment exists (home: `transcripts.length`, details: `totalCount`). A `keydown` listener on `window` focuses the input on Cmd+K.
 - **Asking.** Enter or a chip calls `ask_meeting`. Input and chips are disabled; the row shows a spinner and "Thinking…". No cancel button; the 90-second timeout is the cancel.
 - **Answer.** A card above the row: a muted header with the coverage ("Last 10 min, 14:02 to 14:12" or "Whole meeting, 48 segments", built from `from_seconds`, `to_seconds` and `segments`), the answer as plain text with `whitespace-pre-wrap`, a Copy button, a close button. Only the latest answer is kept. Esc clears the card and blurs the input. The question stays in the input.
-- **Error.** The Rust message shown inside the card, not a toast, so it stays readable mid-call. Two messages get a hint: the no-model error adds "pick one in Settings", the timeout adds "try Last 10 min".
+- **Error.** The Rust message shown inside the card, not a toast, so it stays readable mid-call. Two messages get a hint: the missing-API-key error adds "Pick one in Settings, Models.", the timeout adds "Try Last 10 min." The no-model message already names where to set it.
 
 Styling uses existing tokens (`bg-card`, `border-border`, `text-muted-foreground`), so dark mode needs nothing. No Markdown renderer; the prompt asks for short sentences or bullets, which read fine as text.
 
@@ -75,12 +75,12 @@ Alternatives not built: a list of past answers in the card (add a `history` arra
 
 `mcp/src/library.ts`:
 
-- `Quality` gains `'recording'`. `qualityOf` returns it first when `meta.status === 'recording'`. The `transcript.md` frontmatter rendered for a live meeting therefore reads `quality: recording`.
+- `Quality` gains `'recording'`. `qualityOf` returns it first when `meta.status === 'recording'`. A folder whose transcripts.json and metadata.json are both older than 10 minutes is not recording any more even if its status says so (a crashed recording never flips to completed); it falls back to live. The `transcript.md` frontmatter rendered for a live meeting therefore reads `quality: recording`.
 - No new tool or parameter. `assignMeeting` keeps refusing recording meetings.
 
 `mcp/src/index.ts` descriptions:
 
-- `list_meetings`: "quality is recording, live, enhanced, enhancing or failed. recording means the meeting is in progress right now; it is the newest, so it sorts first."
+- `list_meetings`: "quality is recording, live, enhanced, enhancing or failed. recording means the meeting is in progress right now (its transcript was written in the last 10 minutes); it is the newest, so it sorts first."
 - `get_transcript`: "On a meeting being recorded, returns the transcript so far; call again for new lines."
 
 Release: `mcp/package.json` to 0.3.0, `npm publish --otp <code>` by the owner. Registrations use `npx -y @noesis-app/noesis-mcp`, so new Claude Code sessions pick the version up without re-registering. `mcp/README.md` mentions the live case in one sentence.

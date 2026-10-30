@@ -33,6 +33,9 @@ export interface RecordingPreferences {
   audio_retention_hours: number;
   transcription_languages: string[];
   title_tags_prompt: string;
+  // live ask spec 3.4: empty means the summary model
+  ask_provider: string;
+  ask_model: string;
 }
 
 interface RecordingSettingsProps {
@@ -59,6 +62,8 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     audio_retention_hours: 24,
     transcription_languages: ['en'],
     title_tags_prompt: '',
+    ask_provider: '',
+    ask_model: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

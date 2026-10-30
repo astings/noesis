@@ -57,6 +57,7 @@ pub mod adopt;
 // spec phase 9 section 2: ranked full-text index
 pub mod search_index;
 pub mod meeting_tagging;
+pub mod ask; // live meeting ask (spec 2026-10-29)
 pub mod audio_cleanup;
 // serialized metadata.json writes shared by every writer
 pub mod metadata_file;

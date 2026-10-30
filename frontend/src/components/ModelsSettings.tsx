@@ -174,6 +174,14 @@ export function ModelsSettings() {
   const [defaultPrompt, setDefaultPrompt] = useState('');
   const [promptDraft, setPromptDraft] = useState<string | null>(null);
   const [taggingAll, setTaggingAll] = useState(false);
+  // Ask during meetings (live ask spec 3.4): provider and model preferences; keys are shared per provider
+  const [askDraft, setAskDraft] = useState<{ provider: string; model: string; apiKey: string } | null>(null);
+  const [askHasKey, setAskHasKey] = useState(false);
+  const askProvider = askDraft?.provider ?? prefs?.ask_provider ?? '';
+  useEffect(() => {
+    if (!KEYED_PROVIDERS.includes(askProvider)) { setAskHasKey(false); return; }
+    invoke<string>('api_get_api_key', { provider: askProvider }).then((k) => setAskHasKey(!!k)).catch(() => setAskHasKey(false));
+  }, [askProvider]);
 
   useEffect(() => {
     invoke<RecordingPreferences>('get_recording_preferences').then(setPrefs).catch((e) => toast.error(String(e)));
@@ -188,8 +196,10 @@ export function ModelsSettings() {
     setSaving(true);
     try {
       await invoke('set_recording_preferences', { preferences: next });
+      return true;
     } catch (e) {
       toast.error('Failed to save', { description: String(e) });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -234,6 +244,20 @@ export function ModelsSettings() {
     }
   };
 
+  const saveAsk = async () => {
+    if (!prefs || !askDraft) return;
+    const key = askDraft.apiKey.trim();
+    try {
+      if (key) await invoke('api_save_api_key', { provider: askDraft.provider, apiKey: key });
+      if (!(await applyPrefs({ ...prefs, ask_provider: askDraft.provider, ask_model: askDraft.model.trim() }))) return;
+      if (key) setAskHasKey(true);
+      setAskDraft(null);
+      toast.success('Ask model saved');
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
   if (!prefs) return <div className="text-sm text-muted-foreground">Loading models...</div>;
 
   const transcriptionRows = rows.filter((r) => r.engine !== 'builtin');
@@ -244,6 +268,9 @@ export function ModelsSettings() {
     : { provider: 'ollama', model: '', endpoint: '', apiKey: '' });
   const externalKnown = SUMMARY_PROVIDERS.find((p) => p.value === external.provider);
   const languages = prefs.transcription_languages ?? [];
+  const ask = askDraft ?? { provider: prefs.ask_provider, model: prefs.ask_model, apiKey: '' };
+  const askKnown = SUMMARY_PROVIDERS.find((p) => p.value === ask.provider);
+  const readyBuiltin = builtinRows.filter((r) => r.state.kind === 'ready');
 
   return (
     <div className="space-y-6">
@@ -365,6 +392,44 @@ export function ModelsSettings() {
             </Button>
           }
         />
+      </SettingsGroup>
+      <SettingsGroup title="Ask during meetings">
+        <SettingRow
+          label="Model"
+          hint="Answers questions about the transcript from the Ask box. Built-in and Ollama stay on this Mac; the others send the transcript to their API."
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={ask.provider || 'summary'} onValueChange={(v) => setAskDraft({ provider: v === 'summary' ? '' : v, model: '', apiKey: '' })}>
+              <SelectTrigger aria-label="Ask provider" className="h-8 w-52 text-[13px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="summary">Same as summary model</SelectItem>
+                <SelectItem value="builtin-ai">Built-in</SelectItem>
+                {SUMMARY_PROVIDERS.map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {ask.provider === 'builtin-ai' && (
+              <Select value={ask.model} onValueChange={(v) => setAskDraft({ ...ask, model: v })}>
+                <SelectTrigger aria-label="Ask built-in model" className="h-8 w-52 text-[13px]"><SelectValue placeholder="Pick a downloaded model" /></SelectTrigger>
+                <SelectContent>
+                  {readyBuiltin.map((r) => <SelectItem key={r.name} value={r.name}>{r.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
+            {ask.provider && ask.provider !== 'builtin-ai' && (
+              <Input aria-label="Ask model" className="h-8 w-48 text-[13px]" value={ask.model} placeholder={askKnown?.placeholder}
+                onChange={(e) => setAskDraft({ ...ask, model: e.target.value })} />
+            )}
+            {KEYED_PROVIDERS.includes(ask.provider) && (
+              <Input aria-label="Ask API key" type="password" autoComplete="off" className="h-8 w-40 text-[13px]" value={ask.apiKey}
+                placeholder={askHasKey ? 'Saved' : 'Paste a key'} onChange={(e) => setAskDraft({ ...ask, apiKey: e.target.value })} />
+            )}
+            {askDraft && (
+              <Button size="sm" variant="outline" disabled={saving || (!!ask.provider && !ask.model.trim())} onClick={saveAsk}>
+                Save
+              </Button>
+            )}
+          </div>
+        </SettingRow>
       </SettingsGroup>
     </div>
   );
