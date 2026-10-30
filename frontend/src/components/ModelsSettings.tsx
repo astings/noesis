@@ -196,8 +196,10 @@ export function ModelsSettings() {
     setSaving(true);
     try {
       await invoke('set_recording_preferences', { preferences: next });
+      return true;
     } catch (e) {
       toast.error('Failed to save', { description: String(e) });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -247,7 +249,7 @@ export function ModelsSettings() {
     const key = askDraft.apiKey.trim();
     try {
       if (key) await invoke('api_save_api_key', { provider: askDraft.provider, apiKey: key });
-      await applyPrefs({ ...prefs, ask_provider: askDraft.provider, ask_model: askDraft.model.trim() });
+      if (!(await applyPrefs({ ...prefs, ask_provider: askDraft.provider, ask_model: askDraft.model.trim() }))) return;
       if (key) setAskHasKey(true);
       setAskDraft(null);
       toast.success('Ask model saved');
