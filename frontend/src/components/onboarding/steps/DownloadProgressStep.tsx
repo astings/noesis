@@ -3,12 +3,20 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Mic, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { OnboardingContainer } from '../OnboardingContainer';
 import { useOnboarding } from '@/contexts/OnboardingContext';
 import { toast } from 'sonner';
 import type { ParakeetDownloadProgressEvent } from '@/lib/parakeet';
+import type { RecordingPreferences } from '@/components/RecordingSettings';
 
 const PARAKEET_MODEL = 'parakeet-tdt-0.6b-v3-int8';
+
+const ENHANCE_MODELS = [
+  { name: 'small', label: 'Small', size: '~470 MB', hint: 'Fastest' },
+  { name: 'medium', label: 'Medium', size: '~1.5 GB', hint: 'Balanced' },
+  { name: 'large-v3', label: 'Large', size: '~3 GB', hint: 'Most accurate' },
+] as const;
 
 type DownloadStatus = 'waiting' | 'downloading' | 'completed' | 'cancelled' | 'error';
 
@@ -23,24 +31,49 @@ interface DownloadState {
 
 export function DownloadProgressStep() {
   const {
-    goNext,
+    goToStep,
+    isMac,
+    parakeetError,
     parakeetDownloaded,
     setParakeetDownloaded,
     startBackgroundDownloads,
-    completeOnboarding,
+    savePreferences,
   } = useOnboarding();
 
-  const [isMac, setIsMac] = useState(false);
+  const [autoEnhance, setAutoEnhance] = useState(true);
+  const [enhanceModel, setEnhanceModel] = useState<string>('large-v3');
+  const [saveError, setSaveError] = useState('');
+  const [continuing, setContinuing] = useState(false);
+
+  useEffect(() => {
+    invoke<RecordingPreferences>('get_recording_preferences')
+      .then((p) => {
+        setAutoEnhance(p.auto_enhance);
+        if (ENHANCE_MODELS.some((m) => m.name === p.enhance_model)) setEnhanceModel(p.enhance_model);
+      })
+      .catch(() => {});
+  }, []);
+
+  const startEnhanceDownload = async (modelName: string) => {
+    await invoke('whisper_init');
+    const models = await invoke<{ name: string; status: unknown }[]>('whisper_get_available_models');
+    const have = models.some((m) => m.name === modelName && m.status === 'Available');
+    if (!have) {
+      invoke('whisper_download_model', { modelName }).catch((e) =>
+        console.error('[TranscriptionStep] Enhance model download failed:', e)
+      );
+    }
+  };
 
   const [parakeetState, setParakeetState] = useState<DownloadState>({
-    status: parakeetDownloaded ? 'completed' : 'waiting',
+    status: parakeetDownloaded ? 'completed' : parakeetError ? 'error' : 'waiting',
+    error: parakeetError ?? undefined,
     progress: parakeetDownloaded ? 100 : 0,
     downloadedMb: 0,
     totalMb: 670,
     speedMbps: 0,
   });
 
-  const [isCompleting, setIsCompleting] = useState(false);
   const parakeetDownloadStartedRef = useRef(false);
   const retryingRef = useRef(false);
 
@@ -87,26 +120,12 @@ export function DownloadProgressStep() {
     }
   };
 
-  // Detect platform on mount
-  useEffect(() => {
-    const checkPlatform = async () => {
-      try {
-        const { platform } = await import('@tauri-apps/plugin-os');
-        setIsMac(platform() === 'macos');
-      } catch (e) {
-        setIsMac(navigator.userAgent.includes('Mac'));
-      }
-    };
-
-    checkPlatform();
-  }, []);
-
   // Start the required transcription model immediately.
   useEffect(() => {
     if (parakeetDownloadStartedRef.current) return;
     parakeetDownloadStartedRef.current = true;
 
-    if (!parakeetDownloaded) {
+    if (!parakeetDownloaded && !parakeetError) {
       setParakeetState((prev) => ({ ...prev, status: 'downloading' }));
     }
 
@@ -186,6 +205,16 @@ export function DownloadProgressStep() {
   }, []);
 
   const handleContinue = async () => {
+    if (continuing) return;
+    setContinuing(true);
+    try {
+      await continueFlow();
+    } finally {
+      setContinuing(false);
+    }
+  };
+
+  const continueFlow = async () => {
     // Verify actual model availability (catches state drift)
     try {
       await invoke('parakeet_init');
@@ -212,38 +241,21 @@ export function DownloadProgressStep() {
       console.warn('[DownloadProgressStep] Failed to verify model:', error);
     }
 
-    // Check if downloads are complete for toast notification
-    const downloadsComplete = parakeetState.status === 'completed';
-
-    // Show toast if downloads still in progress
-    if (!downloadsComplete) {
-      toast.info('Downloads will continue in the background', {
-        description: 'You can start using the app. Recording will be available once speech recognition is ready.',
-        duration: 5000,
-      });
+    setSaveError('');
+    try {
+      await savePreferences(
+        autoEnhance
+          ? { auto_enhance: true, enhance_provider: 'whisper', enhance_model: enhanceModel }
+          : { auto_enhance: false }
+      );
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+      return;
     }
-
-    if (isMac) {
-      // macOS: Go to Permissions step (will complete after permissions granted)
-      goNext();
-    } else {
-      // Non-macOS: Complete onboarding immediately (downloads continue in background)
-      setIsCompleting(true);
-      try {
-        await completeOnboarding();
-
-        // Small delay to ensure state is saved before reload
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        window.location.reload();
-      } catch (error) {
-        console.error('Failed to complete onboarding:', error);
-        toast.error('Failed to complete setup', {
-          description: 'Please try again.',
-        });
-        setIsCompleting(false);
-      }
+    if (autoEnhance) {
+      startEnhanceDownload(enhanceModel).catch((e) => console.error('[TranscriptionStep] ', e));
     }
+    goToStep(isMac ? 4 : 5);
   };
 
   const renderDownloadCard = (
@@ -337,35 +349,61 @@ export function DownloadProgressStep() {
 
   return (
     <OnboardingContainer
-      title="Getting things ready"
-      description="You can start using Noesis after downloading the Transcription Engine."
+      title="Transcription"
+      description="A live transcript while you talk, and a more accurate one after the call."
       step={3}
-      totalSteps={isMac ? 4 : 3}
+      showNavigation
+      canGoNext={false}
     >
       <div className="flex flex-col items-center space-y-6">
-        {/* Download Cards */}
         <div className="w-full max-w-lg space-y-4">
+          <p className="text-sm font-medium">Live transcript</p>
           {renderDownloadCard(
             'Transcription Engine',
             <Mic className="w-5 h-5 text-muted-foreground" />,
             parakeetState,
             '~670 MB'
           )}
+
+          <div className="bg-background rounded-lg border border-border p-5 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="font-medium text-foreground">Enhance after each call</h3>
+                <p className="text-sm text-muted-foreground">Re-transcribes the full recording with Whisper.</p>
+              </div>
+              <Switch checked={autoEnhance} onCheckedChange={setAutoEnhance} aria-label="Enhance after each call" />
+            </div>
+            {autoEnhance && (
+              <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Enhance model">
+                {ENHANCE_MODELS.map((m) => {
+                  const on = enhanceModel === m.name;
+                  return (
+                    <button key={m.name} type="button" role="radio" aria-checked={on}
+                      onClick={() => setEnhanceModel(m.name)}
+                      className={`rounded-md border p-3 text-left ${on ? 'border-foreground' : 'border-border hover:border-foreground/50'}`}>
+                      <p className="text-sm font-medium text-foreground">{m.label}</p>
+                      <p className="text-xs text-muted-foreground">{m.size} · {m.hint}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {autoEnhance && <p className="text-xs text-muted-foreground">It keeps downloading after setup.</p>}
+          </div>
         </div>
 
-        {/* Continue Button */}
-        <div className="w-full max-w-xs">
+        <div className="w-full max-w-xs space-y-2">
           <Button
             onClick={handleContinue}
-            disabled={!parakeetDownloaded || isCompleting}
-            className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={continuing}
+            className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground"
           >
-            {(isCompleting || !parakeetDownloaded) ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              'Continue'
-            )}
+            Continue
           </Button>
+          {!parakeetDownloaded && (
+            <p className="text-xs text-center text-muted-foreground">The live engine keeps downloading. You can continue.</p>
+          )}
+          {saveError && <p className="text-xs text-center text-destructive">{saveError}</p>}
         </div>
       </div>
     </OnboardingContainer>

@@ -5,8 +5,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { PermissionStatus, OnboardingPermissions } from '@/types/onboarding';
 import type { ParakeetDownloadProgressEvent } from '@/lib/parakeet';
+import type { RecordingPreferences } from '@/components/RecordingSettings';
 
 const PARAKEET_MODEL = 'parakeet-tdt-0.6b-v3-int8';
+const LAST_STEP = 6;
 
 interface OnboardingStatus {
   version: string;
@@ -34,9 +36,12 @@ interface OnboardingContextType {
   parakeetProgressInfo: ParakeetProgressInfo;
   databaseExists: boolean;
   isBackgroundDownloading: boolean;
+  parakeetError: string | null;
   // Permissions
   permissions: OnboardingPermissions;
   permissionsSkipped: boolean;
+  isMac: boolean;
+  savePreferences: (patch: Partial<RecordingPreferences>) => Promise<void>;
   // Navigation
   goToStep: (step: number) => void;
   goNext: () => void;
@@ -70,6 +75,15 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   });
   const [databaseExists, setDatabaseExists] = useState(false);
   const [isBackgroundDownloading, setIsBackgroundDownloading] = useState(false);
+  const [parakeetError, setParakeetError] = useState<string | null>(null);
+  // Synchronous guard against double starts (state reads are stale within one tick)
+  const startedRef = useRef(false);
+
+  // A duplicate start emits "already in progress" while the first download keeps running
+  const reportParakeetError = (message: string) => {
+    if (message.includes('already in progress')) return;
+    setParakeetError(message);
+  };
 
   // Permissions state
   const [permissions, setPermissions] = useState<OnboardingPermissions>({
@@ -78,6 +92,19 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     screenRecording: 'not_determined',
   });
   const [permissionsSkipped, setPermissionsSkipped] = useState(false);
+
+  const [isMac, setIsMac] = useState(false);
+
+  useEffect(() => {
+    import('@tauri-apps/plugin-os')
+      .then(({ platform }) => setIsMac(platform() === 'macos'))
+      .catch(() => setIsMac(navigator.userAgent.includes('Mac')));
+  }, []);
+
+  const savePreferences = useCallback(async (patch: Partial<RecordingPreferences>) => {
+    const current = await invoke<RecordingPreferences>('get_recording_preferences');
+    await invoke('set_recording_preferences', { preferences: { ...current, ...patch } });
+  }, []);
 
   const saveTimeoutRef = useRef<NodeJS.Timeout>();
 
@@ -176,6 +203,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         if (modelName !== PARAKEET_MODEL) return;
 
         if (status === 'cancelled') {
+          startedRef.current = false;
           setIsBackgroundDownloading(false);
           setParakeetDownloaded(false);
           setParakeetProgress(0);
@@ -188,6 +216,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
           return;
         }
 
+        setParakeetError(null);
         setParakeetProgress(progress);
         setParakeetProgressInfo({
           percent: progress,
@@ -207,6 +236,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         const { modelName } = event.payload;
         if (modelName === PARAKEET_MODEL) {
           setParakeetDownloaded(true);
+          setParakeetError(null);
           setParakeetProgress(100);
         }
       }
@@ -218,6 +248,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         const { modelName } = event.payload;
         if (modelName === PARAKEET_MODEL) {
           console.error('Parakeet download error:', event.payload.error);
+          reportParakeetError(String(event.payload.error));
         }
       }
     );
@@ -286,14 +317,11 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     }
 
     // Determine the correct step based on verified status
-    // New simplified flow: Step 1: Welcome, Step 2: Setup Overview, Step 3: Download Progress, Step 4: Permissions (macOS)
+    // Six-step flow: 1 Welcome, 2 Folder, 3 Download, 4 Permissions (macOS), 5 Call detection, 6 Claude Code
     let currentStep = savedStatus.current_step;
     let completed = savedStatus.completed;
 
-    // Clamp step to new max (4)
-    if (currentStep > 4) {
-      currentStep = 3; // Go to download progress step
-    }
+    if (currentStep > LAST_STEP) currentStep = LAST_STEP;
 
     // Trust the completed status - don't revert based on model downloads
     // Downloads continue in background; user stays in main app regardless
@@ -316,7 +344,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     try {
       await invoke('save_onboarding_status_cmd', {
         status: {
-          version: '1.0',
+          version: '2.0',
           completed: completed,
           current_step: currentStep,
           model_status: {
@@ -343,7 +371,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         saveTimeoutRef.current = undefined;
       }
 
-      // Rust still takes a summary model name; the summary path is dormant, so send none.
+      // Rust ignores the model argument.
       await invoke('complete_onboarding', {
         model: '',
       });
@@ -366,22 +394,32 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     console.log('[OnboardingContext] Starting background downloads:', { includeParakeet });
 
     try {
-      const shouldStartParakeet = includeParakeet && !parakeetDownloaded;
+      const shouldStartParakeet = includeParakeet && !parakeetDownloaded && !startedRef.current;
 
       if (!shouldStartParakeet) {
         return;
       }
 
+      startedRef.current = true;
       setIsBackgroundDownloading(true);
+      setParakeetError(null);
 
       // Start Parakeet download first (speech recognition - always required)
       if (shouldStartParakeet) {
         console.log('[OnboardingContext] Starting Parakeet download');
         invoke('parakeet_download_model', { modelName: PARAKEET_MODEL })
-          .catch(err => console.error('[OnboardingContext] Parakeet download failed:', err));
+          .catch(err => {
+            console.error('[OnboardingContext] Parakeet download failed:', err);
+            reportParakeetError(String(err));
+          })
+          .finally(() => {
+            startedRef.current = false;
+            setIsBackgroundDownloading(false);
+          });
       }
     } catch (error) {
       console.error('[OnboardingContext] Failed to start background downloads:', error);
+      startedRef.current = false;
       setIsBackgroundDownloading(false);
       throw error;
     }
@@ -395,6 +433,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       
       if (isDownloading) {
         console.log('[OnboardingContext] Detected active background downloads on mount');
+        startedRef.current = true;
         setIsBackgroundDownloading(true);
       }
 
@@ -405,11 +444,18 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
   const retryParakeetDownload = async () => {
     console.log('[OnboardingContext] Retrying Parakeet download');
+    setParakeetError(null);
+    startedRef.current = true;
+    setIsBackgroundDownloading(true);
     try {
       await invoke('parakeet_retry_download', { modelName: PARAKEET_MODEL });
     } catch (error) {
       console.error('[OnboardingContext] Retry failed:', error);
+      reportParakeetError(String(error));
       throw error;
+    } finally {
+      startedRef.current = false;
+      setIsBackgroundDownloading(false);
     }
   };
 
@@ -421,24 +467,23 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   const goToStep = useCallback((step: number) => {
-    setCurrentStep(Math.max(1, Math.min(step, 4)));
+    setCurrentStep(Math.max(1, Math.min(step, LAST_STEP)));
   }, []);
 
+  // Step 4 (Permissions) exists only on macOS.
   const goNext = useCallback(() => {
     setCurrentStep((prev: number) => {
-      const next = prev + 1;
-      // Don't go past step 4
-      return Math.min(next, 4);
+      const next = prev + 1 === 4 && !isMac ? 5 : prev + 1;
+      return Math.min(next, LAST_STEP);
     });
-  }, []);
+  }, [isMac]);
 
   const goPrevious = useCallback(() => {
     setCurrentStep((prev: number) => {
-      const previous = prev - 1;
-      // Don't go below step 1
+      const previous = prev - 1 === 4 && !isMac ? 3 : prev - 1;
       return Math.max(previous, 1);
     });
-  }, []);
+  }, [isMac]);
 
   return (
     <OnboardingContext.Provider
@@ -449,8 +494,11 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         parakeetProgressInfo,
         databaseExists,
         isBackgroundDownloading,
+        parakeetError,
         permissions,
         permissionsSkipped,
+        isMac,
+        savePreferences,
         goToStep,
         goNext,
         goPrevious,

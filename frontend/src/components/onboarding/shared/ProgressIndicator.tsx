@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Lock, Download, CheckCircle2, BrainCircuit } from 'lucide-react';
+import { Check, Lock, Download, CheckCircle2, FolderOpen, Mic, Phone, Terminal } from 'lucide-react';
 
 interface ProgressIndicatorProps {
   current: number;
@@ -7,12 +7,7 @@ interface ProgressIndicatorProps {
   onStepClick?: (step: number) => void;
 }
 
-const stepIcons = [
-  Lock,         // 1. Welcome
-  BrainCircuit, // 2. Setup Overview
-  Download,     // 3. Download Progress
-  // Step 4 (Permissions) doesn't need icon - auto-skipped on non-macOS
-];
+const stepIcons = [Lock, FolderOpen, Download, Mic, Phone, Terminal];
 
 export function ProgressIndicator({ current, total, onStepClick }: ProgressIndicatorProps) {
   const visibleSteps = Array.from({ length: total }, (_, i) => i + 1);

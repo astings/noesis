@@ -5,7 +5,14 @@ import { OnboardingContainer } from '../OnboardingContainer';
 import { useOnboarding } from '@/contexts/OnboardingContext';
 
 export function WelcomeStep() {
-  const { goNext } = useOnboarding();
+  const { goToStep, startBackgroundDownloads } = useOnboarding();
+
+  const handleStart = () => {
+    startBackgroundDownloads({ includeParakeet: true }).catch((e) =>
+      console.error('[WelcomeStep] Failed to start Parakeet download:', e)
+    );
+    goToStep(2);
+  };
 
   const features = [
     {
@@ -21,7 +28,7 @@ export function WelcomeStep() {
   return (
     <OnboardingContainer
       title="Welcome to Noesis"
-      description="Record. Transcribe. All on your device."
+      description="Records your calls and writes transcripts into project folders that Claude can read."
       step={1}
       hideProgress={true}
     >
@@ -49,12 +56,22 @@ export function WelcomeStep() {
         {/* CTA Section */}
         <div className="w-full max-w-xs space-y-3">
           <Button
-            onClick={goNext}
+            onClick={handleStart}
             className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground"
           >
             Get Started
           </Button>
           <p className="text-xs text-center text-muted-foreground">Takes less than 3 minutes</p>
+          <div className="text-center">
+            <a
+              href="https://github.com/astings/noesis/issues"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-muted-foreground hover:underline"
+            >
+              Report issues on GitHub
+            </a>
+          </div>
         </div>
       </div>
     </OnboardingContainer>

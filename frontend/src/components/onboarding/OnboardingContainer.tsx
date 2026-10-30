@@ -10,7 +10,6 @@ export function OnboardingContainer({
   description,
   children,
   step,
-  totalSteps = 5,
   stepOffset = 0,
   hideProgress = false,
   className,
@@ -20,7 +19,12 @@ export function OnboardingContainer({
   canGoNext = true,
   canGoPrevious = true,
 }: OnboardingContainerProps) {
-  const { goToStep, goPrevious, goNext } = useOnboarding();
+  const { goToStep, goPrevious, goNext, isMac } = useOnboarding();
+
+  // Real steps are 1..6; off macOS step 4 does not exist, so later steps show one lower.
+  const total = isMac ? 6 : 5;
+  const shown = step && !isMac && step > 4 ? step - 1 : step;
+  const toReal = (s: number) => (!isMac && s >= 4 ? s + 1 : s);
 
   const handlePrevious = () => {
     if (onPrevious) {
@@ -39,7 +43,7 @@ export function OnboardingContainer({
   };
 
   const handleStepClick = (s: number) => {
-    goToStep(s + stepOffset);
+    goToStep(toReal(s) + stepOffset);
   };
 
   return (
@@ -53,10 +57,10 @@ export function OnboardingContainer({
               <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 flex justify-between pointer-events-none">
                 <button
                   onClick={handlePrevious}
-                  disabled={!canGoPrevious || step === 1}
+                  disabled={!canGoPrevious || shown === 1}
                   className={cn(
                     'pointer-events-auto w-8 h-8 rounded-full bg-background border border-border shadow-sm flex items-center justify-center transition-all duration-200',
-                    canGoPrevious && step !== 1
+                    canGoPrevious && shown !== 1
                       ? 'hover:bg-card hover:shadow-md hover:scale-110 text-foreground'
                       : 'opacity-0 cursor-not-allowed'
                   )}
@@ -66,10 +70,10 @@ export function OnboardingContainer({
 
                 <button
                   onClick={handleNext}
-                  disabled={!canGoNext || step === totalSteps}
+                  disabled={!canGoNext || shown === total}
                   className={cn(
                     'pointer-events-auto w-8 h-8 rounded-full bg-background border border-border shadow-sm flex items-center justify-center transition-all duration-200',
-                    canGoNext && step !== totalSteps
+                    canGoNext && shown !== total
                       ? 'hover:bg-card hover:shadow-md hover:scale-110 text-foreground'
                       : 'opacity-0 cursor-not-allowed'
                   )}
@@ -80,7 +84,7 @@ export function OnboardingContainer({
             )}
 
             {/* Progress Indicator */}
-            <ProgressIndicator current={step} total={totalSteps} onStepClick={handleStepClick} />
+            <ProgressIndicator current={shown!} total={total} onStepClick={handleStepClick} />
           </div>
         )}
 
