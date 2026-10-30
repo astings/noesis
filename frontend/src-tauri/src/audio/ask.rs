@@ -9,6 +9,7 @@ use tauri::{AppHandle, Manager, Runtime};
 
 pub const TOKEN_BUDGET: usize = 24_000;
 pub const TIMEOUT_SECS: u64 = 90;
+pub const TIMEOUT_MSG: &str = "The model took too long.";
 pub const SYSTEM_PROMPT: &str = "You answer questions about a meeting using only the transcript below. \
 Quote or closely paraphrase the transcript; do not invent details. If the transcript does not cover \
 the question, say so in one sentence. Speaker names are approximate. Answer in the language of the \
@@ -200,7 +201,7 @@ async fn ask_inner<R: Runtime>(
     timer.abort();
     let completion = match result {
         Ok(c) => c,
-        Err(_) if token.is_cancelled() => return Err("The model took too long.".to_string()),
+        Err(_) if token.is_cancelled() => return Err(TIMEOUT_MSG.to_string()),
         Err(e) => return Err(e),
     };
     Ok(AskAnswer { answer: completion.content.trim().to_string(), from_seconds, to_seconds, segments: count })
@@ -209,6 +210,12 @@ async fn ask_inner<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ui_hint_prefixes_match_the_rust_messages() {
+        assert!(crate::summary::llm_config::NO_SUMMARY_MODEL.starts_with("No summary model"));
+        assert!(TIMEOUT_MSG.starts_with("The model took too long"));
+    }
 
     fn seg(start: f64, end: f64, speaker: Option<&str>, text: &str) -> AskSegment {
         AskSegment { start, end, speaker: speaker.map(String::from), text: text.to_string() }
