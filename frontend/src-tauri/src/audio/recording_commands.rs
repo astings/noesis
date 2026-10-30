@@ -1332,7 +1332,22 @@ pub async fn set_recording_project<R: Runtime>(app: AppHandle<R>, project: Strin
     *PENDING_PROJECT.lock().unwrap() = pending.map(|p| (meeting_id, p));
     let root = crate::audio::recording_preferences::recordings_root(&app);
     crate::set_recording_language(super::project_settings::resolve_language(&root, &normalized));
+    let _ = app.emit("recording-project-changed", normalized.clone());
     Ok(normalized)
+}
+
+/// The live recording's project: the pending change if any, else the start project, else Inbox.
+#[tauri::command]
+pub async fn get_recording_project() -> Result<String, String> {
+    let guard = RECORDING_MANAGER.lock().unwrap();
+    let Some(manager) = guard.as_ref() else { return Err("No recording in progress.".to_string()) };
+    let id = manager.get_meeting_id();
+    if let Some((mid, p)) = PENDING_PROJECT.lock().unwrap().as_ref() {
+        if Some(mid) == id.as_ref() {
+            return Ok(p.clone());
+        }
+    }
+    Ok(manager.get_project().unwrap_or_else(|| super::library::INBOX.to_string()))
 }
 
 /// The pending project for `meeting_id`, consumed. None for any other meeting.

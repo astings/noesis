@@ -330,6 +330,7 @@ pub async fn set_recording_preferences<R: Runtime>(
         .await
         .map_err(|e| format!("Failed to save recording preferences: {}", e))?;
     crate::tray::apply_tray_visibility(&app, preferences.show_tray_icon);
+    crate::overlay::sync(&app, preferences.show_call_overlay);
     Ok(())
 }
 

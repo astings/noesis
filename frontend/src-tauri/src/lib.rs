@@ -57,6 +57,7 @@ pub mod parakeet_engine;
 pub mod state;
 pub mod summary;
 pub mod tray;
+pub mod overlay;
 pub mod utils;
 pub mod whisper_engine;
 
@@ -573,6 +574,7 @@ pub fn run() {
                     tray::apply_tray_visibility(&app_for_tray, p.show_tray_icon);
                 }
             });
+            overlay::init(_app.handle());
 
             // Initialize notification system with proper defaults
             log::info!("Initializing notification system...");
@@ -721,6 +723,9 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            overlay::overlay_resize,
+            overlay::overlay_stop_recording,
+            audio::recording_commands::get_recording_project,
             calendar_lookup::calendar_request_access,
             start_recording,
             stop_recording,
