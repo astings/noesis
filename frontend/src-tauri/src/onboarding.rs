@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_store::StoreExt;
-use log::{info, warn, error};
+use log::{info, warn};
 use anyhow::Result;
 
 use crate::state::AppState;
@@ -167,40 +167,38 @@ pub async fn reset_onboarding_status_cmd<R: Runtime>(
         .map_err(|e| format!("Failed to reset onboarding status: {}", e))
 }
 
+/// Onboarding installs Parakeet as the live model only on a fresh setup; a re-run keeps the user's choice.
+fn should_save_default_transcript(existing_provider: Option<&str>) -> bool {
+    existing_provider.is_none()
+}
+
 #[tauri::command]
 pub async fn complete_onboarding<R: Runtime>(
     app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     model: String,
 ) -> Result<(), String> {
-    info!("Completing onboarding with builtin-ai model: {}", model);
+    info!("Completing onboarding");
 
-    // Step 1: Save model configuration to SQLite database FIRST
+    // The summary model is not touched: titles/tags and the Ask fallback read it.
+    let _ = model;
     let pool = state.db_manager.pool();
 
-    // Onboarding always uses builtin-ai (local LLM)
-    if let Err(e) = SettingsRepository::save_model_config(
-        pool,
-        "builtin-ai",
-        &model,
-        "large-v3",
-        None,
-    ).await {
-        error!("Failed to save builtin-ai model config: {}", e);
-        return Err(format!("Failed to save builtin-ai model config: {}", e));
+    let existing = SettingsRepository::get_transcript_config(pool)
+        .await
+        .map_err(|e| format!("Failed to read transcription config: {}", e))?;
+    if should_save_default_transcript(existing.as_ref().map(|s| s.provider.as_str())) {
+        SettingsRepository::save_transcript_config(
+            pool,
+            "parakeet",
+            crate::config::DEFAULT_PARAKEET_MODEL,
+        )
+        .await
+        .map_err(|e| format!("Failed to save transcription model config: {}", e))?;
+        info!("Saved transcription model config: provider=parakeet, model={}", crate::config::DEFAULT_PARAKEET_MODEL);
+    } else {
+        info!("Transcription config already set, keeping it");
     }
-    info!("Saved builtin-ai model config: model={}", model);
-
-    // Save transcription model config (parakeet provider) - always parakeet
-    if let Err(e) = SettingsRepository::save_transcript_config(
-        pool,
-        "parakeet",
-        crate::config::DEFAULT_PARAKEET_MODEL,
-    ).await {
-        error!("Failed to save transcription model config: {}", e);
-        return Err(format!("Failed to save transcription model config: {}", e));
-    }
-    info!("Saved transcription model config: provider=parakeet, model={}", crate::config::DEFAULT_PARAKEET_MODEL);
 
     // Step 2: Only NOW mark onboarding as complete (after DB operations succeed)
     let mut status = load_onboarding_status(&app)
@@ -210,20 +208,24 @@ pub async fn complete_onboarding<R: Runtime>(
     status.completed = true;
     status.current_step = 4; // Max step (4 on macOS with permissions, 3 on other platforms)
     status.model_status.parakeet = "downloaded".to_string();
-    status.model_status.summary = "downloaded".to_string();
-    status.model_status.selected_summary_model = Some(model.clone());
 
     save_onboarding_status(&app, &status)
         .await
         .map_err(|e| format!("Failed to save completed onboarding status: {}", e))?;
 
-    info!("Onboarding completed successfully with model: {}", model);
+    info!("Onboarding completed");
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_transcript_saved_only_when_none_exists() {
+        assert!(should_save_default_transcript(None));
+        assert!(!should_save_default_transcript(Some("whisper")));
+    }
 
     #[test]
     fn onboarding_status_deserializes_without_selected_summary_model() {
