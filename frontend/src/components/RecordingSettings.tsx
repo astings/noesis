@@ -57,7 +57,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     enhance_language: null,
     auto_stop_on_call_end: true,
     show_tray_icon: true,
-    show_call_overlay: false,
+    show_call_overlay: true,
     auto_start_on_call: false,
     calendar_meeting_name: false,
     owner_name: 'Me',

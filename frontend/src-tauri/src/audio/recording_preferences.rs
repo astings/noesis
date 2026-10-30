@@ -46,7 +46,7 @@ pub struct RecordingPreferences {
     #[serde(default = "default_true")]
     pub show_tray_icon: bool,
     /// Show the always-on-top call overlay while recording (spec 2026-10-30 tray-toggle-and-call-overlay).
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub show_call_overlay: bool,
     /// Name an auto-started recording after the calendar event in progress.
     #[serde(default)]
@@ -154,7 +154,7 @@ impl Default for RecordingPreferences {
             auto_stop_on_call_end: true,
             auto_start_on_call: false,
             show_tray_icon: true,
-            show_call_overlay: false,
+            show_call_overlay: true,
             calendar_meeting_name: false,
             owner_name: default_owner_name(),
             auto_title_tags: default_true(),
@@ -582,13 +582,13 @@ mod tests {
     }
 
     #[test]
-    fn tray_icon_defaults_on_and_overlay_off() {
+    fn tray_icon_and_overlay_default_on() {
         let old = r#"{"save_folder":"/tmp/x","auto_save":true,"file_format":"mp4"}"#;
         let p: RecordingPreferences = serde_json::from_str(old).unwrap();
         assert!(p.show_tray_icon);
-        assert!(!p.show_call_overlay);
+        assert!(p.show_call_overlay);
         let d = RecordingPreferences::default();
-        assert!(d.show_tray_icon && !d.show_call_overlay);
+        assert!(d.show_tray_icon && d.show_call_overlay);
     }
 
     #[test]

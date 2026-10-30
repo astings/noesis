@@ -14,7 +14,7 @@ Date: 2026-10-30. Branch `enhance/call-overlay`.
 ## 2. Call overlay
 
 ### Preference
-`show_call_overlay: bool`, `#[serde(default)]` (off). Switch "Show call overlay while recording" in Settings, Recordings.
+`show_call_overlay: bool`, `#[serde(default = "default_true")]` (on; changed 2026-10-30 on the owner's request). Switch "Show call overlay while recording" in Settings, Recordings.
 
 ### Window (new module `src-tauri/src/overlay.rs`)
 - `overlay::show(app)` creates (or shows) a `WebviewWindow` labelled `overlay`, URL `/overlay` (static export path `overlay.html` in release, matching how the main window URL resolves), size 380x48, `decorations(false)`, `transparent(true)`, `always_on_top(true)`, `visible_on_all_workspaces(true)`, `skip_taskbar(true)`, `resizable(false)`, `focused(false)`, `shadow(false)`. Default position top-center of the primary monitor.
@@ -39,6 +39,6 @@ Pill, transparent body, rounded dark card:
 Showing the overlay before a recording starts; hotkeys; multiple answers history.
 
 ## 3. Testing
-- Rust unit test: old preferences JSON without the two keys deserializes to `show_tray_icon = true`, `show_call_overlay = false`.
+- Rust unit test: old preferences JSON without the two keys deserializes to both `true`.
 - `cargo check`, `pnpm build` (static export includes `overlay.html`).
 - Manual: toggle the menu bar icon both ways; record with the overlay on: timer, pause, resume, project change reflected on home, ask, stop lands on the meeting page; drag and relaunch keeps position.
