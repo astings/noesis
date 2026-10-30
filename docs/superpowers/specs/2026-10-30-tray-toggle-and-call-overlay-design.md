@@ -19,7 +19,7 @@ Date: 2026-10-30. Branch `enhance/call-overlay`.
 ### Window (new module `src-tauri/src/overlay.rs`)
 - `overlay::show(app)` creates (or shows) a `WebviewWindow` labelled `overlay`, URL `/overlay` (static export path `overlay.html` in release, matching how the main window URL resolves), size 380x48, `decorations(false)`, `transparent(true)`, `always_on_top(true)`, `visible_on_all_workspaces(true)`, `skip_taskbar(true)`, `resizable(false)`, `focused(false)`, `shadow(false)`. Default position top-center of the primary monitor.
 - `overlay::hide(app)` closes it if present.
-- Called from `recording_commands`: after each `recording-started` emit, `overlay::show` when the preference is on; after `recording-stopped`, `overlay::hide` always. Saving preferences with `show_call_overlay` off while recording hides it; turning it on while recording shows it.
+- `overlay::init(app)` at setup registers app-level listeners: `recording-started` shows it when the preference is on, `recording-stopped` hides it. No edits inside `recording_commands`' emit sites. `set_recording_preferences` calls `overlay::sync(app, show_call_overlay)`: off hides it, on shows it when a recording is in progress.
 - `overlay_resize(height)` command: the page asks for 48 (collapsed) or up to 360 (answer open); width stays.
 - Capabilities: add `overlay` to the windows list of the capability that grants `core:default`, events, and window drag (`core:window:allow-start-dragging`, `core:window:allow-set-position`).
 
