@@ -2,6 +2,7 @@
 import { motion } from 'framer-motion';
 import { TranscriptPanel } from '@/components/MeetingDetails/TranscriptPanel';
 import { MeetingDetailsSplitView } from '@/components/MeetingDetails/MeetingDetailsSplitView';
+import { AskPanel } from '@/components/AskPanel'; // live ask spec 3.2
 
 // Custom hooks
 import { useMeetingData } from '@/hooks/meeting-details/useMeetingData';
@@ -68,6 +69,7 @@ export default function PageContent({
           }
         />
       </div>
+      <AskPanel meetingId={meeting.id} hasSegments={(totalCount ?? meetingData.transcripts.length) > 0} />
     </motion.div>
   );
 }
