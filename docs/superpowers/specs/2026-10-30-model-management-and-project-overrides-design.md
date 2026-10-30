@@ -248,3 +248,16 @@ check the live text and `transcription.live.language`; run "Enhance with..." and
 - Recording the detected language. Only the requested value is recorded.
 - Exposing `project.json` through the MCP server.
 - Renaming the `*_delete_corrupted_model` commands.
+
+## 8. Follow-ups from the review (2026-10-30)
+
+Implemented on `enhance/project-overrides` (d0603db..0f64001). The whole-branch review found no blocker. Items left open, ranked:
+
+- `stop_recording` no longer clears the language override on its "failed to stop audio streams" early return nor in its "no transcription task" branch. Harmless, because both record-start paths overwrite the override; a stale value only reaches the ad hoc `whisper_transcribe_audio` command between a failed stop and the next start. Two-line fix.
+- A model used only by a project's `project.json` can be deleted from Settings; the project's next enhance then fails with a missing model and the Settings row shows "(not downloaded)". Either let `resolve_enhance` fall through when the project's model is not downloaded, or name the projects in the delete confirmation.
+- `project.json` reads: one wrongly typed key discards the whole file without a warning; a write over a corrupt file loses its unknown keys; `get_project_settings` does not validate the project name; no lock around the read-modify-write; `language` values are not validated.
+- Per-project table: a hand-edited `language` outside the known list leaves the select without a matching option (the model column has a guard); the project list loads once per Settings open; `save()` reads the row from the render closure.
+- "Enhance with...": no cancelled flag on the two async loads, so a reopen can briefly show the previous meeting's hint.
+- No unit test for the engine delete guards (engines need a models directory) nor for `transcription.live.language` in `metadata.json`; the manual pass covers both.
+- `transcription.live.language` keeps the value at record start; a live project change updates the override only. By design (3.3), noted so it is not read as a bug.
+- `pnpm lint` (`next lint`) has no ESLint config in this repo and prompts interactively; `pnpm exec tsc --noEmit` and `pnpm test` are the frontend gates.
