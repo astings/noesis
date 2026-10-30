@@ -918,6 +918,7 @@ pub fn run() {
             audio::claude_mcp::get_mcp_register_command,
             audio::claude_mcp::register_mcp_with_claude,
             audio::library::assign_meeting,
+            audio::ask::ask_meeting, // live meeting ask (spec 2026-10-29)
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

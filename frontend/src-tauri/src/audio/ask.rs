@@ -3,6 +3,9 @@
 //! Tauri command below them. Nothing is written to disk and nothing goes through the job queue.
 
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+use tauri::{AppHandle, Manager, Runtime};
 
 pub const TOKEN_BUDGET: usize = 24_000;
 pub const TIMEOUT_SECS: u64 = 90;
@@ -89,6 +92,118 @@ pub fn fit_budget(lines: &[(f64, String)], budget_tokens: usize) -> (String, Opt
         }
         skip += 1;
     }
+}
+
+static BUSY: AtomicBool = AtomicBool::new(false);
+
+/// Clears the busy flag when the ask finishes, however it finishes.
+struct BusyGuard;
+impl Drop for BusyGuard {
+    fn drop(&mut self) {
+        BUSY.store(false, Ordering::SeqCst);
+    }
+}
+
+/// Answer `question` from the live recording (`meeting_id` None) or a finished meeting.
+/// `last_minutes` restricts the context to the newest minutes of audio time.
+#[tauri::command]
+pub async fn ask_meeting<R: Runtime>(
+    app: AppHandle<R>,
+    question: String,
+    meeting_id: Option<String>,
+    last_minutes: Option<u32>,
+) -> Result<AskAnswer, String> {
+    if BUSY.swap(true, Ordering::SeqCst) {
+        return Err("An answer is already being generated.".to_string());
+    }
+    let _guard = BusyGuard;
+    ask_inner(&app, question, meeting_id, last_minutes).await
+}
+
+async fn ask_inner<R: Runtime>(
+    app: &AppHandle<R>,
+    question: String,
+    meeting_id: Option<String>,
+    last_minutes: Option<u32>,
+) -> Result<AskAnswer, String> {
+    let question = question.trim().to_string();
+    if question.is_empty() {
+        return Err("Type a question first.".to_string());
+    }
+    let state = app.state::<crate::state::AppState>();
+    let pool = state.db_manager.pool();
+
+    let segments: Vec<AskSegment> = match meeting_id.as_deref() {
+        // the live recording: the meeting has no SQLite row until stop
+        None => crate::audio::recording_commands::get_transcript_history()
+            .await?
+            .into_iter()
+            .map(|s| AskSegment { start: s.audio_start_time, end: s.audio_end_time, speaker: s.speaker, text: s.text })
+            .collect(),
+        Some(id) => {
+            let rows: Vec<(String, Option<f64>, Option<f64>, Option<String>)> = sqlx::query_as(
+                "SELECT transcript, audio_start_time, audio_end_time, speaker FROM transcripts WHERE meeting_id = ? ORDER BY audio_start_time, timestamp",
+            )
+            .bind(id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("Database error: {}", e))?;
+            rows.into_iter()
+                .map(|(text, start, end, speaker)| {
+                    let start = start.unwrap_or(0.0);
+                    AskSegment { start, end: end.unwrap_or(start), speaker, text }
+                })
+                .collect()
+        }
+    };
+
+    let prefs = super::recording_preferences::load_recording_preferences(app)
+        .await
+        .map_err(|e| format!("Failed to load preferences: {}", e))?;
+    let kept = window(&segments, last_minutes);
+    let lines = render_lines(&kept, &prefs.owner_name);
+    let (text, from, count) = fit_budget(&lines, TOKEN_BUDGET);
+    let Some(from_seconds) = from else { return Err("No transcript yet.".to_string()) };
+    let to_seconds = kept.iter().map(|s| s.end).fold(0.0_f64, f64::max);
+
+    let cfg = match resolve_model(&prefs.ask_provider, &prefs.ask_model) {
+        ModelChoice::Summary => crate::summary::llm_config::load(pool).await?,
+        ModelChoice::Explicit { provider, model } => crate::summary::llm_config::load_for(pool, &provider, &model).await?,
+    };
+    let app_data_dir = app.path().app_data_dir().ok();
+
+    // The providers race the token (HTTP) or drop the sidecar request when it fires, so the
+    // timeout is a cancel, not an abandoned future.
+    let token = tokio_util::sync::CancellationToken::new();
+    let t = token.clone();
+    let timer = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(TIMEOUT_SECS)).await;
+        t.cancel();
+    });
+    let user_prompt = format!("{}\n\nQuestion: {}", text, question);
+    let result = crate::summary::llm_client::generate_summary(
+        &reqwest::Client::new(),
+        &cfg.provider,
+        &cfg.model,
+        &cfg.api_key,
+        SYSTEM_PROMPT,
+        &user_prompt,
+        cfg.ollama_endpoint.as_deref(),
+        cfg.custom_openai_endpoint.as_deref(),
+        cfg.max_tokens,
+        cfg.temperature,
+        cfg.top_p,
+        app_data_dir.as_ref(),
+        Some(&token),
+    )
+    .await;
+    timer.abort();
+    let completion = match result {
+        Ok(c) => c,
+        Err(_) if token.is_cancelled() => return Err("The model took too long.".to_string()),
+        Err(e) => return Err(e),
+    };
+    Ok(AskAnswer { answer: completion.content.trim().to_string(), from_seconds, to_seconds, segments: count })
 }
 
 #[cfg(test)]
