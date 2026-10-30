@@ -34,6 +34,7 @@ export default function OverlayPage() {
   const [answer, setAnswer] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const answerOpen = useRef(false);
+  const askId = useRef(0); // bumped on each ask and on close, so a stale result is ignored
 
   const fail = (e: unknown) => { answerOpen.current = true; setError(String(e)); resize(ASK_HEIGHT); };
 
@@ -73,6 +74,7 @@ export default function OverlayPage() {
   }, [paused]);
 
   const closeAnswer = useCallback(() => {
+    askId.current++;
     answerOpen.current = false;
     setAnswer(null);
     setError(null);
@@ -89,6 +91,7 @@ export default function OverlayPage() {
   const ask = async () => {
     const text = question.trim();
     if (!text || loading) return;
+    const id = ++askId.current;
     answerOpen.current = true;
     setLoading(true);
     setAnswer(null);
@@ -96,11 +99,11 @@ export default function OverlayPage() {
     resize(ASK_HEIGHT);
     try {
       const r = await invoke<AskAnswer>('ask_meeting', { question: text, meetingId: null, lastMinutes: null });
-      setAnswer(r.answer);
+      if (id === askId.current) setAnswer(r.answer);
     } catch (e) {
-      fail(e);
+      if (id === askId.current) fail(e);
     } finally {
-      setLoading(false);
+      if (id === askId.current) setLoading(false);
     }
   };
 
