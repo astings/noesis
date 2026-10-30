@@ -31,7 +31,9 @@ interface DownloadState {
 
 export function DownloadProgressStep() {
   const {
-    goNext,
+    goToStep,
+    isMac,
+    parakeetError,
     parakeetDownloaded,
     setParakeetDownloaded,
     startBackgroundDownloads,
@@ -41,6 +43,7 @@ export function DownloadProgressStep() {
   const [autoEnhance, setAutoEnhance] = useState(true);
   const [enhanceModel, setEnhanceModel] = useState<string>('large-v3');
   const [saveError, setSaveError] = useState('');
+  const [continuing, setContinuing] = useState(false);
 
   useEffect(() => {
     invoke<RecordingPreferences>('get_recording_preferences')
@@ -63,7 +66,8 @@ export function DownloadProgressStep() {
   };
 
   const [parakeetState, setParakeetState] = useState<DownloadState>({
-    status: parakeetDownloaded ? 'completed' : 'waiting',
+    status: parakeetDownloaded ? 'completed' : parakeetError ? 'error' : 'waiting',
+    error: parakeetError ?? undefined,
     progress: parakeetDownloaded ? 100 : 0,
     downloadedMb: 0,
     totalMb: 670,
@@ -121,7 +125,7 @@ export function DownloadProgressStep() {
     if (parakeetDownloadStartedRef.current) return;
     parakeetDownloadStartedRef.current = true;
 
-    if (!parakeetDownloaded) {
+    if (!parakeetDownloaded && !parakeetError) {
       setParakeetState((prev) => ({ ...prev, status: 'downloading' }));
     }
 
@@ -201,6 +205,16 @@ export function DownloadProgressStep() {
   }, []);
 
   const handleContinue = async () => {
+    if (continuing) return;
+    setContinuing(true);
+    try {
+      await continueFlow();
+    } finally {
+      setContinuing(false);
+    }
+  };
+
+  const continueFlow = async () => {
     // Verify actual model availability (catches state drift)
     try {
       await invoke('parakeet_init');
@@ -241,7 +255,7 @@ export function DownloadProgressStep() {
     if (autoEnhance) {
       startEnhanceDownload(enhanceModel).catch((e) => console.error('[TranscriptionStep] ', e));
     }
-    goNext();
+    goToStep(isMac ? 4 : 5);
   };
 
   const renderDownloadCard = (
@@ -381,6 +395,7 @@ export function DownloadProgressStep() {
         <div className="w-full max-w-xs space-y-2">
           <Button
             onClick={handleContinue}
+            disabled={continuing}
             className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground"
           >
             Continue

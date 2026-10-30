@@ -102,6 +102,8 @@ export function PermissionsStep() {
       title="Grant Permissions"
       description="Noesis needs access to your microphone and system audio to record meetings"
       step={4}
+      showNavigation
+      canGoNext={false}
     >
       <div className="max-w-lg mx-auto space-y-6">
         {/* Permission Rows */}

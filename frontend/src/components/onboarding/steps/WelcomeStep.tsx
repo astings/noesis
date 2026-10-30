@@ -5,13 +5,13 @@ import { OnboardingContainer } from '../OnboardingContainer';
 import { useOnboarding } from '@/contexts/OnboardingContext';
 
 export function WelcomeStep() {
-  const { goNext, startBackgroundDownloads } = useOnboarding();
+  const { goToStep, startBackgroundDownloads } = useOnboarding();
 
   const handleStart = () => {
     startBackgroundDownloads({ includeParakeet: true }).catch((e) =>
       console.error('[WelcomeStep] Failed to start Parakeet download:', e)
     );
-    goNext();
+    goToStep(2);
   };
 
   const features = [

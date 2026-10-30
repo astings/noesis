@@ -200,13 +200,13 @@ pub async fn complete_onboarding<R: Runtime>(
         info!("Transcription config already set, keeping it");
     }
 
-    // Step 2: Only NOW mark onboarding as complete (after DB operations succeed)
+    // Only NOW mark onboarding as complete (after DB operations succeed)
     let mut status = load_onboarding_status(&app)
         .await
         .map_err(|e| format!("Failed to load onboarding status: {}", e))?;
 
     status.completed = true;
-    status.current_step = 4; // Max step (4 on macOS with permissions, 3 on other platforms)
+    status.current_step = 6; // Last step of the six-screen flow
     status.model_status.parakeet = "downloaded".to_string();
 
     save_onboarding_status(&app, &status)

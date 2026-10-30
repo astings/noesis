@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { OnboardingContainer } from '../OnboardingContainer';
@@ -6,9 +6,21 @@ import { useOnboarding } from '@/contexts/OnboardingContext';
 import { McpServerSettings } from '@/components/McpServerSettings';
 
 export function ClaudeCodeStep() {
-  const { completeOnboarding, parakeetDownloaded, parakeetProgress } = useOnboarding();
+  const {
+    completeOnboarding,
+    parakeetDownloaded,
+    parakeetProgress,
+    parakeetError,
+    retryParakeetDownload,
+    startBackgroundDownloads,
+  } = useOnboarding();
   const [finishing, setFinishing] = useState(false);
   const [error, setError] = useState('');
+
+  // Resume after a restart on steps 4-6 (no-op when downloaded or already running)
+  useEffect(() => {
+    startBackgroundDownloads({ includeParakeet: true }).catch(() => {});
+  }, []);
 
   const handleFinish = async () => {
     setFinishing(true);
@@ -39,7 +51,15 @@ export function ClaudeCodeStep() {
           <Button onClick={handleFinish} disabled={!parakeetDownloaded || finishing} className="w-full h-11">
             {finishing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Finish'}
           </Button>
-          {!parakeetDownloaded && (
+          {!parakeetDownloaded && parakeetError && (
+            <div className="space-y-2 text-center">
+              <p className="text-xs text-destructive">{parakeetError}</p>
+              <Button variant="outline" size="sm" onClick={() => retryParakeetDownload().catch(() => {})}>
+                Try again
+              </Button>
+            </div>
+          )}
+          {!parakeetDownloaded && !parakeetError && (
             <p className="text-xs text-center text-muted-foreground">
               Downloading the live transcription engine… {Math.round(parakeetProgress)}%
             </p>

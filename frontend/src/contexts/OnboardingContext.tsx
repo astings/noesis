@@ -36,6 +36,7 @@ interface OnboardingContextType {
   parakeetProgressInfo: ParakeetProgressInfo;
   databaseExists: boolean;
   isBackgroundDownloading: boolean;
+  parakeetError: string | null;
   // Permissions
   permissions: OnboardingPermissions;
   permissionsSkipped: boolean;
@@ -74,6 +75,15 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   });
   const [databaseExists, setDatabaseExists] = useState(false);
   const [isBackgroundDownloading, setIsBackgroundDownloading] = useState(false);
+  const [parakeetError, setParakeetError] = useState<string | null>(null);
+  // Synchronous guard against double starts (state reads are stale within one tick)
+  const startedRef = useRef(false);
+
+  // A duplicate start emits "already in progress" while the first download keeps running
+  const reportParakeetError = (message: string) => {
+    if (message.includes('already in progress')) return;
+    setParakeetError(message);
+  };
 
   // Permissions state
   const [permissions, setPermissions] = useState<OnboardingPermissions>({
@@ -193,6 +203,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         if (modelName !== PARAKEET_MODEL) return;
 
         if (status === 'cancelled') {
+          startedRef.current = false;
           setIsBackgroundDownloading(false);
           setParakeetDownloaded(false);
           setParakeetProgress(0);
@@ -205,6 +216,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
           return;
         }
 
+        setParakeetError(null);
         setParakeetProgress(progress);
         setParakeetProgressInfo({
           percent: progress,
@@ -224,6 +236,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         const { modelName } = event.payload;
         if (modelName === PARAKEET_MODEL) {
           setParakeetDownloaded(true);
+          setParakeetError(null);
           setParakeetProgress(100);
         }
       }
@@ -235,6 +248,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         const { modelName } = event.payload;
         if (modelName === PARAKEET_MODEL) {
           console.error('Parakeet download error:', event.payload.error);
+          reportParakeetError(String(event.payload.error));
         }
       }
     );
@@ -380,22 +394,32 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     console.log('[OnboardingContext] Starting background downloads:', { includeParakeet });
 
     try {
-      const shouldStartParakeet = includeParakeet && !parakeetDownloaded && !isBackgroundDownloading;
+      const shouldStartParakeet = includeParakeet && !parakeetDownloaded && !startedRef.current;
 
       if (!shouldStartParakeet) {
         return;
       }
 
+      startedRef.current = true;
       setIsBackgroundDownloading(true);
+      setParakeetError(null);
 
       // Start Parakeet download first (speech recognition - always required)
       if (shouldStartParakeet) {
         console.log('[OnboardingContext] Starting Parakeet download');
         invoke('parakeet_download_model', { modelName: PARAKEET_MODEL })
-          .catch(err => console.error('[OnboardingContext] Parakeet download failed:', err));
+          .catch(err => {
+            console.error('[OnboardingContext] Parakeet download failed:', err);
+            reportParakeetError(String(err));
+          })
+          .finally(() => {
+            startedRef.current = false;
+            setIsBackgroundDownloading(false);
+          });
       }
     } catch (error) {
       console.error('[OnboardingContext] Failed to start background downloads:', error);
+      startedRef.current = false;
       setIsBackgroundDownloading(false);
       throw error;
     }
@@ -409,6 +433,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       
       if (isDownloading) {
         console.log('[OnboardingContext] Detected active background downloads on mount');
+        startedRef.current = true;
         setIsBackgroundDownloading(true);
       }
 
@@ -419,11 +444,18 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
   const retryParakeetDownload = async () => {
     console.log('[OnboardingContext] Retrying Parakeet download');
+    setParakeetError(null);
+    startedRef.current = true;
+    setIsBackgroundDownloading(true);
     try {
       await invoke('parakeet_retry_download', { modelName: PARAKEET_MODEL });
     } catch (error) {
       console.error('[OnboardingContext] Retry failed:', error);
+      reportParakeetError(String(error));
       throw error;
+    } finally {
+      startedRef.current = false;
+      setIsBackgroundDownloading(false);
     }
   };
 
@@ -462,6 +494,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         parakeetProgressInfo,
         databaseExists,
         isBackgroundDownloading,
+        parakeetError,
         permissions,
         permissionsSkipped,
         isMac,
