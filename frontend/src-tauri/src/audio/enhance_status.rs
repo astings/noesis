@@ -17,13 +17,16 @@ pub struct EnhanceStatusEntry {
     pub status: String,
 }
 
-/// Merge `transcription.enhanced = {provider, model, status, at, error}` into
+/// Merge `transcription.enhanced = {provider, model, language, status, at, error}` into
 /// metadata.json, creating the file when it is missing. Every other key is kept.
+/// `language` is the requested value (`auto-translate`, a code) or None for auto
+/// (spec 2026-10-30 section 3.4).
 /// Writes go through a temp file and a rename so a crash never leaves half a file.
 pub fn write_enhance_status(
     folder: &Path,
     provider: &str,
     model: &str,
+    language: Option<&str>,
     status: &str,
     error: Option<&str>,
 ) -> Result<()> {
@@ -39,6 +42,7 @@ pub fn write_enhance_status(
             serde_json::json!({
                 "provider": provider,
                 "model": model,
+                "language": language,
                 "status": status,
                 "at": chrono::Utc::now().to_rfc3339(),
                 "error": error,
@@ -83,7 +87,8 @@ pub fn mark_interrupted(root: &Path) -> usize {
             let enhanced = &meta["transcription"]["enhanced"];
             let provider = enhanced["provider"].as_str().unwrap_or("whisper");
             let model = enhanced["model"].as_str().unwrap_or("configured");
-            match write_enhance_status(&folder, provider, model, STATUS_FAILED, Some(INTERRUPTED)) {
+            let language = enhanced["language"].as_str();
+            match write_enhance_status(&folder, provider, model, language, STATUS_FAILED, Some(INTERRUPTED)) {
                 Ok(()) => {
                     log::info!("enhance status: marked interrupted job failed in {}", folder.display());
                     repaired += 1;
@@ -117,6 +122,22 @@ pub async fn list_enhance_statuses(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn language_is_written_when_given_and_kept_by_mark_interrupted() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("proj").join("m");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        write_enhance_status(&dir, "whisper", "large-v3", Some("auto-translate"), STATUS_RUNNING, None).unwrap();
+        assert_eq!(read_root(&dir)["transcription"]["enhanced"]["language"], "auto-translate");
+
+        assert_eq!(mark_interrupted(root.path()), 1);
+        assert_eq!(read_root(&dir)["transcription"]["enhanced"]["language"], "auto-translate", "kept like provider and model");
+
+        write_enhance_status(&dir, "whisper", "large-v3", None, STATUS_DONE, None).unwrap();
+        assert!(read_root(&dir)["transcription"]["enhanced"]["language"].is_null());
+    }
+
     use super::*;
 
     fn read_root(dir: &Path) -> serde_json::Value {
@@ -132,10 +153,10 @@ mod tests {
         )
         .unwrap();
 
-        write_enhance_status(dir.path(), "whisper", "large-v3", STATUS_QUEUED, None).unwrap();
+        write_enhance_status(dir.path(), "whisper", "large-v3", None, STATUS_QUEUED, None).unwrap();
         assert_eq!(read_enhance_status(dir.path()).as_deref(), Some("queued"));
 
-        write_enhance_status(dir.path(), "whisper", "large-v3", STATUS_FAILED, Some("boom")).unwrap();
+        write_enhance_status(dir.path(), "whisper", "large-v3", None, STATUS_FAILED, Some("boom")).unwrap();
         let root = read_root(dir.path());
         assert_eq!(root["meeting_name"], "Meeting 1");
         assert_eq!(root["status"], "completed");
@@ -150,7 +171,7 @@ mod tests {
     fn missing_metadata_reads_none_and_write_creates_it() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(read_enhance_status(dir.path()), None);
-        write_enhance_status(dir.path(), "whisper", "large-v3", STATUS_RUNNING, None).unwrap();
+        write_enhance_status(dir.path(), "whisper", "large-v3", None, STATUS_RUNNING, None).unwrap();
         assert_eq!(read_enhance_status(dir.path()).as_deref(), Some("running"));
     }
 
