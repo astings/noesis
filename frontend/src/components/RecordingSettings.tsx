@@ -357,6 +357,25 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
 
       <McpServerSettings disabled={saving} />
 
+      <SettingsGroup title="Setup">
+        <SettingRow
+          label="Run setup again"
+          hint="Walks through folder, transcription, permissions, calls and Claude Code. Your recordings stay."
+          control={
+            <Button variant="outline" size="sm" disabled={saving || isRecording} onClick={async () => {
+              try {
+                await invoke('reset_onboarding_status_cmd');
+                window.location.reload();
+              } catch (error) {
+                toast.error('Could not restart setup', { description: String(error) });
+              }
+            }}>
+              Run setup
+            </Button>
+          }
+        />
+      </SettingsGroup>
+
       <SettingsGroup title="Audio files">
         <SettingRow
           label="Delete audio after enhance"
