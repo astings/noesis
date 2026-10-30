@@ -16,6 +16,8 @@ import { MODEL_CONFIGS } from '@/lib/whisper';
 import { getModelDisplayInfo } from '@/lib/parakeet';
 import { LANGUAGES } from '@/lib/languages';
 import type { RecordingPreferences } from '@/components/RecordingSettings';
+import { ProjectOverrides } from '@/components/ProjectOverrides';
+import type { TranscriptionModel } from '@/lib/models';
 
 type Engine = 'whisper' | 'parakeet' | 'builtin';
 type ModelState = { kind: 'missing' } | { kind: 'downloading'; progress: number } | { kind: 'ready' } | { kind: 'broken' };
@@ -301,6 +303,9 @@ export function ModelsSettings() {
   const ask = askDraft ?? { provider: prefs.ask_provider, model: prefs.ask_model, apiKey: '' };
   const askKnown = SUMMARY_PROVIDERS.find((p) => p.value === ask.provider);
   const readyBuiltin = builtinRows.filter((r) => r.state.kind === 'ready');
+  const readyTranscription: TranscriptionModel[] = transcriptionRows
+    .filter((r) => r.state.kind === 'ready' && r.engine !== 'builtin')
+    .map((r) => ({ provider: r.engine as 'whisper' | 'parakeet', model: r.name, label: r.label }));
   // spec 2026-10-30 section 1: a picked model cannot be deleted; pick another one first
   const IN_USE = 'Pick another model first';
   const transcriptionInUse = (r: ModelRow) => {
@@ -366,6 +371,12 @@ export function ModelsSettings() {
             },
           ]}
         />
+        <SettingRow
+          label="Per project"
+          hint="Language applies live and to the enhance run. Live translation needs Whisper as the Live model."
+        >
+          <ProjectOverrides models={readyTranscription} globalLanguage={selectedLanguage} globalProvider={prefs.enhance_provider} globalModel={prefs.enhance_model} />
+        </SettingRow>
       </SettingsGroup>
 
       <SettingsGroup title="Summarization">
