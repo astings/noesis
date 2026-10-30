@@ -12,6 +12,7 @@ import { MeetingInfoButton } from '@/components/MeetingStatusTags';
 import { toast } from 'sonner';
 import { format, isValid, parseISO } from 'date-fns';
 import { formatDuration } from '@/lib/duration';
+import type { TranscriptionInfo } from '@/lib/languages';
 
 interface TranscriptPanelProps {
   title: string;
@@ -83,17 +84,21 @@ export function TranscriptPanel({
 
   const { meetings, refetchMeetings } = useSidebar();
   const status = meetings.find((m) => m.id === meetingId);
-  const [extras, setExtras] = useState<{ tags: string[]; audio_deleted_at: string | null; has_audio: boolean } | null>(null);
+  type Extras = { tags: string[]; audio_deleted_at: string | null; has_audio: boolean; transcription?: TranscriptionInfo | null };
+  const [extras, setExtras] = useState<Extras | null>(null);
   useEffect(() => {
     if (!meetingId) { setExtras(null); return; }
-    const load = () => invoke<{ tags: string[]; audio_deleted_at: string | null; has_audio: boolean }>('get_meeting_extras', { meetingId }).then(setExtras).catch(() => setExtras(null));
+    const load = () => invoke<Extras>('get_meeting_extras', { meetingId }).then(setExtras).catch(() => setExtras(null));
     load();
     window.addEventListener(MEETING_EXTRAS_CHANGED, load);
-    let unlisten: (() => void) | undefined;
+    // tags change with tagging; the engines and language change when an enhance job moves
+    const unlistens: (() => void)[] = [];
     let cancelled = false;
-    listen<{ meeting_id: string }>('tagging-status-changed', (e) => { if (e.payload.meeting_id === meetingId) load(); })
-      .then((fn) => { if (cancelled) fn(); else unlisten = fn; });
-    return () => { cancelled = true; unlisten?.(); window.removeEventListener(MEETING_EXTRAS_CHANGED, load); };
+    for (const name of ['tagging-status-changed', 'enhance-status-changed']) {
+      listen<{ meeting_id: string }>(name, (e) => { if (e.payload.meeting_id === meetingId) load(); })
+        .then((fn) => { if (cancelled) fn(); else unlistens.push(fn); });
+    }
+    return () => { cancelled = true; unlistens.forEach((fn) => fn()); window.removeEventListener(MEETING_EXTRAS_CHANGED, load); };
   }, [meetingId]);
   const created = createdAt ? parseISO(createdAt) : null;
   const length = formatDuration(status?.durationSeconds);
@@ -155,6 +160,7 @@ export function TranscriptPanel({
             tags={extras?.tags ?? []}
             enhanceStatus={status?.enhanceStatus}
             taggingStatus={status?.taggingStatus}
+            transcription={extras?.transcription}
           />
         )}
         <TranscriptButtonGroup
