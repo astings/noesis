@@ -7,7 +7,7 @@ import { PermissionRow } from '../shared';
 import { useOnboarding } from '@/contexts/OnboardingContext';
 
 export function PermissionsStep() {
-  const { setPermissionStatus, setPermissionsSkipped, permissions, completeOnboarding } = useOnboarding();
+  const { setPermissionStatus, setPermissionsSkipped, permissions, goNext } = useOnboarding();
   const [isPending, setIsPending] = useState(false);
 
   // Check permissions - only logs current state, doesn't auto-authorize
@@ -93,20 +93,6 @@ export function PermissionsStep() {
     }
   };
 
-  const handleFinish = async () => {
-    try {
-      await completeOnboarding();
-      window.location.reload();
-    } catch (error) {
-      console.error('Failed to complete onboarding:', error);
-    }
-  };
-
-  const handleSkip = async () => {
-    setPermissionsSkipped(true);
-    await handleFinish();
-  };
-
   const allPermissionsGranted =
     permissions.microphone === 'authorized' &&
     permissions.systemAudio === 'authorized';
@@ -116,9 +102,6 @@ export function PermissionsStep() {
       title="Grant Permissions"
       description="Noesis needs access to your microphone and system audio to record meetings"
       step={4}
-      hideProgress={true}
-      showNavigation={allPermissionsGranted}
-      canGoNext={allPermissionsGranted}
     >
       <div className="max-w-lg mx-auto space-y-6">
         {/* Permission Rows */}
@@ -146,17 +129,17 @@ export function PermissionsStep() {
 
         {/* Action Buttons */}
         <div className="flex flex-col gap-3 pt-4">
-          <Button onClick={handleFinish} disabled={!allPermissionsGranted} className="w-full h-11">
-            Finish Setup
+          <Button onClick={goNext} disabled={!allPermissionsGranted} className="w-full h-11">
+            Continue
           </Button>
-
-          <button
-            onClick={handleSkip}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            I'll do this later
-          </button>
-
+          {!allPermissionsGranted && (
+            <button
+              onClick={() => { setPermissionsSkipped(true); goNext(); }}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Skip for now
+            </button>
+          )}
           {!allPermissionsGranted && (
             <p className="text-xs text-center text-muted-foreground">
               Recording won't work without permissions. You can grant them later in settings.
