@@ -68,6 +68,7 @@ Spanish meetings on one case, English transcripts for the wiki.
     forced: `to English` for `auto-translate`, the language name for a code (`Spanish`), nothing for
     `auto` or absent.
   - Provider names are capitalized (`whisper` becomes `Whisper`, `parakeet` becomes `Parakeet`).
+  - Parakeet rows never show a language suffix: Parakeet ignores the language and cannot translate, so the recorded value describes a request, not a result.
   - The file also holds the shared language list and select options, so it stays import-free for the Node test runner.
 - The bubble rows become Live, Enhanced, Title and tags. Width grows from `w-56` to `w-72`.
 

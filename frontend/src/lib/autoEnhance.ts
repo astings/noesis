@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import type { RecordingPreferences } from '@/components/RecordingSettings';
-import { languageSuffix } from '@/lib/languages';
+import { languageSuffix, providerName } from '@/lib/languages';
 
 /** One-off choices for an enhance run; null or absent means "resolve" (project.json, then Settings). */
 export interface EnhanceOverride { language?: string | null; provider?: string | null; model?: string | null }
@@ -52,7 +52,7 @@ export async function startEnhance(
       model: override.model ?? null,
       provider: override.provider ?? null,
     });
-    const what = [`${started.provider} ${started.model}`, languageSuffix(started.language)].filter(Boolean).join(' · ');
+    const what = [`${providerName(started.provider)} ${started.model}`, languageSuffix(started.language)].filter(Boolean).join(' · ');
     toast.info('Enhancing transcript in the background', {
       description: `${what}. The transcript updates when it finishes.`,
     });

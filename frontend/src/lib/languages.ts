@@ -37,7 +37,7 @@ export interface TranscriptionInfo {
   enhanced?: { provider?: string; model?: string; language?: string | null; status?: string } | null;
 }
 
-function providerName(provider?: string): string {
+export function providerName(provider?: string): string {
   return provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : '';
 }
 
@@ -53,9 +53,14 @@ export function languageSuffix(language?: string | null): string {
   return languageName(language);
 }
 
+/** Suffix for one engine entry; Parakeet ignores the language and cannot translate, so its rows show none. */
+function engineSuffix(engine?: { provider?: string; language?: string | null } | null): string {
+  return engine?.provider === 'parakeet' ? '' : languageSuffix(engine?.language);
+}
+
 /** Live row of the info bubble; "Unknown" for meetings recorded before the key existed. */
 export function liveLabel(t?: TranscriptionInfo | null): string {
-  const parts = [modelLabel(t?.live), languageSuffix(t?.live?.language)].filter(Boolean);
+  const parts = [modelLabel(t?.live), engineSuffix(t?.live)].filter(Boolean);
   return parts.length ? parts.join(' · ') : 'Unknown';
 }
 
@@ -64,5 +69,5 @@ const ENHANCE_STATUS: Record<string, string> = { done: 'Done', queued: 'Queued',
 /** Enhanced row of the info bubble: status word, then the engine, then a forced language. */
 export function enhancedLabel(status?: string, t?: TranscriptionInfo | null): string {
   const word = (status && ENHANCE_STATUS[status]) || 'Not run';
-  return [word, modelLabel(t?.enhanced), languageSuffix(t?.enhanced?.language)].filter(Boolean).join(' · ');
+  return [word, modelLabel(t?.enhanced), engineSuffix(t?.enhanced)].filter(Boolean).join(' · ');
 }

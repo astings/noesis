@@ -5,7 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { LANGUAGE_OPTIONS, languageSettingLabel } from '@/lib/languages';
+import { LANGUAGE_OPTIONS, languageSettingLabel, providerName } from '@/lib/languages';
 import { listReadyTranscriptionModels, type TranscriptionModel } from '@/lib/models';
 import { startEnhance } from '@/lib/autoEnhance';
 
@@ -47,7 +47,7 @@ export function EnhanceWithDialog({ open, onOpenChange, meetingId, folderPath }:
   };
 
   const hint = resolved
-    ? `Default: ${languageSettingLabel(resolved.language)} · ${resolved.provider} ${resolved.model}`
+    ? `Default: ${languageSettingLabel(resolved.language)} · ${providerName(resolved.provider)} ${resolved.model}`
     : 'Default: the project settings, then Settings';
 
   return (

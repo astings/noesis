@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { INBOX } from '@/lib/projects';
-import { LANGUAGE_OPTIONS, languageSettingLabel } from '@/lib/languages';
+import { LANGUAGE_OPTIONS, languageSettingLabel, providerName } from '@/lib/languages';
 import type { TranscriptionModel } from '@/lib/models';
 
 /** `<root>/<project>/project.json`; null means the global setting (spec 2026-10-30 section 3.1). */
@@ -12,7 +12,6 @@ export interface ProjectSettings { language: string | null; enhance_provider: st
 const EMPTY: ProjectSettings = { language: null, enhance_provider: null, enhance_model: null };
 const DEFAULT = '__default__';
 const key = (provider: string, model: string) => `${provider}:${model}`;
-const providerName = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
 
 /** One row per project; a change writes project.json at once. `models` are the downloaded transcription models. */
 export function ProjectOverrides({ models, globalLanguage, globalProvider, globalModel }: {

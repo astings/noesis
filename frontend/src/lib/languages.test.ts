@@ -28,3 +28,9 @@ test('setting labels and suffixes', () => {
   assert.equal(languageSuffix('xx'), 'xx', 'unknown code shown as is');
   assert.equal(languageSuffix(null), '');
 });
+
+test('Parakeet rows never show a language suffix', () => {
+  assert.equal(liveLabel({ live: { provider: 'parakeet', model: 'p-v3', language: 'auto-translate' } }), 'Parakeet p-v3');
+  assert.equal(enhancedLabel('done', { enhanced: { provider: 'parakeet', model: 'p-v3', language: 'es' } }), 'Done · Parakeet p-v3');
+  assert.equal(liveLabel({ live: { provider: 'whisper', model: 'small', language: 'auto-translate' } }), 'Whisper small · to English');
+});
