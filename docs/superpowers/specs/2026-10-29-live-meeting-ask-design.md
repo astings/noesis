@@ -8,9 +8,9 @@ During a call, ask a local model what has been discussed so far and get an answe
 
 Typical questions, from the owner: "what was said about X", "what did I miss in the last few minutes", "recap of the whole meeting so far".
 
-Model: the summary model already configured for titles and tags, today the built-in `llama-helper` sidecar running Qwen 3.5 4B (Q4_K_M, 32k context). Open source, already on disk, no new install. The longest transcript recorded so far is about 12k tokens for a 53-minute meeting, so a whole meeting fits with room. Expected latency on the owner's M4 Max: 2 to 3 seconds for a short meeting, 5 to 10 seconds for an hour-long one. The sidecar protocol returns whole answers, so there is no streaming.
+Model: by default the summary model already configured for titles and tags, today the built-in `llama-helper` sidecar running Qwen 3.5 4B (Q4_K_M, 32k context). Open source, already on disk, no new install. A separate ask model can be picked in Settings (section 3.4): another built-in model, Ollama, Claude, OpenAI, Groq or OpenRouter. The longest transcript recorded so far is about 12k tokens for a 53-minute meeting, so a whole meeting fits with room. Expected latency on the owner's M4 Max: 2 to 3 seconds for a short meeting, 5 to 10 seconds for an hour-long one. The sidecar protocol returns whole answers, so there is no streaming.
 
-Non-goals: chat memory across questions, saving answers to disk, a global hotkey over Zoom, a second LLM provider, streaming. Each is named below with the path to add it if wanted.
+Non-goals: chat memory across questions, saving answers to disk, a global hotkey over Zoom, streaming. Each is named below with the path to add it if wanted.
 
 ## 2. What exists today
 
@@ -43,13 +43,13 @@ Steps:
 2. **Window.** With `last_minutes = n`, keep segments whose `audio_start_time >= newest_end - 60 n`, where `newest_end` is the largest `audio_end_time`. Without it, keep all.
 3. **Render.** One line per segment, `[mm:ss] Name: text`. Name is the `owner_name` preference for `me`, `Others` for `them`, none for `both` or unlabelled, the `transcript.md` rules.
 4. **Budget.** If `rough_token_count` of the rendered text exceeds 24 000, drop the oldest lines until it fits. 24k leaves room for the 4 096-token answer and the prompt inside the 32k context. `from_seconds` is the start of the first line kept, so the UI can show what was covered.
-5. **Call.** `llm_config::load(pool)`, then `generate_summary` with the system prompt below and the user prompt `<lines>\n\nQuestion: <question>`. Wrapped in `tokio::time::timeout(90 s)`; on timeout the cancellation token is cancelled so the sidecar drops the request, and the error reads "The model took too long". A static busy flag refuses a second concurrent ask with "An answer is already being generated". Empty source: "No transcript yet."
+5. **Call.** Resolve the model: when the `ask_provider` preference is empty, `llm_config::load(pool)` (the summary model); otherwise `llm_config::load_for(pool, ask_provider, ask_model)`. Then `generate_summary` with the system prompt below and the user prompt `<lines>\n\nQuestion: <question>`. Wrapped in `tokio::time::timeout(90 s)`; on timeout the cancellation token is cancelled so the sidecar drops the request, and the error reads "The model took too long". A static busy flag refuses a second concurrent ask with "An answer is already being generated". Empty source: "No transcript yet."
 
 System prompt (fixed, not a preference):
 
 > You answer questions about a meeting using only the transcript below. Quote or closely paraphrase the transcript; do not invent details. If the transcript does not cover the question, say so in one sentence. Speaker names are approximate. Answer in the language of the question. Be brief: a few sentences or at most five bullet points.
 
-Not a job in the job queue, nothing written to disk, no new preference. The preset questions are sent by the UI as ordinary text: "Recap what has been discussed so far." and "What was said in the last 10 minutes?" (the latter with `last_minutes: 10`).
+Not a job in the job queue, nothing written to disk. The preset questions are sent by the UI as ordinary text: "Recap what has been discussed so far." and "What was said in the last 10 minutes?" (the latter with `last_minutes: 10`).
 
 Known ceiling: `llama-helper` has no prompt cache, so each ask re-reads the whole prompt. Upgrade path: keep the KV cache across requests in `llama-helper/src/main.rs` so a growing transcript only pays for the new lines.
 
@@ -85,19 +85,29 @@ Alternatives not built: a list of past answers in the card (add a `history` arra
 
 Release: `mcp/package.json` to 0.3.0, `npm publish --otp <code>` by the owner. Registrations use `npx -y @noesis-app/noesis-mcp`, so new Claude Code sessions pick the version up without re-registering. `mcp/README.md` mentions the live case in one sentence.
 
+### 3.4 Ask model setting
+
+Two recording preferences in `recording_preferences.json`, both default empty: `ask_provider` and `ask_model`. Empty means "same as the summary model", so existing installs change nothing. Values follow the summary setting: provider `builtin-ai`, `ollama`, `claude`, `openai`, `groq` or `openrouter`, model as the provider names it.
+
+API keys are shared per provider through the existing `SettingsRepository::save_api_key` and `get_api_key`: a Claude key entered once serves titles, tags and ask. New command `api_save_api_key(provider, key)`, about ten lines, since today a key can only be saved together with the summary model. `api_get_api_key(provider)` already exists and drives the "Saved" placeholder.
+
+UI: a new group "Ask during meetings" in `components/ModelsSettings.tsx`, one row "Model". A provider `Select` with "Same as summary model" first, then "Built-in", "Ollama", "Claude", "OpenAI", "Groq", "OpenRouter". Built-in shows a second `Select` of the downloaded built-in models; the others show the model `Input` with the provider's placeholder, the same `SUMMARY_PROVIDERS` list. Keyed providers add the password `Input`. A Save button writes the two preferences through `set_recording_preferences` and the key, if typed, through `api_save_api_key`. The hint repeats the summary card's: "Ollama and built-in stay on this Mac; the others send the transcript to their API."
+
+Ceiling, accepted: the Ollama endpoint comes from the summary model row, so an ask-only Ollama uses `http://localhost:11434` unless the summary model is also Ollama with a custom endpoint. Add an `ask_ollama_endpoint` preference if a remote Ollama is ever wanted for ask alone.
+
 ## 4. Contracts
 
 Main spec section 5.4, `list_meetings` and `transcript.md` frontmatter: `quality` gains the value `recording`, placed first in the list. Folder layout, `metadata.json` v2 and the other tool schemas do not change. Consumers that switch on `quality` must treat unknown values as `live`.
 
 ## 5. Testing
 
-- Rust, `cargo test` in `frontend/src-tauri`: window selection over a synthetic segment list, budget trim keeps the newest lines and reports `from_seconds`, line rendering with `me`, `them`, `both` and unlabelled segments.
+- Rust, `cargo test` in `frontend/src-tauri`: window selection over a synthetic segment list, budget trim keeps the newest lines and reports `from_seconds`, line rendering with `me`, `them`, `both` and unlabelled segments, and model resolution (empty preferences pick the summary model, set ones pick `load_for`).
 - MCP, `node --test` in `mcp/`: a fixture folder with `status: "recording"` and a two-segment `transcripts.json`; `listMeetings` reports quality `recording`; `readTranscript(md)` contains both lines and `quality: recording`; `assignMeeting` still refuses it (existing test).
 - Manual, on a one-minute test recording: "Recap so far" answers within 10 seconds; "Last 10 min" shows the coverage header; Cmd+K focuses the input; a finished meeting answers a topic question from its details page; from a Claude Code session during the recording, `list_meetings` shows the top meeting as `recording` and a second `get_transcript` a minute later returns more lines.
 
 ## 6. Decisions
 
-1. The model is whatever the summary model setting says; no separate "ask" model setting.
+1. The ask model defaults to the summary model and can be set separately to any provider the summary model supports; API keys are shared per provider.
 2. Single-shot questions, no memory, nothing persisted.
 3. Whole answer at once, 90-second timeout, one ask at a time.
 4. Presets are plain questions sent by the UI; "Last 10 min" is 10 minutes of audio time.
