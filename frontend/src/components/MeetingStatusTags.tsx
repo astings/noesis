@@ -1,16 +1,27 @@
 import { Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { enhancedLabel, liveLabel, type TranscriptionInfo } from '@/lib/languages';
 
-const ENHANCE: Record<string, string> = { done: 'Done', queued: 'Queued', running: 'Running', failed: 'Failed' };
 const TAGGING: Record<string, string> = { done: 'Done', running: 'Running', failed: 'Failed', cancelled: 'Cancelled' };
 
-/** Info icon on the meeting page; hover shows tags and the enhance and title/tags statuses. */
-export function MeetingInfoButton({ tags, enhanceStatus, taggingStatus }: { tags: string[]; enhanceStatus?: string; taggingStatus?: string }) {
+/** Info icon on the meeting page; hover shows the live and enhance engines, the statuses and the tags. */
+export function MeetingInfoButton({
+  tags,
+  enhanceStatus,
+  taggingStatus,
+  transcription,
+}: {
+  tags: string[];
+  enhanceStatus?: string;
+  taggingStatus?: string;
+  transcription?: TranscriptionInfo | null;
+}) {
   const statuses = [enhanceStatus, taggingStatus];
   // the icon still signals work in progress and failures without opening the hover
   const tone = statuses.includes('failed') ? 'text-destructive' : statuses.includes('running') ? 'text-primary animate-pulse' : 'text-muted-foreground';
   const rows: [string, string][] = [
-    ['Enhanced', (enhanceStatus && ENHANCE[enhanceStatus]) || 'Not run'],
+    ['Live', liveLabel(transcription)],
+    ['Enhanced', enhancedLabel(enhanceStatus, transcription)],
     ['Title and tags', (taggingStatus && TAGGING[taggingStatus]) || 'Not run'],
   ];
   return (
@@ -20,12 +31,12 @@ export function MeetingInfoButton({ tags, enhanceStatus, taggingStatus }: { tags
           <Info className="h-4 w-4" />
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom" align="end" className="w-56 space-y-2 border border-border bg-popover p-3 text-popover-foreground">
+      <TooltipContent side="bottom" align="end" className="w-72 space-y-2 border border-border bg-popover p-3 text-popover-foreground">
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
           {rows.map(([k, v]) => (
             <div key={k} className="contents">
               <dt className="text-muted-foreground">{k}</dt>
-              <dd className={v === 'Failed' ? 'text-destructive' : ''}>{v}</dd>
+              <dd className={`break-words ${v.startsWith('Failed') ? 'text-destructive' : ''}`}>{v}</dd>
             </div>
           ))}
         </dl>

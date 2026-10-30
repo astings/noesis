@@ -141,6 +141,17 @@ pub async fn start_retranscription<R: Runtime>(
     provider: Option<String>,
 ) -> Result<RetranscriptionResult> {
     let queued_folder = PathBuf::from(&meeting_folder_path);
+    // spec 2026-10-30 section 3.4: explicit values win, then the project's project.json, then the
+    // preferences. Resolved before jobs::add so the job record and a Retry replay what ran.
+    let resolved = {
+        let root = super::recording_preferences::recordings_root(&app);
+        let prefs = super::recording_preferences::load_recording_preferences(&app).await.unwrap_or_default();
+        super::project_settings::resolve_enhance(&root, &queued_folder, &prefs, language, provider, model)
+    };
+    let language = resolved.language;
+    let provider = Some(resolved.provider);
+    let model = Some(resolved.model);
+    let language_label = language.clone();
     let provider_name = provider.clone().unwrap_or_else(|| "whisper".to_string());
     let model_name = model.clone().unwrap_or_else(|| "configured".to_string());
 
@@ -153,14 +164,14 @@ pub async fn start_retranscription<R: Runtime>(
     };
     jobs::add(&job_id, JobKind::Enhance, Some(&meeting_id), "", control, false);
 
-    set_enhance_status(&app, &meeting_id, &queued_folder, &provider_name, &model_name, STATUS_QUEUED, None);
+    set_enhance_status(&app, &meeting_id, &queued_folder, &provider_name, &model_name, language_label.as_deref(), STATUS_QUEUED, None);
     if ENHANCE_QUEUE.try_lock().is_err() {
         emit_progress(&app, &meeting_id, "queued", 0, "Waiting for the current enhance job to finish...");
     }
     let _queue_slot = ENHANCE_QUEUE.lock().await;
     // job queue panel: a queued job cancelled while it waited never transcribes
     if jobs::is_cancel_requested(&job_id) {
-        set_enhance_status(&app, &meeting_id, &queued_folder, &provider_name, &model_name, STATUS_FAILED, Some("Cancelled"));
+        set_enhance_status(&app, &meeting_id, &queued_folder, &provider_name, &model_name, language_label.as_deref(), STATUS_FAILED, Some("Cancelled"));
         return Err(anyhow!("Retranscription cancelled"));
     }
     jobs::start(&job_id);
@@ -198,7 +209,7 @@ pub async fn start_retranscription<R: Runtime>(
 
         // Reset cancellation flag
         RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
-        set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_RUNNING, None);
+        set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, language_label.as_deref(), STATUS_RUNNING, None);
 
         let crash_guard = jobs::FailOnDrop::new(&job_id);
         let result = run_retranscription(app.clone(), meeting_id.clone(), meeting_folder_path, language, model, provider).await;
@@ -206,8 +217,8 @@ pub async fn start_retranscription<R: Runtime>(
         // Terminal status before the guard drops: a project move cannot slip in and leave
         // the moved metadata at `running`.
         match &result {
-            Ok(_) => set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_DONE, None),
-            Err(e) => set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, STATUS_FAILED, Some(&e.to_string())),
+            Ok(_) => set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, language_label.as_deref(), STATUS_DONE, None),
+            Err(e) => set_enhance_status(&app, &meeting_id, &folder, &provider_name, &model_name, language_label.as_deref(), STATUS_FAILED, Some(&e.to_string())),
         }
         result
     };
@@ -285,10 +296,11 @@ fn set_enhance_status<R: Runtime>(
     folder: &Path,
     provider: &str,
     model: &str,
+    language: Option<&str>,
     status: &str,
     error: Option<&str>,
 ) {
-    if let Err(e) = enhance_status::write_enhance_status(folder, provider, model, status, error) {
+    if let Err(e) = enhance_status::write_enhance_status(folder, provider, model, language, status, error) {
         warn!("Could not write enhance status '{}' for {}: {}", status, meeting_id, e);
     }
     let _ = app.emit(
@@ -1058,11 +1070,14 @@ fn write_retranscription_metadata(
 
 // Tauri commands
 
-/// Response when retranscription is started
+/// Response when retranscription is started: what the run uses after resolution
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RetranscriptionStarted {
     pub meeting_id: String,
     pub message: String,
+    pub provider: String,
+    pub model: String,
+    pub language: Option<String>,
 }
 
 // Start retranscription (Beta gated using configContext.betaFeatures)
@@ -1077,6 +1092,16 @@ pub async fn start_retranscription_command<R: Runtime>(
 ) -> Result<RetranscriptionStarted, String> {
 
     // spec 4.1: a job that arrives while another runs waits in ENHANCE_QUEUE.
+    // Resolve once here too so the caller's toast names what will run (the spawned job resolves
+    // the same explicit values to the same result).
+    let resolved = {
+        let root = crate::audio::recording_preferences::recordings_root(&app);
+        let prefs = crate::audio::recording_preferences::load_recording_preferences(&app).await.unwrap_or_default();
+        super::project_settings::resolve_enhance(&root, Path::new(&meeting_folder_path), &prefs, language, provider, model)
+    };
+    let language = resolved.language.clone();
+    let provider = Some(resolved.provider.clone());
+    let model = Some(resolved.model.clone());
 
     // Clone values for the spawned task
     let meeting_id_clone = meeting_id.clone();
@@ -1115,6 +1140,9 @@ pub async fn start_retranscription_command<R: Runtime>(
     Ok(RetranscriptionStarted {
         meeting_id,
         message: "Retranscription started".to_string(),
+        provider: resolved.provider,
+        model: resolved.model,
+        language: resolved.language,
     })
 }
 

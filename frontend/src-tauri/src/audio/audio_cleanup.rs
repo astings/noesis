@@ -169,19 +169,28 @@ pub struct MeetingExtras {
     pub tags: Vec<String>,
     pub audio_deleted_at: Option<String>,
     pub has_audio: bool,
+    /// spec 2026-10-30 section 2: `transcription` of metadata.json (live and enhanced engines), null when absent
+    pub transcription: Option<serde_json::Value>,
+}
+
+/// The extras of one meeting folder; the command adds the database lookup.
+pub fn extras_of(folder: &Path) -> MeetingExtras {
+    let meta = read_meta(folder);
+    MeetingExtras {
+        tags: super::search_index::metadata_tags(folder),
+        audio_deleted_at: meta["audio_deleted_at"].as_str().map(str::to_string),
+        has_audio: super::retranscription::find_audio_file(folder).is_ok(),
+        transcription: meta.get("transcription").cloned(),
+    }
 }
 
 #[tauri::command]
 pub async fn get_meeting_extras<R: Runtime>(app: AppHandle<R>, meeting_id: String) -> Result<MeetingExtras, String> {
     let folder = folder_of(&app, &meeting_id).await?.map(PathBuf::from).filter(|p| p.is_dir());
     let Some(folder) = folder else {
-        return Ok(MeetingExtras { tags: vec![], audio_deleted_at: None, has_audio: false });
+        return Ok(MeetingExtras { tags: vec![], audio_deleted_at: None, has_audio: false, transcription: None });
     };
-    Ok(MeetingExtras {
-        tags: super::search_index::metadata_tags(&folder),
-        audio_deleted_at: read_meta(&folder)["audio_deleted_at"].as_str().map(str::to_string),
-        has_audio: super::retranscription::find_audio_file(&folder).is_ok(),
-    })
+    Ok(extras_of(&folder))
 }
 
 #[cfg(test)]
@@ -284,5 +293,22 @@ mod tests {
         let pool = pool_with(&[("q", &queued), ("r", &running)]).await;
         assert_eq!(sweep(&pool, now(), 24).await, 0);
         assert!(queued.join("audio.mp4").exists() && running.join("audio.mp4").exists());
+    }
+
+    #[test]
+    fn extras_carry_the_transcription_object_when_present() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(extras_of(dir.path()).transcription.is_none(), "no metadata.json");
+        std::fs::write(
+            dir.path().join("metadata.json"),
+            json!({ "transcription": { "live": { "provider": "parakeet", "model": "p-v3", "language": "auto" } } }).to_string(),
+        )
+        .unwrap();
+        let extras = extras_of(dir.path());
+        let t = extras.transcription.unwrap();
+        assert_eq!(t["live"]["model"], "p-v3");
+        assert_eq!(t["live"]["language"], "auto");
+        assert!(extras.tags.is_empty());
+        assert!(!extras.has_audio);
     }
 }

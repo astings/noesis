@@ -200,6 +200,7 @@ Why in the app rather than the script: the daily UX is a table, not a shell file
 ### 5.1 Folder layout
 
 See 4.2. Root, then project, then meeting. Legacy flat meeting folders at the root are read as `_inbox`.
+A project folder may hold an optional `project.json` with `language`, `enhance_provider` and `enhance_model`, all optional ([2026-10-30 spec](2026-10-30-model-management-and-project-overrides-design.md)).
 
 ### 5.2 metadata.json version 2
 
@@ -232,7 +233,7 @@ See 4.2. Root, then project, then meeting. Legacy flat meeting folders at the ro
 }
 ```
 
-`tags` (lowercase-kebab slugs), `tagged_at` and `audio_deleted_at` are optional and set after enhance; `audio_deleted_at` means `audio.mp4` was removed and `audio_file` is `""`. `retranscribed_at`, `created_at`, `completed_at` and `status` keep their v1 meaning so the current wiki scripts keep working. `project` and `title` in metadata win over the database when they disagree; the reconcile scan updates the index and leaves folders where they are.
+`tags` (lowercase-kebab slugs), `tagged_at` and `audio_deleted_at` are optional and set after enhance; `audio_deleted_at` means `audio.mp4` was removed and `audio_file` is `""`. `retranscribed_at`, `created_at`, `completed_at` and `status` keep their v1 meaning so the current wiki scripts keep working. `project` and `title` in metadata win over the database when they disagree; the reconcile scan updates the index and leaves folders where they are. `transcription.live.language` and `transcription.enhanced.language` are optional (2026-10-30 spec); absent means the global setting of the time applied.
 
 ### 5.3 transcript.md
 

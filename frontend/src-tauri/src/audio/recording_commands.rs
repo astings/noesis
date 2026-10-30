@@ -399,12 +399,18 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     let meeting_id = format!("meeting-{}", uuid::Uuid::new_v4());
     manager.set_meeting_id(Some(meeting_id.clone()));
     manager.set_project(project.clone());
-    manager.set_root(crate::audio::recording_preferences::recordings_root(&app));
+    let root = crate::audio::recording_preferences::recordings_root(&app);
+    manager.set_root(root.clone());
     manager.set_owner_name(prefs_owner_name); // spec 4.4
+    // spec 2026-10-30 section 3.3: the project's language drives the live transcript; cleared on
+    // a failed start below and in stop_recording
+    let project_name = super::library::normalize_project(project.as_deref().unwrap_or(super::library::INBOX));
+    crate::set_recording_language(super::project_settings::resolve_language(&root, &project_name));
+    let live_language = crate::get_language_preference_internal().unwrap_or_default();
     if let Some(state) = app.try_state::<crate::state::AppState>() {
         match crate::database::repositories::setting::SettingsRepository::get_transcript_config(state.db_manager.pool()).await {
-            Ok(Some(cfg)) => manager.set_live_transcription(Some((cfg.provider.clone(), cfg.model.clone()))),
-            Ok(None) => manager.set_live_transcription(Some(("parakeet".to_string(), crate::config::DEFAULT_PARAKEET_MODEL.to_string()))),
+            Ok(Some(cfg)) => manager.set_live_transcription(Some((cfg.provider.clone(), cfg.model.clone(), live_language.clone()))),
+            Ok(None) => manager.set_live_transcription(Some(("parakeet".to_string(), crate::config::DEFAULT_PARAKEET_MODEL.to_string(), live_language.clone()))),
             Err(e) => warn!("Could not read transcript config for metadata: {}", e),
         }
     }
@@ -416,10 +422,13 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     });
 
     // Start recording with resolved devices (replaces start_recording_with_defaults_and_auto_save call)
-    let transcription_receiver = manager
-        .start_recording(microphone_device, system_device, auto_save)
-        .await
-        .map_err(|error| map_recording_start_error(&app, error))?;
+    let transcription_receiver = match manager.start_recording(microphone_device, system_device, auto_save).await {
+        Ok(receiver) => receiver,
+        Err(error) => {
+            crate::set_recording_language(None);
+            return Err(map_recording_start_error(&app, error));
+        }
+    };
 
     // Take the device event receiver BEFORE storing manager globally.
     // A background task will process device events (hot-swap) without frontend polling.
@@ -603,12 +612,18 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     let meeting_id = format!("meeting-{}", uuid::Uuid::new_v4());
     manager.set_meeting_id(Some(meeting_id.clone()));
     manager.set_project(project.clone());
-    manager.set_root(crate::audio::recording_preferences::recordings_root(&app));
+    let root = crate::audio::recording_preferences::recordings_root(&app);
+    manager.set_root(root.clone());
     manager.set_owner_name(prefs_owner_name); // spec 4.4
+    // spec 2026-10-30 section 3.3: the project's language drives the live transcript; cleared on
+    // a failed start below and in stop_recording
+    let project_name = super::library::normalize_project(project.as_deref().unwrap_or(super::library::INBOX));
+    crate::set_recording_language(super::project_settings::resolve_language(&root, &project_name));
+    let live_language = crate::get_language_preference_internal().unwrap_or_default();
     if let Some(state) = app.try_state::<crate::state::AppState>() {
         match crate::database::repositories::setting::SettingsRepository::get_transcript_config(state.db_manager.pool()).await {
-            Ok(Some(cfg)) => manager.set_live_transcription(Some((cfg.provider.clone(), cfg.model.clone()))),
-            Ok(None) => manager.set_live_transcription(Some(("parakeet".to_string(), crate::config::DEFAULT_PARAKEET_MODEL.to_string()))),
+            Ok(Some(cfg)) => manager.set_live_transcription(Some((cfg.provider.clone(), cfg.model.clone(), live_language.clone()))),
+            Ok(None) => manager.set_live_transcription(Some(("parakeet".to_string(), crate::config::DEFAULT_PARAKEET_MODEL.to_string(), live_language.clone()))),
             Err(e) => warn!("Could not read transcript config for metadata: {}", e),
         }
     }
@@ -620,10 +635,13 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     });
 
     // Start recording with specified devices and auto_save setting
-    let transcription_receiver = manager
-        .start_recording(mic_device, system_device, auto_save)
-        .await
-        .map_err(|error| map_recording_start_error(&app, error))?;
+    let transcription_receiver = match manager.start_recording(mic_device, system_device, auto_save).await {
+        Ok(receiver) => receiver,
+        Err(error) => {
+            crate::set_recording_language(None);
+            return Err(map_recording_start_error(&app, error));
+        }
+    };
 
     // Take the device event receiver BEFORE storing manager globally.
     // A background task will process device events (hot-swap) without frontend polling.
@@ -840,6 +858,10 @@ pub async fn stop_recording<R: Runtime>(
 
         // Stop progress monitoring
         progress_task.abort();
+
+        // spec 2026-10-30 section 3.3: the project language override ends once the worker has
+        // drained the last chunks, so the tail of the live transcript keeps the project language
+        crate::set_recording_language(None);
     } else {
         info!("ℹ️ No transcription task found to wait for");
     }
@@ -1296,9 +1318,10 @@ static PENDING_PROJECT: Mutex<Option<(String, String)>> = Mutex::new(None);
 
 /// Change the project of the live recording. The folder is not moved now (the saver and
 /// checkpoints hold its path); `take_pending_project` hands the move to the row save.
+/// The new project's language applies from now on (spec 2026-10-30 section 3.3).
 /// Returns the normalized project name.
 #[tauri::command]
-pub async fn set_recording_project(project: String) -> Result<String, String> {
+pub async fn set_recording_project<R: Runtime>(app: AppHandle<R>, project: String) -> Result<String, String> {
     let guard = RECORDING_MANAGER.lock().unwrap();
     let Some(manager) = guard.as_ref() else { return Err("No recording in progress.".to_string()) };
     let Some(meeting_id) = manager.get_meeting_id() else { return Err("No recording in progress.".to_string()) };
@@ -1307,6 +1330,8 @@ pub async fn set_recording_project(project: String) -> Result<String, String> {
     let pending = super::library::pending_move(&started, Some(&project));
     info!("Recording {} project change: {:?} -> pending {:?}", meeting_id, started, pending);
     *PENDING_PROJECT.lock().unwrap() = pending.map(|p| (meeting_id, p));
+    let root = crate::audio::recording_preferences::recordings_root(&app);
+    crate::set_recording_language(super::project_settings::resolve_language(&root, &normalized));
     Ok(normalized)
 }
 

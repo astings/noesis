@@ -59,7 +59,7 @@ Spanish meetings on one case, English transcripts for the wiki.
   `transcription` object of `metadata.json`, or null when absent.
 - `TranscriptPanel` passes it to `MeetingInfoButton` and also reloads the extras on
   `enhance-status-changed` for the current meeting, so the model appears when a job finishes.
-- A pure helper `src/lib/transcriptionLabel.ts` formats the rows:
+- A pure helper `src/lib/languages.ts` formats the rows:
   - `liveLabel(t)`: `Parakeet parakeet-tdt-0.6b-v3-int8`, or `Unknown` when `transcription.live` is
     missing (meetings recorded before the key existed).
   - `enhancedLabel(status, t)`: `Done · Whisper large-v3 · to English`. The status word comes from
@@ -68,6 +68,8 @@ Spanish meetings on one case, English transcripts for the wiki.
     forced: `to English` for `auto-translate`, the language name for a code (`Spanish`), nothing for
     `auto` or absent.
   - Provider names are capitalized (`whisper` becomes `Whisper`, `parakeet` becomes `Parakeet`).
+  - Parakeet rows never show a language suffix: Parakeet ignores the language and cannot translate, so the recorded value describes a request, not a result.
+  - The file also holds the shared language list and select options, so it stays import-free for the Node test runner.
 - The bubble rows become Live, Enhanced, Title and tags. Width grows from `w-56` to `w-72`.
 
 ## 3. Per-project settings and the one-off picker
@@ -149,8 +151,8 @@ Tauri commands, registered in `lib.rs`:
 - Set in both record-start paths of `recording_commands.rs` (`start_recording_with_meeting_name`
   and the device-specific start around line 517) once `manager.start_recording` has returned Ok, from
   `project_settings::resolve_language(root, project)`. Updated in `set_recording_project` from the
-  normalized new project (the folder moves later, the language applies now). Cleared at the top of
-  `stop_recording`, which the tray, the UI and auto-stop all go through.
+  normalized new project (the folder moves later, the language applies now). Cleared in
+  `stop_recording` once the transcription worker has drained the last chunks (after the force flush), so the tail of the live transcript keeps the project language. The tray, the UI and auto-stop all go through it.
 - `metadata.json` `transcription.live` gains `language`: the effective value at start, that is the
   project override or else the global preference. `set_live_transcription` carries a third element.
 - With Parakeet as the Live model the override cannot translate; the live text stays in the spoken
@@ -234,7 +236,7 @@ Rust, next to the code:
 
 Frontend, `node --test src/lib/*.test.ts` as the existing tests:
 
-- `transcriptionLabel.test.ts`: live label, enhanced label with and without model, each language
+- `languages.test.ts`: live label, enhanced label with and without model, each language
   suffix, `Unknown` for an old meeting.
 
 Manual pass before merge: delete and re-download a model; record in a project set to translate and
@@ -246,3 +248,16 @@ check the live text and `transcription.live.language`; run "Enhance with..." and
 - Recording the detected language. Only the requested value is recorded.
 - Exposing `project.json` through the MCP server.
 - Renaming the `*_delete_corrupted_model` commands.
+
+## 8. Follow-ups from the review (2026-10-30)
+
+Implemented on `enhance/project-overrides` (d0603db..0f64001). The whole-branch review found no blocker. Items left open, ranked:
+
+- `stop_recording` no longer clears the language override on its "failed to stop audio streams" early return nor in its "no transcription task" branch. Harmless, because both record-start paths overwrite the override; a stale value only reaches the ad hoc `whisper_transcribe_audio` command between a failed stop and the next start. Two-line fix.
+- A model used only by a project's `project.json` can be deleted from Settings; the project's next enhance then fails with a missing model and the Settings row shows "(not downloaded)". Either let `resolve_enhance` fall through when the project's model is not downloaded, or name the projects in the delete confirmation.
+- `project.json` reads: one wrongly typed key discards the whole file without a warning; a write over a corrupt file loses its unknown keys; `get_project_settings` does not validate the project name; no lock around the read-modify-write; `language` values are not validated.
+- Per-project table: a hand-edited `language` outside the known list leaves the select without a matching option (the model column has a guard); the project list loads once per Settings open; `save()` reads the row from the render closure.
+- "Enhance with...": no cancelled flag on the two async loads, so a reopen can briefly show the previous meeting's hint.
+- No unit test for the engine delete guards (engines need a models directory) nor for `transcription.live.language` in `metadata.json`; the manual pass covers both.
+- `transcription.live.language` keeps the value at record start; a live project change updates the override only. By design (3.3), noted so it is not read as a bug.
+- `pnpm lint` (`next lint`) has no ESLint config in this repo and prompts interactively; `pnpm exec tsc --noEmit` and `pnpm test` are the frontend gates.

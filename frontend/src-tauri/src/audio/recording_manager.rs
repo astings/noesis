@@ -553,8 +553,8 @@ impl RecordingManager {
         self.recording_saver.get_meeting_id()
     }
 
-    pub fn set_live_transcription(&mut self, provider_model: Option<(String, String)>) {
-        self.recording_saver.set_live_transcription(provider_model);
+    pub fn set_live_transcription(&mut self, provider_model_language: Option<(String, String, String)>) {
+        self.recording_saver.set_live_transcription(provider_model_language);
     }
 
     /// Add a structured transcript segment to be saved later

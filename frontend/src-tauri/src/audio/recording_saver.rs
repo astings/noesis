@@ -78,7 +78,8 @@ pub struct RecordingSaver {
     /// Generic settings section 4: set from the preference at record start; None means the default folder.
     root: Option<PathBuf>,
     meeting_id: Option<String>,
-    live_transcription: Option<(String, String)>,
+    /// (provider, model, language) of the live engine; spec 5.2 and spec 2026-10-30 section 3.3
+    live_transcription: Option<(String, String, String)>,
     ended_by: Option<String>, // spec 4.5
     // spec 4.4
     speaker_windows: Arc<Mutex<Vec<(f32, f32)>>>,
@@ -172,8 +173,8 @@ impl RecordingSaver {
     }
 
     /// spec 5.2: provider and model of the live engine, recorded under transcription.live
-    pub fn set_live_transcription(&mut self, provider_model: Option<(String, String)>) {
-        self.live_transcription = provider_model;
+    pub fn set_live_transcription(&mut self, provider_model_language: Option<(String, String, String)>) {
+        self.live_transcription = provider_model_language;
     }
 
     /// Set device information in metadata
@@ -366,8 +367,8 @@ impl RecordingSaver {
             project: Some(project.clone()),
             title: Some(meeting_name.to_string()),
             transcript_md: Some("transcript.md".to_string()),
-            transcription: self.live_transcription.as_ref().map(|(provider, model)| {
-                serde_json::json!({ "live": { "provider": provider, "model": model } })
+            transcription: self.live_transcription.as_ref().map(|(provider, model, language)| {
+                serde_json::json!({ "live": { "provider": provider, "model": model, "language": language } })
             }),
             ended_by: None, // spec 4.5
             speakers: None,

@@ -447,9 +447,38 @@ async fn set_language_preference(language: String) -> Result<(), String> {
     Ok(())
 }
 
-// Internal helper function to get language preference (for use within Rust code)
+// spec 2026-10-30 section 3.3: the live recording's language, from the project's project.json.
+// Set at record start and on a live project change, cleared at stop. None means the global preference.
+static RECORDING_LANGUAGE: StdMutex<Option<String>> = StdMutex::new(None);
+
+pub fn set_recording_language(language: Option<String>) {
+    if let Ok(mut l) = RECORDING_LANGUAGE.lock() {
+        log_info!("Recording language override: {:?}", language);
+        *l = language;
+    }
+}
+
+// Internal helper function to get language preference (for use within Rust code).
+// The recording override wins over the global preference while a recording runs.
 pub fn get_language_preference_internal() -> Option<String> {
+    if let Some(l) = RECORDING_LANGUAGE.lock().ok().and_then(|g| g.clone()) {
+        return Some(l);
+    }
     LANGUAGE_PREFERENCE.lock().ok().map(|lang| lang.clone())
+}
+
+#[cfg(test)]
+mod recording_language_tests {
+    use super::*;
+
+    #[test]
+    fn override_wins_while_set_and_the_global_returns_after_clear() {
+        let global = get_language_preference_internal();
+        set_recording_language(Some("auto-translate-test".to_string()));
+        assert_eq!(get_language_preference_internal().as_deref(), Some("auto-translate-test"));
+        set_recording_language(None);
+        assert_eq!(get_language_preference_internal(), global);
+    }
 }
 
 // Languages an "auto" whisper request may resolve to; kept in sync with recording preferences
@@ -915,6 +944,9 @@ pub fn run() {
             audio::audio_cleanup::delete_meeting_audio,
             audio::audio_cleanup::get_meeting_extras,
             audio::library::list_projects_command,
+            audio::project_settings::get_project_settings,
+            audio::project_settings::set_project_settings,
+            audio::project_settings::resolve_enhance_settings,
             audio::recording_preferences::select_directory,
             audio::claude_mcp::get_mcp_register_command,
             audio::claude_mcp::register_mcp_with_claude,

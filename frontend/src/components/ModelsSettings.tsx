@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
-import { Check, Download, Loader2 } from 'lucide-react';
+import { Check, Download, Loader2, Trash2 } from 'lucide-react';
+import { ConfirmationModal } from '@/components/ConfirmationModel/confirmation-modal';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -13,7 +14,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useConfig } from '@/contexts/ConfigContext';
 import { MODEL_CONFIGS } from '@/lib/whisper';
 import { getModelDisplayInfo } from '@/lib/parakeet';
+import { LANGUAGES } from '@/lib/languages';
 import type { RecordingPreferences } from '@/components/RecordingSettings';
+import { ProjectOverrides } from '@/components/ProjectOverrides';
+import type { TranscriptionModel } from '@/lib/models';
 
 type Engine = 'whisper' | 'parakeet' | 'builtin';
 type ModelState = { kind: 'missing' } | { kind: 'downloading'; progress: number } | { kind: 'ready' } | { kind: 'broken' };
@@ -21,6 +25,7 @@ interface ModelRow { engine: Engine; name: string; label: string; description: s
 
 const DOWNLOAD_CMD: Record<Engine, string> = { whisper: 'whisper_download_model', parakeet: 'parakeet_download_model', builtin: 'builtin_ai_download_model' };
 const CANCEL_CMD: Record<Engine, string> = { whisper: 'whisper_cancel_download', parakeet: 'parakeet_cancel_download', builtin: 'builtin_ai_cancel_download' };
+const DELETE_CMD: Record<Engine, string> = { whisper: 'whisper_delete_corrupted_model', parakeet: 'parakeet_delete_corrupted_model', builtin: 'builtin_ai_delete_model' };
 
 // Whisper and Parakeet report 'Available' | 'Missing' | { Downloading } | { Error } | { Corrupted }; built-in reports { type: ... }.
 function toState(status: any): ModelState {
@@ -34,16 +39,6 @@ function toState(status: any): ModelState {
 function formatSize(mb: number) {
   return mb >= 1000 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
 }
-
-const LANGUAGES = [
-  { code: 'en', label: 'English' },
-  { code: 'fr', label: 'French' },
-  { code: 'de', label: 'German' },
-  { code: 'es', label: 'Spanish' },
-  { code: 'it', label: 'Italian' },
-  { code: 'nl', label: 'Dutch' },
-  { code: 'pt', label: 'Portuguese' },
-];
 
 const SUMMARY_PROVIDERS: { value: string; label: string; placeholder: string }[] = [
   { value: 'ollama', label: 'Ollama', placeholder: 'llama3.2' },
@@ -97,11 +92,43 @@ function useModelRows() {
   return { rows, refresh };
 }
 
-/** One button: download, progress (click cancels), or downloaded. */
-function DownloadButton({ row, onChanged }: { row: ModelRow; onChanged: () => void }) {
+/** One cell: download, progress (click cancels), or downloaded with a delete button. */
+function DownloadButton({ row, inUse, onChanged }: { row: ModelRow; inUse?: string; onChanged: () => void }) {
   const { state, engine, name } = row;
+  const [confirm, setConfirm] = useState(false);
   if (state.kind === 'ready') {
-    return <span className="inline-flex h-7 items-center gap-1 px-2 text-xs text-muted-foreground"><Check className="h-3.5 w-3.5" />Downloaded</span>;
+    const remove = async () => {
+      setConfirm(false);
+      try {
+        await invoke(DELETE_CMD[engine], { modelName: name });
+        toast.success(`${row.label} deleted`);
+      } catch (e) {
+        toast.error('Could not delete the model', { description: String(e) });
+      } finally {
+        onChanged();
+      }
+    };
+    return (
+      <span className="inline-flex h-7 items-center gap-1 px-2 text-xs text-muted-foreground">
+        <Check className="h-3.5 w-3.5" />Downloaded
+        <button
+          type="button"
+          aria-label={`Delete ${row.label}`}
+          title={inUse ?? 'Delete the model file'}
+          disabled={!!inUse}
+          className="ml-1 rounded p-0.5 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-muted-foreground"
+          onClick={() => setConfirm(true)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+        <ConfirmationModal
+          isOpen={confirm}
+          text={`Delete ${row.label} (${formatSize(row.sizeMb)})? You can download it again later.`}
+          onConfirm={remove}
+          onCancel={() => setConfirm(false)}
+        />
+      </span>
+    );
   }
   if (state.kind === 'downloading') {
     return (
@@ -130,7 +157,12 @@ function Tick({ checked, disabled, label, onChange }: { checked: boolean; disabl
   );
 }
 
-function ModelTable({ rows, columns, onChanged }: { rows: ModelRow[]; columns: { label: string; checked: (r: ModelRow) => boolean; pick: (r: ModelRow) => void }[]; onChanged: () => void }) {
+function ModelTable({ rows, columns, inUse, onChanged }: {
+  rows: ModelRow[];
+  columns: { label: string; checked: (r: ModelRow) => boolean; pick: (r: ModelRow) => void }[];
+  inUse?: (r: ModelRow) => string | undefined;
+  onChanged: () => void;
+}) {
   return (
     <table className="w-full text-[13px]">
       <thead>
@@ -149,7 +181,7 @@ function ModelTable({ rows, columns, onChanged }: { rows: ModelRow[]; columns: {
                 {r.description && <TooltipContent side="right" className="max-w-xs">{r.description}</TooltipContent>}
               </Tooltip>
             </td>
-            <td className="py-1.5"><DownloadButton row={r} onChanged={onChanged} /></td>
+            <td className="py-1.5"><DownloadButton row={r} inUse={inUse?.(r)} onChanged={onChanged} /></td>
             {columns.map((c) => (
               <td key={c.label} className="px-2 py-1.5 text-center">
                 <Tick label={`${c.label}: ${r.label}`} checked={c.checked(r)} disabled={r.state.kind !== 'ready'} onChange={() => c.pick(r)} />
@@ -271,6 +303,21 @@ export function ModelsSettings() {
   const ask = askDraft ?? { provider: prefs.ask_provider, model: prefs.ask_model, apiKey: '' };
   const askKnown = SUMMARY_PROVIDERS.find((p) => p.value === ask.provider);
   const readyBuiltin = builtinRows.filter((r) => r.state.kind === 'ready');
+  const readyTranscription: TranscriptionModel[] = transcriptionRows
+    .filter((r) => r.state.kind === 'ready' && r.engine !== 'builtin')
+    .map((r) => ({ provider: r.engine as 'whisper' | 'parakeet', model: r.name, label: r.label }));
+  // spec 2026-10-30 section 1: a picked model cannot be deleted; pick another one first
+  const IN_USE = 'Pick another model first';
+  const transcriptionInUse = (r: ModelRow) => {
+    const live = r.name === transcriptModelConfig.model && (r.engine === 'parakeet') === (transcriptModelConfig.provider === 'parakeet');
+    const enhance = r.engine === prefs.enhance_provider && r.name === prefs.enhance_model;
+    return live || enhance ? IN_USE : undefined;
+  };
+  const builtinInUse = (r: ModelRow) => {
+    const summaryPick = !isExternal && r.name === summary.model;
+    const askPick = prefs.ask_provider === 'builtin-ai' && r.name === prefs.ask_model;
+    return summaryPick || askPick ? IN_USE : undefined;
+  };
 
   return (
     <div className="space-y-6">
@@ -309,6 +356,7 @@ export function ModelsSettings() {
         </SettingRow>
         <ModelTable
           rows={transcriptionRows}
+          inUse={transcriptionInUse}
           onChanged={refresh}
           columns={[
             {
@@ -323,6 +371,12 @@ export function ModelsSettings() {
             },
           ]}
         />
+        <SettingRow
+          label="Per project"
+          hint="Language applies live and to the enhance run. Live translation needs Whisper as the Live model."
+        >
+          <ProjectOverrides models={readyTranscription} globalLanguage={selectedLanguage} globalProvider={prefs.enhance_provider} globalModel={prefs.enhance_model} />
+        </SettingRow>
       </SettingsGroup>
 
       <SettingsGroup title="Summarization">
@@ -333,6 +387,7 @@ export function ModelsSettings() {
         />
         <ModelTable
           rows={builtinRows}
+          inUse={builtinInUse}
           onChanged={refresh}
           columns={[{
             label: 'Use',
