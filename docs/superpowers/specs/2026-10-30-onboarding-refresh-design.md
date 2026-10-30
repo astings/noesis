@@ -26,7 +26,7 @@ Each screen has defaults filled in. Continue saves the screen's settings, then a
    - Stop recording when the call ends: `auto_stop_on_call_end`, default on.
    - Floating call overlay: `show_call_overlay`, default on.
    - Menu bar icon: `show_tray_icon`, default on.
-   - Name meetings from your calendar: `calendar_meeting_name`, default off. Turning it on calls `calendar_request_access`; when access is refused the switch goes back off with a one-line message.
+   - Name the recording after the calendar event: `calendar_meeting_name`, default off, shown nested under auto-start and only while auto-start is on (the name only applies to auto-started recordings, `call_detector.rs`). Turning it on calls `calendar_request_access`; when access is refused the switch stays off with a one-line message.
 6. **Claude Code (optional).** Text: "Let Claude Code read your meetings." Embeds the existing `McpServerSettings` component (Register button, copy command, error when `claude` is missing). Buttons: **Finish**. Finish is disabled until Parakeet is downloaded, with the progress shown above it. No separate Skip: Finish without registering is the skip.
 
 Finish calls `completeOnboarding()` then reloads, as today.
