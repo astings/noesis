@@ -568,9 +568,13 @@ impl ParakeetEngine {
         self.models_dir.clone()
     }
 
-    /// Delete a corrupted model
+    /// Delete a corrupted or downloaded model
     pub async fn delete_model(&self, model_name: &str) -> Result<String> {
         log::info!("Attempting to delete Parakeet model: {}", model_name);
+        // spec 2026-10-30 section 1: never pull the files from under a running recording or enhance job
+        if self.get_current_model().await.as_deref() == Some(model_name) {
+            return Err(anyhow!("Model in use: stop the recording or wait for the enhance job to finish"));
+        }
 
         // Get model info to find the directory path
         let model_info = {
