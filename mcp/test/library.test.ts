@@ -165,6 +165,17 @@ test('scanMeetings skips an unreadable project folder', (t) => {
   }
 });
 
+test('a recording folder untouched for an hour is quality live (crashed recording)', () => {
+  const dir = path.join(root, 'dex', '2026-10-27_09-00 crashed');
+  write(dir, {
+    'metadata.json': JSON.stringify({ ...v2Meta('meeting-crashed', 'dex', 'Crashed'), status: 'recording' }),
+    'transcripts.json': JSON.stringify(segments),
+  });
+  const old = new Date(Date.now() - 60 * 60 * 1000);
+  for (const f of ['metadata.json', 'transcripts.json']) fs.utimesSync(path.join(dir, f), old, old);
+  assert.equal(findMeeting(root, { meeting_id: 'meeting-crashed' })!.quality, 'live');
+});
+
 test('a meeting being recorded lists as quality recording and its transcript so far is readable', () => {
   const dir = path.join(root, 'dex', '2026-10-29_09-00 live');
   write(dir, {

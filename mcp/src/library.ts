@@ -49,8 +49,20 @@ export function listProjects(root: string): string[] {
   return [INBOX, ...names];
 }
 
-function qualityOf(meta: Json): Quality {
-  if (meta.status === 'recording') return 'recording'; // live ask spec 3.3: the recorder writes this at record start
+// The recorder rewrites transcripts.json after every segment, so a live meeting is never this quiet;
+// a crashed one stays at status recording forever.
+const RECORDING_FRESH_MS = 10 * 60 * 1000;
+
+function recentlyWritten(dir: string): boolean {
+  let newest = 0;
+  for (const f of ['transcripts.json', 'metadata.json']) {
+    try { newest = Math.max(newest, fs.statSync(path.join(dir, f)).mtimeMs); } catch { /* missing: not fresh */ }
+  }
+  return Date.now() - newest < RECORDING_FRESH_MS;
+}
+
+function qualityOf(meta: Json, dir: string): Quality {
+  if (meta.status === 'recording' && recentlyWritten(dir)) return 'recording'; // live ask spec 3.3: the recorder writes this at record start
   const enhanced = (meta.transcription as Json | undefined)?.enhanced as Json | undefined;
   const status = enhanced?.status;
   if (status === 'done') return 'enhanced';
@@ -73,7 +85,7 @@ function infoFrom(dir: string, legacy: boolean): MeetingInfo | null {
     title,
     started_at: typeof meta.created_at === 'string' ? meta.created_at : '',
     duration_seconds: typeof meta.duration_seconds === 'number' ? meta.duration_seconds : null,
-    quality: qualityOf(meta),
+    quality: qualityOf(meta, dir),
     path: dir,
     legacy,
     tags: Array.isArray(meta.tags) ? meta.tags.filter((t): t is string => typeof t === 'string') : [],

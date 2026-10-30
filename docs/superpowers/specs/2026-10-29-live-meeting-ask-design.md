@@ -51,7 +51,7 @@ System prompt (fixed, not a preference):
 
 Not a job in the job queue, nothing written to disk. The preset questions are sent by the UI as ordinary text: "Recap what has been discussed so far." and "What was said in the last 10 minutes?" (the latter with `last_minutes: 10`).
 
-Known ceiling: `llama-helper` has no prompt cache, so each ask re-reads the whole prompt. Upgrade path: keep the KV cache across requests in `llama-helper/src/main.rs` so a growing transcript only pays for the new lines.
+Known ceiling: `llama-helper` has no prompt cache, so each ask re-reads the whole prompt. Upgrade path: keep the KV cache across requests in `llama-helper/src/main.rs` so a growing transcript only pays for the new lines. With the built-in provider, a timed-out ask takes the sidecar's cancel path, which kills the helper, so the next title/tags job or ask pays a model reload.
 
 ### 3.2 Ask panel
 
@@ -75,12 +75,12 @@ Alternatives not built: a list of past answers in the card (add a `history` arra
 
 `mcp/src/library.ts`:
 
-- `Quality` gains `'recording'`. `qualityOf` returns it first when `meta.status === 'recording'`. The `transcript.md` frontmatter rendered for a live meeting therefore reads `quality: recording`.
+- `Quality` gains `'recording'`. `qualityOf` returns it first when `meta.status === 'recording'`. A folder whose transcripts.json and metadata.json are both older than 10 minutes is not recording any more even if its status says so (a crashed recording never flips to completed); it falls back to live. The `transcript.md` frontmatter rendered for a live meeting therefore reads `quality: recording`.
 - No new tool or parameter. `assignMeeting` keeps refusing recording meetings.
 
 `mcp/src/index.ts` descriptions:
 
-- `list_meetings`: "quality is recording, live, enhanced, enhancing or failed. recording means the meeting is in progress right now; it is the newest, so it sorts first."
+- `list_meetings`: "quality is recording, live, enhanced, enhancing or failed. recording means the meeting is in progress right now (its transcript was written in the last 10 minutes); it is the newest, so it sorts first."
 - `get_transcript`: "On a meeting being recorded, returns the transcript so far; call again for new lines."
 
 Release: `mcp/package.json` to 0.3.0, `npm publish --otp <code>` by the owner. Registrations use `npx -y @noesis-app/noesis-mcp`, so new Claude Code sessions pick the version up without re-registering. `mcp/README.md` mentions the live case in one sentence.

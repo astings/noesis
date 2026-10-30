@@ -27,7 +27,7 @@ server.registerTool(
 server.registerTool(
   'list_meetings',
   {
-    description: 'Meetings recorded by Noesis, newest first. Filter by project folder and/or ISO date range. quality is recording, live, enhanced, enhancing or failed. recording means the meeting is in progress right now; it is the newest, so it sorts first.',
+    description: 'Meetings recorded by Noesis, newest first. Filter by project folder and/or ISO date range. quality is recording, live, enhanced, enhancing or failed. recording means the meeting is in progress right now (its transcript was written in the last 10 minutes); it is the newest, so it sorts first.',
     inputSchema: {
       project: z.string().optional().describe('Project folder name, e.g. "dex". "_inbox" for untagged and legacy meetings.'),
       since: z.string().optional().describe('ISO 8601: YYYY-MM-DD (whole local day) or a datetime; only meetings started at or after it.'),
