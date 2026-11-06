@@ -53,9 +53,24 @@ export function useTranscriptRecovery(): UseTranscriptRecoveryReturn {
         return isWithinRetention && isOldEnough;
       });
 
+      // A folder whose metadata.json says "completed" already holds its transcript and the
+      // library scan indexes it, so there is nothing to recover: mark it saved and drop it.
+      // (Back-to-back calls used to leave such meetings behind, see AutoStartListener.)
+      const stillUnsaved: MeetingMetadata[] = [];
+      for (const meeting of recentMeetings) {
+        const savedOnDisk = meeting.folderPath
+          ? await invoke<boolean>('meeting_saved_on_disk', { meetingFolder: meeting.folderPath }).catch(() => false)
+          : false;
+        if (savedOnDisk) {
+          await indexedDBService.markMeetingSaved(meeting.meetingId);
+          continue;
+        }
+        stillUnsaved.push(meeting);
+      }
+
       // Verify audio checkpoint availability for each meeting
       const meetingsWithAudioStatus = await Promise.all(
-        recentMeetings.map(async (meeting) => {
+        stillUnsaved.map(async (meeting) => {
           if (meeting.folderPath) {
             try {
               const hasAudio = await invoke<boolean>('has_audio_checkpoints', {

@@ -964,6 +964,7 @@ pub fn run() {
             audio::claude_mcp::register_mcp_with_claude,
             audio::library::assign_meeting,
             audio::library::discard_empty_recording,
+            audio::library::meeting_saved_on_disk,
             audio::ask::ask_meeting, // live meeting ask (spec 2026-10-29)
         ])
         .build(tauri::generate_context!())

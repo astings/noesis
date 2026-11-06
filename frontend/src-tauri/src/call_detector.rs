@@ -12,6 +12,9 @@ use tauri::{AppHandle, Runtime};
 pub const POLL_SECONDS: u64 = 5;
 /// Idle samples required after a call before `Ended` fires (4 x 5 s = 20 s).
 pub const END_DEBOUNCE_TICKS: u32 = 4;
+/// Ticks the loop gives the frontend to start after `auto-start-requested` before it falls back
+/// to a page reload (12 x 5 s = 60 s, longer than a cold engine start).
+pub const AUTO_START_FALLBACK_TICKS: u32 = 12;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallEvent {
@@ -45,6 +48,40 @@ pub fn step(state: &mut CallState, in_call: bool, end_debounce_ticks: u32) -> Op
         }
     }
     None
+}
+
+/// One tick of a pending auto-start request (`waited` ticks so far). The wait ends when the
+/// recording is live or the call is over; it returns true once `limit` ticks passed with
+/// neither, so the caller falls back to the page reload. One-shot.
+pub fn auto_start_wait_step(waited: &mut Option<u32>, in_call: bool, recording: bool, limit: u32) -> bool {
+    let Some(n) = waited.as_mut() else { return false };
+    if recording || !in_call {
+        *waited = None;
+        return false;
+    }
+    *n += 1;
+    if *n >= limit {
+        *waited = None;
+        return true;
+    }
+    false
+}
+
+/// Last resort when the frontend never answered `auto-start-requested`: the old path, a page
+/// reload with the auto-start flag. It loses any save still pending in the webview.
+#[cfg(target_os = "macos")]
+fn reload_to_auto_start<R: Runtime>(app: &AppHandle<R>, title: Option<String>) {
+    use tauri::Manager;
+    let Some(window) = app.get_webview_window("main") else {
+        warn!("Call detector: main window not available, auto-start skipped");
+        return;
+    };
+    if let Some(title) = title {
+        let js = serde_json::to_string(&title).unwrap_or_default();
+        let _ = window.eval(&format!("sessionStorage.setItem('autoStartTitle', {})", js));
+    }
+    let _ = window.eval("sessionStorage.setItem('autoStartRecording', 'true')");
+    let _ = window.eval("window.location.assign('/')");
 }
 
 /// True while Zoom's in-meeting helper `CptHost` is running.
@@ -152,14 +189,20 @@ pub fn sample_in_call() -> Option<bool> {
 /// Background loop: sample, step, act according to the preferences.
 #[cfg(target_os = "macos")]
 pub async fn run<R: Runtime>(app: AppHandle<R>) {
-    use tauri::Manager;
+    use tauri::Emitter;
     let mut state = CallState::default();
+    let mut auto_start_wait: Option<u32> = None; // ticks since the frontend was asked to start
+    let mut auto_start_title: Option<String> = None;
     let signal = if mic_in_use_by_others().is_some() { "microphone in use (CoreAudio) or Zoom process CptHost" } else { "Zoom process CptHost only (macOS 13 fallback)" };
     info!("Call detector started ({}, every {}s, end debounce {} ticks)", signal, POLL_SECONDS, END_DEBOUNCE_TICKS);
     let mut recorded_during_call = false; // spec 4.5
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(POLL_SECONDS)).await;
         let Some(sample) = tokio::task::spawn_blocking(sample_in_call).await.ok().flatten() else { continue };
+        if auto_start_wait_step(&mut auto_start_wait, sample, crate::audio::recording_commands::recording_live(), AUTO_START_FALLBACK_TICKS) {
+            warn!("Call detector: the frontend did not start within {}s, reloading the main window", AUTO_START_FALLBACK_TICKS as u64 * POLL_SECONDS);
+            reload_to_auto_start(&app, auto_start_title.take());
+        }
         if sample && crate::audio::recording_commands::recording_live() { recorded_during_call = true; } // spec 4.5
         let Some(event) = step(&mut state, sample, END_DEBOUNCE_TICKS) else { continue };
         // spec 4.5: a new call starts fresh and an ended call resets, whatever happens next
@@ -190,18 +233,16 @@ pub async fn run<R: Runtime>(app: AppHandle<R>) {
                 } else {
                     None
                 };
-                match app.get_webview_window("main") {
-                    Some(window) => {
-                        if let Some(title) = title {
-                            info!("Calendar event in progress: {}", title);
-                            let js = serde_json::to_string(&title).unwrap_or_default();
-                            let _ = window.eval(&format!("sessionStorage.setItem('autoStartTitle', {})", js));
-                        }
-                        let _ = window.eval("sessionStorage.setItem('autoStartRecording', 'true')");
-                        let _ = window.eval("window.location.assign('/')");
-                    }
-                    None => warn!("Call detector: main window not available, auto-start skipped"),
+                if let Some(title) = &title {
+                    info!("Calendar event in progress: {}", title);
                 }
+                // The frontend starts once its own stop flow has settled (AutoStartListener). Reloading
+                // the page here killed the previous meeting's pending save when two calls ran back to back.
+                if let Err(e) = app.emit("auto-start-requested", serde_json::json!({ "title": title })) {
+                    warn!("Call detector: auto-start request failed: {}", e);
+                }
+                auto_start_wait = Some(0);
+                auto_start_title = title;
             }
             _ => {
                 log::debug!("Call detector: {:?} ignored (recording={}, during_call={}, prefs stop={} start={})", event, recording, during_call, prefs.auto_stop_on_call_end, prefs.auto_start_on_call)
@@ -258,6 +299,28 @@ mod tests {
         assert_eq!(choose_signal(None, Some(true)), Some(true));
         assert_eq!(choose_signal(None, Some(false)), Some(false));
         assert_eq!(choose_signal(None, None), None);
+    }
+
+    #[test]
+    fn auto_start_wait_falls_back_once_the_limit_is_reached() {
+        let mut waited = Some(0);
+        for _ in 0..11 {
+            assert!(!auto_start_wait_step(&mut waited, true, false, 12));
+        }
+        assert!(auto_start_wait_step(&mut waited, true, false, 12));
+        assert_eq!(waited, None, "the fallback fires once");
+    }
+
+    #[test]
+    fn auto_start_wait_ends_when_the_recording_is_live_or_the_call_is_over() {
+        let mut waited = Some(3);
+        assert!(!auto_start_wait_step(&mut waited, true, true, 12));
+        assert_eq!(waited, None);
+        let mut waited = Some(3);
+        assert!(!auto_start_wait_step(&mut waited, false, false, 12));
+        assert_eq!(waited, None);
+        let mut waited = None;
+        assert!(!auto_start_wait_step(&mut waited, true, false, 12));
     }
 
     #[test]
