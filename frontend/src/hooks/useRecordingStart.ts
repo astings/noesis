@@ -285,6 +285,9 @@ export function useRecordingStart(
     };
 
     checkAutoStartRecording();
+    // The call detector's request lands here when the home page is already open (AutoStartListener)
+    window.addEventListener('auto-start-recording', checkAutoStartRecording);
+    return () => window.removeEventListener('auto-start-recording', checkAutoStartRecording);
   }, [
     isRecording,
     isAutoStarting,

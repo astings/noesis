@@ -19,6 +19,7 @@ import { OnboardingProvider } from '@/contexts/OnboardingContext'
 import { OnboardingFlow } from '@/components/onboarding'
 import { DownloadProgressToastProvider } from '@/components/shared/DownloadProgressToast'
 import { RecordingPostProcessingProvider } from '@/contexts/RecordingPostProcessingProvider'
+import { AutoStartListener } from '@/components/AutoStartListener'
 
 
 // export { metadata } from './metadata'
@@ -105,6 +106,8 @@ export default function RootLayout({
                         <RecordingPostProcessingProvider>
                             {/* Download progress toast provider - listens for background downloads */}
                             <DownloadProgressToastProvider />
+                            {/* Call detector auto-start, after the previous save has settled */}
+                            <AutoStartListener />
 
                             <TitleBar />
                             {/* Show onboarding or main app */}

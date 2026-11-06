@@ -264,6 +264,27 @@ pub fn plan_reconcile(
     updates
 }
 
+/// Index rows to drop: `root` exists, the row's folder sits under it and is gone, and the row has
+/// not been touched for two minutes (a save or move in flight keeps its row). Rows without a path
+/// or outside the root are left alone: they may belong to a previous root. `db_rows` is
+/// `(id, folder_path, updated_at)` from SQLite.
+pub fn plan_prune(db_rows: &[(String, Option<String>, String)], root: &Path, now: chrono::DateTime<chrono::Utc>) -> Vec<String> {
+    if !root.is_dir() {
+        return vec![];
+    }
+    let settled = now - chrono::Duration::minutes(2);
+    db_rows
+        .iter()
+        .filter(|(_, folder, updated)| {
+            let Some(folder) = folder.as_deref().map(Path::new) else { return false };
+            let Ok(updated) = chrono::DateTime::parse_from_rfc3339(updated) else { return false };
+            let gone = matches!(std::fs::metadata(folder), Err(e) if e.kind() == std::io::ErrorKind::NotFound);
+            folder.starts_with(root) && gone && updated.with_timezone(&chrono::Utc) < settled
+        })
+        .map(|(id, _, _)| id.clone())
+        .collect()
+}
+
 /// Link or import folders the database does not know (audio/adopt.rs), then update folder_path and
 /// title in SQLite from what is on disk. Returns the number of rows changed.
 /// ponytail: reads every metadata.json on each call; fine for a few hundred meetings, cache the scan if it grows.
@@ -289,6 +310,18 @@ pub async fn reconcile(pool: &sqlx::SqlitePool, root: &Path) -> Result<usize> {
         log::info!("Reconciled meeting {} to {}", u.meeting_id, u.folder_path);
         touched.push(u.meeting_id.clone());
     }
+    // The filesystem is the source of truth: a settled row whose folder is gone leaves the index.
+    let rows: Vec<(String, Option<String>, String)> =
+        sqlx::query_as("SELECT id, folder_path, updated_at FROM meetings")
+            .fetch_all(pool)
+            .await?;
+    let pruned = plan_prune(&rows, root, now);
+    for id in &pruned {
+        match crate::database::repositories::meeting::MeetingsRepository::delete_meeting(pool, id).await {
+            Ok(_) => log::info!("Pruned meeting {} from the index: its folder is gone", id),
+            Err(e) => log::warn!("Could not prune meeting {} from the index: {}", id, e),
+        }
+    }
     // title and folder changes reach the search index too
     touched.sort();
     touched.dedup();
@@ -297,7 +330,7 @@ pub async fn reconcile(pool: &sqlx::SqlitePool, root: &Path) -> Result<usize> {
             log::warn!("search index: reindex after reconcile failed for {}: {}", id, e);
         }
     }
-    Ok(updates.len())
+    Ok(updates.len() + pruned.len())
 }
 
 /// Write the title to metadata.json (merged into the existing JSON) and to SQLite, without touching the folder.
@@ -532,6 +565,22 @@ pub fn has_no_transcript(folder: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// True when the folder's metadata.json says the recording completed: Rust wrote the transcript
+/// at stop and the library scan indexes it, so the recovery dialog has nothing to recover.
+pub fn is_completed_on_disk(folder: &Path) -> bool {
+    std::fs::read_to_string(folder.join("metadata.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|m| m.get("status").and_then(|s| s.as_str()).map(|s| s == "completed"))
+        .unwrap_or(false)
+}
+
+/// Recovery dialog: skip IndexedDB meetings whose folder is already complete on disk.
+#[tauri::command]
+pub async fn meeting_saved_on_disk(meeting_folder: String) -> bool {
+    is_completed_on_disk(Path::new(&meeting_folder))
+}
+
 /// After a stop with nothing transcribed: trashes the meeting folder (no DB row exists yet).
 /// Returns false and keeps the folder when transcripts.json holds segments.
 #[tauri::command]
@@ -740,6 +789,40 @@ mod tests {
         assert_eq!(entries[1].title.as_deref(), Some("Meeting 27_10_26_13_00_00"), "falls back to meeting_name");
         assert_eq!(entries[2].title.as_deref(), Some("Fallback"), "empty title is ignored, meeting_name used");
         assert_eq!((entries[3].project.as_str(), entries[3].title.as_deref()), ("_inbox", Some("Adopted")));
+    }
+
+    #[test]
+    fn completed_on_disk_needs_a_completed_status() {
+        let t = tempfile::tempdir().unwrap();
+        let f = t.path().join("dex").join("2026-11-06_10-00");
+        assert!(!is_completed_on_disk(&f), "no metadata.json");
+        write_meta(&f, r#"{"version":"2.0","meeting_id":"m","status":"recording"}"#);
+        assert!(!is_completed_on_disk(&f), "still recording");
+        write_meta(&f, r#"{"version":"2.0","meeting_id":"m","status":"completed"}"#);
+        assert!(is_completed_on_disk(&f));
+    }
+
+    #[test]
+    fn plan_prune_drops_only_settled_rows_whose_folder_under_the_root_is_gone() {
+        let root = tempfile::tempdir().unwrap();
+        let here = root.path().join("dex").join("here");
+        std::fs::create_dir_all(&here).unwrap();
+        let gone = root.path().join("dex").join("gone").to_string_lossy().to_string();
+        let now = chrono::Utc::now();
+        let old = (now - chrono::Duration::hours(1)).to_rfc3339();
+        let rows = vec![
+            ("keep-exists".to_string(), Some(here.to_string_lossy().to_string()), old.clone()),
+            ("prune-gone".to_string(), Some(gone.clone()), old.clone()),
+            ("keep-fresh".to_string(), Some(gone.clone()), now.to_rfc3339()),
+            ("keep-outside-root".to_string(), Some("/nowhere/old-root/gone".to_string()), old.clone()),
+            ("keep-no-path".to_string(), None, old.clone()),
+            ("keep-bad-date".to_string(), Some(gone.clone()), "not a date".to_string()),
+        ];
+        assert_eq!(plan_prune(&rows, root.path(), now), vec!["prune-gone".to_string()]);
+
+        let unmounted = root.path().join("unmounted");
+        let under_unmounted = vec![("keep".to_string(), Some(unmounted.join("dex").join("x").to_string_lossy().to_string()), old)];
+        assert!(plan_prune(&under_unmounted, &unmounted, now).is_empty(), "a missing root prunes nothing");
     }
 
     #[test]
