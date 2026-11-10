@@ -632,6 +632,29 @@ jobs:
           releaseId: ${{ inputs.release-id }}
           args: ${{ inputs.build-args }} ${{ steps.build-features.outputs.features }} ${{ steps.windows-portability.outputs.args }}
 
+      # Tauri notarizes the .app only; notarize and staple the DMG too, then replace the release copy.
+      - name: Notarize and staple DMG (macOS)
+        if: contains(inputs.platform, 'macos') && inputs.sign-binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          RELEASE_ID: ${{ inputs.release-id }}
+        run: |
+          set -euo pipefail
+          DMG=$(ls target/${{ inputs.target }}/${{ steps.build-profile.outputs.profile }}/bundle/dmg/*.dmg)
+          xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          if [[ -n "$RELEASE_ID" ]]; then
+            NAME=$(basename "$DMG")
+            OLD=$(gh api "repos/${{ github.repository }}/releases/$RELEASE_ID/assets" --jq ".[] | select(.name == \"$NAME\") | .id")
+            [[ -n "$OLD" ]] && gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$OLD"
+            gh api -X POST -H "Content-Type: application/octet-stream" --input "$DMG" \
+              "https://uploads.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID/assets?name=$NAME" --jq .browser_download_url
+          fi
+
       - name: Upload artifacts (macOS)
         if: inputs.upload-artifacts && contains(inputs.platform, 'macos')
         uses: actions/upload-artifact@v4
