@@ -560,6 +560,10 @@ jobs:
       - name: Build llama-helper sidecar (macOS/Linux)
         if: "!contains(inputs.platform, 'windows')"
         shell: bash
+        env:
+          # Runner's Homebrew OpenSSL 4 breaks llama.cpp's vendored cpp-httplib; the sidecar needs no HTTPS.
+          # llama-cpp-sys-2 forwards CMAKE_* env vars to cmake.
+          CMAKE_DISABLE_FIND_PACKAGE_OpenSSL: "ON"
         run: |
           echo "Building llama-helper sidecar..."
 
