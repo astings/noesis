@@ -50,6 +50,13 @@ mod mac {
         status == EKAuthorizationStatus::FullAccess
     }
 
+    /// No answer stored for this build yet. TCC keys the grant on the code signature, so a
+    /// grant given to a dev or ad-hoc build does not carry over to the notarized one.
+    pub fn undetermined() -> bool {
+        let status = unsafe { EKEventStore::authorizationStatusForEntityType(EKEntityType::Event) };
+        status == EKAuthorizationStatus::NotDetermined
+    }
+
     /// Shows the macOS prompt the first time; later calls return the stored answer.
     /// ponytail: full access API only (macOS 14+); add requestAccessToEntityType if macOS 13 matters.
     pub fn request_access() -> bool {
@@ -71,6 +78,7 @@ mod mac {
 
     pub fn events_now() -> Vec<Candidate> {
         if !has_access() {
+            log::warn!("Calendar lookup skipped: no full Calendar access (System Settings > Privacy & Security > Calendars)");
             return Vec::new();
         }
         unsafe {
@@ -114,6 +122,17 @@ pub fn current_meeting_title() -> Option<String> {
     }
     #[cfg(not(target_os = "macos"))]
     None
+}
+
+/// At launch, when calendar naming is on but this build was never answered: show the prompt
+/// now rather than leave the lookup silently empty at the next call.
+pub fn request_access_if_undetermined() {
+    #[cfg(target_os = "macos")]
+    if mac::undetermined() {
+        log::info!("Calendar naming is on but access was never asked for this build; prompting");
+        let granted = mac::request_access();
+        log::info!("Calendar access granted: {}", granted);
+    }
 }
 
 /// Asks macOS for calendar access (prompt on first use). False means denied:

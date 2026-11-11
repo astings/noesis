@@ -75,6 +75,15 @@ pub struct RecordingPreferences {
     pub ask_provider: String,
     #[serde(default)]
     pub ask_model: String,
+    // Home week agenda: Saturday and Sunday columns. Off by default.
+    #[serde(default)]
+    pub agenda_show_weekends: bool,
+    // A recording shorter than this is discarded at stop (folder to the Trash). 0 keeps everything.
+    #[serde(default = "default_min_recording_seconds")]
+    pub min_recording_seconds: u32,
+    // Check GitHub releases for a new version at launch and every few hours
+    #[serde(default = "default_true")]
+    pub auto_check_updates: bool,
 }
 
 /// The languages the Models tab offers; keep in sync with `LANGUAGES` in `components/ModelsSettings.tsx`.
@@ -111,6 +120,10 @@ fn default_transcription_languages() -> Vec<String> {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_min_recording_seconds() -> u32 {
+    30
 }
 
 fn default_audio_retention_hours() -> u32 {
@@ -164,6 +177,9 @@ impl Default for RecordingPreferences {
             title_tags_prompt: String::new(),
             ask_provider: String::new(),
             ask_model: String::new(),
+            agenda_show_weekends: false,
+            min_recording_seconds: default_min_recording_seconds(),
+            auto_check_updates: true,
         }
     }
 }

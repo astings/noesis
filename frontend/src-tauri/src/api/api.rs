@@ -36,6 +36,8 @@ pub struct Meeting {
     pub started_at: String,
     /// From metadata.json; None for legacy meetings or unreadable files
     pub duration_seconds: Option<f64>,
+    /// From metadata.json; empty for legacy meetings or unreadable files
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -369,6 +371,11 @@ pub async fn api_get_meetings<R: Runtime>(
                         .folder_path
                         .as_deref()
                         .and_then(|f| crate::audio::library::duration_of(std::path::Path::new(f))),
+                    tags: m
+                        .folder_path
+                        .as_deref()
+                        .map(|f| crate::audio::search_index::metadata_tags(std::path::Path::new(f)))
+                        .unwrap_or_default(),
                     project: m
                         .folder_path
                         .as_deref()

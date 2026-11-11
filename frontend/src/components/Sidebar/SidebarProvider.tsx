@@ -56,6 +56,7 @@ export interface CurrentMeeting {
   startedAt?: string;
   // From metadata.json; absent for legacy meetings
   durationSeconds?: number;
+  tags?: string[];
 }
 
 // Search result type for transcript search
@@ -78,6 +79,9 @@ interface SidebarContextType {
   sidebarItems: SidebarItem[];
   isCollapsed: boolean;
   toggleCollapse: () => void;
+  // expanded width in px, dragged from the sidebar's right edge, kept in localStorage
+  sidebarWidth: number;
+  setSidebarWidth: (width: number) => void;
   meetings: CurrentMeeting[];
   setMeetings: (meetings: CurrentMeeting[]) => void;
   isMeetingActive: boolean;
@@ -101,6 +105,8 @@ interface SidebarContextType {
 
 }
 
+export const clampSidebarWidth = (w: number) => Math.min(520, Math.max(200, Math.round(w)));
+
 const SidebarContext = createContext<SidebarContextType | null>(null);
 
 export const useSidebar = () => {
@@ -114,6 +120,18 @@ export const useSidebar = () => {
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [currentMeeting, setCurrentMeeting] = useState<CurrentMeeting | null>({ id: 'intro-call', title: '+ New Call' });
   const [isCollapsed, setIsCollapsed] = useState(true);
+  const [sidebarWidth, setSidebarWidthState] = useState(260);
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem('sidebarWidth'));
+      if (saved) setSidebarWidthState(clampSidebarWidth(saved));
+    } catch {}
+  }, []);
+  const setSidebarWidth = (width: number) => {
+    const w = clampSidebarWidth(width);
+    setSidebarWidthState(w);
+    try { localStorage.setItem('sidebarWidth', String(w)); } catch {}
+  };
   const [meetings, setMeetings] = useState<CurrentMeeting[]>([]);
   const [sidebarItems, setSidebarItems] = useState<SidebarItem[]>([]);
   const [isMeetingActive, setIsMeetingActive] = useState(false);
@@ -155,6 +173,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
           project: meeting.project || INBOX,
           startedAt: meeting.started_at,
           durationSeconds: meeting.duration_seconds ?? undefined,
+          tags: meeting.tags ?? [],
           enhanceStatus: statusById.get(meeting.id),
           taggingStatus: taggingById.get(meeting.id),
         }));
@@ -319,6 +338,8 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       sidebarItems,
       isCollapsed,
       toggleCollapse,
+      sidebarWidth,
+      setSidebarWidth,
       meetings,
       setMeetings,
       isMeetingActive,

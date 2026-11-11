@@ -518,6 +518,9 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
+        // Auto-update from GitHub releases (latest.json); the frontend checks and asks before installing
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(whisper_engine::parallel_commands::ParallelProcessorState::new())
         .manage(Arc::new(RwLock::new(
             None::<notifications::manager::NotificationManager<tauri::Wry>>,
@@ -964,6 +967,7 @@ pub fn run() {
             audio::claude_mcp::register_mcp_with_claude,
             audio::library::assign_meeting,
             audio::library::discard_empty_recording,
+            audio::library::discard_short_recording,
             audio::library::meeting_saved_on_disk,
             audio::ask::ask_meeting, // live meeting ask (spec 2026-10-29)
         ])

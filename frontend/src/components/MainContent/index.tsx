@@ -8,13 +8,12 @@ interface MainContentProps {
 }
 
 const MainContent: React.FC<MainContentProps> = ({ children }) => {
-  const { isCollapsed } = useSidebar();
+  const { isCollapsed, sidebarWidth } = useSidebar();
 
   return (
     <main
-      className={`mt-10 h-[calc(100vh-2.5rem)] flex-1 min-w-0 overflow-hidden rounded-tl-xl border-l border-t border-border bg-background transition-all duration-300 ${
-        isCollapsed ? 'ml-12' : 'ml-[260px]'
-      }`}
+      className={`mt-10 h-[calc(100vh-2.5rem)] flex-1 min-w-0 overflow-hidden rounded-tl-xl border-l border-t border-border bg-background transition-all duration-300 ${isCollapsed ? 'ml-12' : ''}`}
+      style={isCollapsed ? undefined : { marginLeft: sidebarWidth }}
     >
       <div className="h-full min-w-0 w-full max-w-full overflow-hidden">
         {children}

@@ -1,7 +1,7 @@
 {
     "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
     "productName": "Noesis",
-    "version": "0.4.1",
+    "version": "0.4.2",
     "identifier": "com.noesis.app",
     "build": {
         "frontendDist": "../out",
@@ -21,7 +21,10 @@
                 "decorations": true,
                 "titleBarStyle": "Overlay",
                 "hiddenTitle": true,
-                "trafficLightPosition": { "x": 14, "y": 21 },
+                "trafficLightPosition": {
+                    "x": 14,
+                    "y": 21
+                },
                 "dragDropEnabled": false
             }
         ],
@@ -70,6 +73,8 @@
                         "store:default",
                         "notification:default",
                         "notification:allow-is-permission-granted",
+                        "updater:default",
+                        "process:allow-restart",
                         {
                             "identifier": "fs:scope",
                             "allow": [
@@ -112,6 +117,14 @@
         },
         "windows": {
             "signCommand": "powershell -ExecutionPolicy Bypass -File scripts/sign-windows.ps1 -FilePath %1"
+        }
+    },
+    "plugins": {
+        "updater": {
+            "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRCMUQyMjAzOTIxNzVDNDkKUldSSlhCZVNBeUlkU3d3d3RlVGd5UzVGN3dpeUIrd1V6L2w1a2Z2V2U2anBuMkZRU3dLUDhWVy8K",
+            "endpoints": [
+                "https://github.com/astings/noesis/releases/latest/download/latest.json"
+            ]
         }
     }
 }
