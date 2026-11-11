@@ -1,7 +1,7 @@
 {
     "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
     "productName": "Noesis",
-    "version": "0.4.2",
+    "version": "1.0.0",
     "identifier": "com.noesis.app",
     "build": {
         "frontendDist": "../out",

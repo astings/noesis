@@ -13,7 +13,7 @@ Noesis records your calls, transcribes them on your Mac, and writes a plain `tra
 
 <p align="center"><img src="docs/readme/demo.gif" width="800" alt="Search the library, open a hit, ask the meeting a question" /></p>
 
-It is a fork of [Meetily](https://github.com/Zackriya-Solutions/meetily) v0.4.1, reshaped into a dumb, accurate recorder. Audio and transcripts never leave the machine unless you pick a cloud model.
+It is a dumb, accurate recorder. Audio and transcripts never leave the machine unless you pick a cloud model.
 
 ## What it does
 
@@ -83,7 +83,7 @@ The folder is the source of truth; SQLite is an index rebuilt from it. Full sche
 
 ## Install
 
-Download the DMG from the [latest release](https://github.com/astings/noesis/releases/latest). It is signed with a Developer ID and notarized by Apple, so it opens without a Gatekeeper warning. Apple silicon only (M1 and later). From v0.4.2 on, Noesis checks for updates itself and offers to install them (Settings, Updates).
+Download the DMG from the [latest release](https://github.com/astings/noesis/releases/latest). It is signed with a Developer ID and notarized by Apple, so it opens without a Gatekeeper warning. Apple silicon only (M1 and later). From v1.0.0 on, Noesis checks for updates itself and offers to install them (Settings, Updates).
 
 ## Build
 
@@ -106,4 +106,4 @@ More: [BUILDING.md](docs/BUILDING.md), [GPU acceleration](docs/GPU_ACCELERATION.
 
 ## Credits and license
 
-Built on [Meetily](https://github.com/Zackriya-Solutions/meetily) by Zackriya Solutions, with [whisper.cpp](https://github.com/ggerganov/whisper.cpp), [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) and [Tauri](https://tauri.app). MIT, see [LICENSE.md](LICENSE.md).
+Started from [Meetily](https://github.com/Zackriya-Solutions/meetily) v0.4.1 by Zackriya Solutions. Built with [whisper.cpp](https://github.com/ggerganov/whisper.cpp), [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) and [Tauri](https://tauri.app). MIT, see [LICENSE.md](LICENSE.md).
