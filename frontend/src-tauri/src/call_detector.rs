@@ -1,20 +1,21 @@
 //! Generic settings section 2 (was spec 4.5 Zoom only): call detection. A call is another
 //! process reading the microphone, read from CoreAudio's process objects (macOS 14+), or the
 //! Zoom helper process `CptHost`: either signal says a call is on. On macOS 13, or when
-//! CoreAudio does not answer, the Zoom check is the only one. A background task samples every 5 seconds; a pure state machine turns the
+//! CoreAudio does not answer, the Zoom check is the only one. A background task samples every second; a pure state machine turns the
 //! samples into Started and Ended events, debouncing the end so a reconnect blip does not
 //! stop a recording.
 
 use log::{info, warn};
 use tauri::{AppHandle, Runtime};
 
-/// Poll period for the call signals.
-pub const POLL_SECONDS: u64 = 5;
-/// Idle samples required after a call before `Ended` fires (4 x 5 s = 20 s).
+/// Poll period for the call signals: one CoreAudio query and one `pgrep` per second.
+pub const POLL_SECONDS: u64 = 1;
+/// Idle samples required after a call before `Ended` fires: the recording stops 4 to 5 s
+/// after the call ends. A reconnect blip longer than that ends the recording.
 pub const END_DEBOUNCE_TICKS: u32 = 4;
 /// Ticks the loop gives the frontend to start after `auto-start-requested` before it falls back
-/// to a page reload (12 x 5 s = 60 s, longer than a cold engine start).
-pub const AUTO_START_FALLBACK_TICKS: u32 = 12;
+/// to a page reload (60 x 1 s = 60 s, longer than a cold engine start).
+pub const AUTO_START_FALLBACK_TICKS: u32 = 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallEvent {
@@ -196,6 +197,9 @@ pub async fn run<R: Runtime>(app: AppHandle<R>) {
     let signal = if mic_in_use_by_others().is_some() { "microphone in use (CoreAudio) or Zoom process CptHost" } else { "Zoom process CptHost only (macOS 13 fallback)" };
     info!("Call detector started ({}, every {}s, end debounce {} ticks)", signal, POLL_SECONDS, END_DEBOUNCE_TICKS);
     let mut recorded_during_call = false; // spec 4.5
+    if crate::audio::recording_preferences::load_recording_preferences(&app).await.map_or(false, |p| p.calendar_meeting_name) {
+        tokio::task::spawn_blocking(crate::calendar_lookup::request_access_if_undetermined);
+    }
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(POLL_SECONDS)).await;
         let Some(sample) = tokio::task::spawn_blocking(sample_in_call).await.ok().flatten() else { continue };

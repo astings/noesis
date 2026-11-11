@@ -81,9 +81,13 @@ tags: [kickoff, pricing]
 
 The folder is the source of truth; SQLite is an index rebuilt from it. Full schemas: [design spec, section 5](docs/superpowers/specs/2026-10-27-personal-meeting-recorder-design.md#5-contracts).
 
+## Install
+
+Download the DMG from the [latest release](https://github.com/astings/noesis/releases/latest). It is signed with a Developer ID and notarized by Apple, so it opens without a Gatekeeper warning. Apple silicon only (M1 and later). From v0.4.2 on, Noesis checks for updates itself and offers to install them (Settings, Updates).
+
 ## Build
 
-There is no signed release yet. Build from source on macOS (Apple silicon tested):
+To build from source on macOS (Apple silicon tested):
 
 1. Install Xcode, Rust, Node 22 and pnpm 10
 2. `cd frontend && pnpm install`

@@ -94,7 +94,8 @@ jobs:
       matrix:
         include:
           - platform: "macos-latest" # for Apple Silicon only (M1 and above)
-            args: "--target aarch64-apple-darwin"
+            # Updater bundle (.app.tar.gz + .sig) and latest.json only here: local builds have no signing key
+            args: "--target aarch64-apple-darwin --config src-tauri/tauri.updater.conf.json"
             target: "aarch64-apple-darwin"
 
     uses: ./.github/workflows/build.yml

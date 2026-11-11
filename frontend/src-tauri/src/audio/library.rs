@@ -596,9 +596,40 @@ pub async fn discard_empty_recording<R: tauri::Runtime>(app: tauri::AppHandle<R>
     Ok(true)
 }
 
+/// Pure: under the minimum length. An unknown duration or a 0 minimum keeps the recording.
+pub fn is_too_short(duration_seconds: Option<f64>, min_seconds: u32) -> bool {
+    min_seconds > 0 && duration_seconds.map_or(false, |d| d < min_seconds as f64)
+}
+
+/// At stop, before the DB row exists: trashes the folder when the recording is shorter than
+/// the `min_recording_seconds` preference. Returns true when it did.
+#[tauri::command]
+pub async fn discard_short_recording<R: tauri::Runtime>(app: tauri::AppHandle<R>, folder_path: String) -> Result<bool, String> {
+    let folder = PathBuf::from(&folder_path);
+    let min = crate::audio::recording_preferences::load_recording_preferences(&app).await
+        .map(|p| p.min_recording_seconds)
+        .map_err(|e| e.to_string())?;
+    let duration = duration_of(&folder);
+    if !is_too_short(duration, min) {
+        return Ok(false);
+    }
+    let root = crate::audio::recording_preferences::recordings_root(&app);
+    trash_meeting_folder(&root, &folder).map_err(|e| e.to_string())?;
+    log::info!("discard_short_recording: trashed {} ({:?}s < {}s)", folder.display(), duration, min);
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn too_short_only_with_a_known_duration_under_a_nonzero_minimum() {
+        assert!(is_too_short(Some(12.0), 30));
+        assert!(!is_too_short(Some(30.0), 30));
+        assert!(!is_too_short(None, 30), "unknown duration is kept");
+        assert!(!is_too_short(Some(1.0), 0), "0 disables");
+    }
     #[test]
     fn has_no_transcript_only_for_empty_or_missing() {
         let t = tempfile::tempdir().unwrap();

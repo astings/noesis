@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { FolderOpen } from 'lucide-react';
+import { checkForUpdates } from '@/lib/updater';
 import { invoke } from '@tauri-apps/api/core';
 import { DeviceSelection, SelectedDevices } from '@/components/DeviceSelection';
 import { toast } from 'sonner';
@@ -38,6 +39,9 @@ export interface RecordingPreferences {
   // live ask spec 3.4: empty means the summary model
   ask_provider: string;
   ask_model: string;
+  agenda_show_weekends: boolean;
+  min_recording_seconds: number; // 0 keeps every recording
+  auto_check_updates: boolean;
 }
 
 interface RecordingSettingsProps {
@@ -68,6 +72,9 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     title_tags_prompt: '',
     ask_provider: '',
     ask_model: '',
+    agenda_show_weekends: false,
+    min_recording_seconds: 30,
+    auto_check_updates: true,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -128,6 +135,14 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
   const applyPreferences = async (next: RecordingPreferences) => {
     setPreferences(next);
     await savePreferences(next);
+  };
+
+  const [minLengthDraft, setMinLengthDraft] = useState<string | null>(null);
+  const commitMinLength = async () => {
+    const seconds = Math.max(0, Math.round(Number(minLengthDraft ?? preferences.min_recording_seconds)) || 0);
+    setMinLengthDraft(null);
+    if (seconds === preferences.min_recording_seconds) return;
+    await applyPreferences({ ...preferences, min_recording_seconds: seconds });
   };
 
   const [retentionDraft, setRetentionDraft] = useState<string | null>(null);
@@ -321,7 +336,7 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
         />
         <SettingRow
           label="Stop recording when the call ends"
-          hint="About 20 seconds after the other app releases the microphone, the recording stops and is saved"
+          hint="About 5 seconds after the other app releases the microphone, the recording stops and is saved"
           control={<Switch checked={preferences.auto_stop_on_call_end} onCheckedChange={handleAutoStopToggle} disabled={saving} />}
         />
         <SettingRow
@@ -333,6 +348,44 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
           label="Show call overlay while recording"
           hint="A small always-on-top bar with timer, pause, stop, project and a quick question"
           control={<Switch checked={preferences.show_call_overlay} onCheckedChange={handleCallOverlayToggle} disabled={saving} />}
+        />
+        <SettingRow
+          label="Discard recordings shorter than (seconds)"
+          hint="A recording under this length is moved to the Trash when it stops. 0 keeps everything."
+          control={
+            <Input
+              type="number"
+              min={0}
+              step={5}
+              aria-label="Discard recordings shorter than (seconds)"
+              className="h-8 w-24"
+              value={minLengthDraft ?? preferences.min_recording_seconds}
+              onChange={(e) => setMinLengthDraft(e.target.value)}
+              onBlur={commitMinLength}
+              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+              disabled={saving}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup title="Home">
+        <SettingRow
+          label="Show weekends in the week view"
+          hint="Saturday and Sunday columns in the home agenda"
+          control={<Switch aria-label="Show weekends in the week view" checked={preferences.agenda_show_weekends} onCheckedChange={(on) => applyPreferences({ ...preferences, agenda_show_weekends: on })} disabled={saving} />}
+        />
+      </SettingsGroup>
+
+      <SettingsGroup title="Updates">
+        <SettingRow
+          label="Check for updates automatically"
+          hint="At launch and every 6 hours, from the GitHub releases. Installing always asks first."
+          control={<Switch aria-label="Check for updates automatically" checked={preferences.auto_check_updates} onCheckedChange={(on) => applyPreferences({ ...preferences, auto_check_updates: on })} disabled={saving} />}
+        />
+        <SettingRow
+          label="Check now"
+          control={<Button variant="outline" size="sm" onClick={() => checkForUpdates({ manual: true })}>Check for updates</Button>}
         />
       </SettingsGroup>
 

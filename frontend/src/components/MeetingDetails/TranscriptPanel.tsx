@@ -10,6 +10,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useSidebar, MEETING_EXTRAS_CHANGED } from '@/components/Sidebar/SidebarProvider';
 import { MeetingInfoButton } from '@/components/MeetingStatusTags';
+import { DeleteMeetingButton } from './DeleteMeetingButton';
 import { toast } from 'sonner';
 import { format, isValid, parseISO } from 'date-fns';
 import { formatDuration } from '@/lib/duration';
@@ -162,6 +163,7 @@ export function TranscriptPanel({
             transcription={extras?.transcription}
           />
         )}
+        {meetingId && <DeleteMeetingButton meetingId={meetingId} />}
         <TranscriptButtonGroup
           meetingId={meetingId}
           meetingFolderPath={meetingFolderPath}

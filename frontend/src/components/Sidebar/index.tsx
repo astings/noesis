@@ -56,8 +56,25 @@ const Sidebar: React.FC = () => {
     goHome,
     meetings,
     setMeetings,
-    refetchMeetings
+    refetchMeetings,
+    sidebarWidth,
+    setSidebarWidth,
   } = useSidebar();
+
+  // Drag the right edge; transitions are off meanwhile so the main pane follows the cursor
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const root = document.documentElement;
+    root.classList.add('sidebar-resizing');
+    const move = (ev: PointerEvent) => setSidebarWidth(ev.clientX);
+    const up = () => {
+      root.classList.remove('sidebar-resizing');
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
 
   // Get recording state from RecordingStateContext (single source of truth)
   const { isRecording } = useRecordingState();
@@ -535,14 +552,14 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
   return (
     <div className="fixed top-10 left-0 bottom-0 z-40">
       <div
-        className={`h-full overflow-hidden bg-card flex flex-col transition-all duration-300 ${isCollapsed ? 'w-12' : 'w-[260px]'
-          }`}
+        className={`h-full overflow-hidden bg-card flex flex-col transition-all duration-300 ${isCollapsed ? 'w-12' : ''}`}
+        style={isCollapsed ? undefined : { width: sidebarWidth }}
       >
         {renderCollapsedIcons()}
 
         {!showRail && (
           // Fixed width and px-2 keep every icon on the rail's x=16 column, so toggling only slides the edge
-          <div className="flex w-[260px] flex-1 min-h-0 flex-col px-2 py-2.5">
+          <div className="flex flex-1 min-h-0 flex-col px-2 py-2.5" style={{ width: sidebarWidth }}>
             {/* Logo routes home; the separate Home entry is gone */}
             <div className="mb-1 flex h-10 items-center">
               <button onClick={goHome} className="flex items-center gap-2 rounded-md pl-0.5 text-sm font-semibold text-foreground">
@@ -608,6 +625,17 @@ const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; item
           </div>
         )}
       </div>
+
+      {!isCollapsed && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          onPointerDown={startResize}
+          onDoubleClick={() => setSidebarWidth(260)}
+          className="absolute inset-y-0 -right-1 w-2 cursor-col-resize hover:bg-border/60"
+        />
+      )}
 
       {/* Confirmation Modal for Delete */}
       <ConfirmationModal

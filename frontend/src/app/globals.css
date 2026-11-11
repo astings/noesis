@@ -191,3 +191,9 @@
     scrollbar-color: hsl(var(--border)) transparent;
   }
 }
+/* Sidebar drag-resize: no width/margin animation while the pointer moves */
+.sidebar-resizing, .sidebar-resizing * {
+  transition: none !important;
+  cursor: col-resize !important;
+  user-select: none !important;
+}

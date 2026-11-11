@@ -256,8 +256,13 @@ export function useRecordingStop(
 
         // Nothing was transcribed: no meeting to keep, no enhance. Rust trashes the folder
         // only if its transcripts.json is empty too, so a lost frontend state never deletes a real one.
-        if (freshTranscripts.length === 0) {
-          const discarded = !folderPath || await invoke<boolean>('discard_empty_recording', { folderPath }).catch((e) => {
+        // Shorter than the min_recording_seconds preference: same discard path, its own toast
+        const tooShort = !!folderPath && await invoke<boolean>('discard_short_recording', { folderPath }).catch((e) => {
+          console.error('Failed to discard short recording:', e);
+          return false;
+        });
+        if (tooShort || freshTranscripts.length === 0) {
+          const discarded = tooShort || !folderPath || await invoke<boolean>('discard_empty_recording', { folderPath }).catch((e) => {
             console.error('Failed to discard empty recording:', e);
             return false;
           });
@@ -268,7 +273,8 @@ export function useRecordingStop(
             sessionStorage.removeItem('last_recording_meeting_id');
             sessionStorage.removeItem('indexeddb_current_meeting_id');
             clearTranscripts();
-            toast.info('Nothing was transcribed', { description: 'The recording was discarded.' });
+            if (tooShort) toast.info('Recording too short', { description: 'Under the minimum length set in Settings, so it was discarded.' });
+            else toast.info('Nothing was transcribed', { description: 'The recording was discarded.' });
             setStatus(RecordingStatus.IDLE);
             setIsMeetingActive(false);
             setIsRecordingDisabled(false);
