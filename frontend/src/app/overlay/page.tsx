@@ -5,7 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalPosition } from '@tauri-apps/api/dpi';
-import { Pause, Play, Square, X } from 'lucide-react';
+import { Pause, Play, Square, Trash2, X } from 'lucide-react';
 import { INBOX } from '@/lib/projects';
 
 const PILL_HEIGHT = 48;
@@ -130,6 +130,11 @@ export default function OverlayPage() {
     invoke('overlay_stop_recording').catch((e) => { setStopping(false); fail(e); });
   };
 
+  const discard = () => {
+    setStopping(true);
+    invoke('overlay_discard_recording').catch((e) => { setStopping(false); fail(e); });
+  };
+
   const options = !project || projects.includes(project) ? projects : [...projects, project];
 
   const iconBtn = 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full hover:bg-white/15';
@@ -148,6 +153,9 @@ export default function OverlayPage() {
         </button>
         <button className={`${iconBtn} text-red-400 disabled:opacity-50`} disabled={stopping} onClick={stop} title="Stop recording">
           <Square size={14} fill="currentColor" />
+        </button>
+        <button className={`${iconBtn} text-white/70 disabled:opacity-50`} disabled={stopping} onClick={discard} title="Stop and delete recording">
+          <Trash2 size={14} />
         </button>
         <select
           value={project}

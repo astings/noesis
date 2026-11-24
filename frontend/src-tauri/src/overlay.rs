@@ -1,5 +1,9 @@
 //! Call overlay window (spec 2026-10-30 tray-toggle-and-call-overlay).
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Listener, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
+
+/// Set by the overlay's trash button; the stop flow's `discard_short_recording` consumes it.
+pub static DISCARD_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 pub const LABEL: &str = "overlay";
 const WIDTH: f64 = 380.0;
@@ -57,6 +61,7 @@ pub fn sync<R: Runtime>(app: &AppHandle<R>, enabled: bool) {
 pub fn init<R: Runtime>(app: &AppHandle<R>) {
     let a = app.clone();
     app.listen("recording-started", move |_| {
+        DISCARD_REQUESTED.store(false, Ordering::SeqCst); // a stale request never hits a new recording
         let a = a.clone();
         tauri::async_runtime::spawn(async move {
             if let Ok(p) = crate::audio::recording_preferences::load_recording_preferences(&a).await {
@@ -80,4 +85,20 @@ pub async fn overlay_resize<R: Runtime>(app: AppHandle<R>, height: f64) -> Resul
 #[tauri::command]
 pub async fn overlay_stop_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     crate::tray::stop_from_shortcut(&app).await
+}
+
+/// Stops the recording and has the stop flow trash its folder instead of saving it.
+#[tauri::command]
+pub async fn overlay_discard_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    DISCARD_REQUESTED.store(true, Ordering::SeqCst);
+    let r = crate::tray::stop_from_shortcut(&app).await;
+    if r.is_err() {
+        DISCARD_REQUESTED.store(false, Ordering::SeqCst);
+    }
+    r
+}
+
+#[tauri::command]
+pub fn is_discard_requested() -> bool {
+    DISCARD_REQUESTED.load(Ordering::SeqCst)
 }

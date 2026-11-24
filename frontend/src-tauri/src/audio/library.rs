@@ -602,7 +602,8 @@ pub fn is_too_short(duration_seconds: Option<f64>, min_seconds: u32) -> bool {
 }
 
 /// At stop, before the DB row exists: trashes the folder when the recording is shorter than
-/// the `min_recording_seconds` preference. Returns true when it did.
+/// the `min_recording_seconds` preference, or when the overlay's trash button asked for it.
+/// Returns true when it did.
 #[tauri::command]
 pub async fn discard_short_recording<R: tauri::Runtime>(app: tauri::AppHandle<R>, folder_path: String) -> Result<bool, String> {
     let folder = PathBuf::from(&folder_path);
@@ -610,7 +611,8 @@ pub async fn discard_short_recording<R: tauri::Runtime>(app: tauri::AppHandle<R>
         .map(|p| p.min_recording_seconds)
         .map_err(|e| e.to_string())?;
     let duration = duration_of(&folder);
-    if !is_too_short(duration, min) {
+    let asked = crate::overlay::DISCARD_REQUESTED.swap(false, std::sync::atomic::Ordering::SeqCst);
+    if !asked && !is_too_short(duration, min) {
         return Ok(false);
     }
     let root = crate::audio::recording_preferences::recordings_root(&app);

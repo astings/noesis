@@ -728,6 +728,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             overlay::overlay_resize,
             overlay::overlay_stop_recording,
+            overlay::overlay_discard_recording,
+            overlay::is_discard_requested,
             audio::recording_commands::get_recording_project,
             calendar_lookup::calendar_request_access,
             start_recording,
